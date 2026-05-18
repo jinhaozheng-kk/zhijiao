@@ -92,4 +92,21 @@ describe("AiRouter.tutor", () => {
     const router = new AiRouter({ prisma, adapter: new MockAdapter() });
     await expect(router.tutor({ questionStem: "" })).rejects.toThrow();
   });
+
+  it("writes ADAPTER_ERROR audit when adapter throws a non-parse error", async () => {
+    const adapter = new MockAdapter({
+      respondWith: async () => {
+        throw new Error("network down");
+      },
+    });
+    const router = new AiRouter({ prisma, adapter, userId: "dev-student-01" });
+
+    await expect(router.tutor({ questionStem: "x" })).rejects.toThrow(/network down/);
+
+    const calls = await prisma.modelCall.findMany();
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.status).toBe(ModelCallStatus.ADAPTER_ERROR);
+    expect(calls[0]!.errorMessage).toContain("network down");
+    expect(calls[0]!.userId).toBe("dev-student-01");
+  });
 });
