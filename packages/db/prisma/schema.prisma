@@ -78,7 +78,7 @@ model Subject {
 model KnowledgePoint {
   id          String           @id @default(cuid())
   subjectId   String           @map("subject_id")
-  code        String                          // 全学科唯一编码，如 "math-g8-linear-eq-01"
+  code        String                          // 学科内唯一编码（与 subjectId 联合唯一），如 "math-g8-linear-eq-01"
   name        String
   description String?
   difficulty  Int              @default(3)    // 1-5
@@ -189,6 +189,7 @@ model ModelCall {
   tokensOut        Int?             @map("tokens_out")
   status           ModelCallStatus
   errorMessage     String?          @map("error_message")
+  // 故意不建到 User 的外键：审计记录与用户生命周期解耦——删用户不应级联删审计
   userId           String?          @map("user_id")
   createdAt        DateTime         @default(now()) @map("created_at")
 
