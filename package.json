@@ -1,0 +1,28 @@
+{
+  "name": "zhijiao",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@9.0.0",
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "typecheck": "turbo typecheck",
+    "test": "turbo test",
+    "test:e2e": "turbo test:e2e",
+    "db:migrate": "pnpm --filter @zhijiao/db db:migrate",
+    "db:seed": "pnpm --filter @zhijiao/db db:seed",
+    "db:studio": "pnpm --filter @zhijiao/db db:studio",
+    "setup": "cp .env.example .env.local && docker compose up -d && pnpm install && pnpm db:migrate && pnpm db:seed"
+  },
+  "devDependencies": {
+    "turbo": "^2.0.0",
+    "typescript": "^5.4.0",
+    "@types/node": "^20.0.0",
+    "prettier": "^3.2.0"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  }
+}
