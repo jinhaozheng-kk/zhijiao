@@ -1,0 +1,24 @@
+name: zhijiao
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: zhijiao-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: zhijiao
+    ports:
+      - "5432:5432"
+    volumes:
+      - zhijiao-pgdata:/var/lib/postgresql/data
+      - ./docker/postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  zhijiao-pgdata:

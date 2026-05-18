@@ -1,0 +1,201 @@
+// 智教 数据模型 - Plan 1 范围
+// 模块分组：Identity / Curriculum / Question Bank / AI Audit
+// 后续 plan 会扩展：Learning Records / Teacher Artifacts / Forecast / Credit / Content
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [pgvector(map: "vector")]
+}
+
+// === Identity ===
+
+enum Role {
+  STUDENT
+  TEACHER
+  PARENT
+  OPS
+  ADMIN
+}
+
+model User {
+  id              String     @id @default(cuid())
+  phone           String?    @unique
+  wechatOpenid    String?    @unique @map("wechat_openid")
+  wechatUnionid   String?    @map("wechat_unionid")
+  email           String?    @unique
+  name            String?
+  avatarUrl       String?    @map("avatar_url")
+  createdAt       DateTime   @default(now()) @map("created_at")
+  updatedAt       DateTime   @updatedAt @map("updated_at")
+
+  roles           UserRole[]
+
+  @@map("users")
+}
+
+model UserRole {
+  userId    String   @map("user_id")
+  role      Role
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, role])
+  @@map("user_roles")
+}
+
+// === Curriculum ===
+
+enum GradeLevel {
+  G5
+  G6
+  G7
+  G8
+  G9
+  G10
+  G11
+  G12
+}
+
+model Subject {
+  id        String           @id @default(cuid())
+  code      String           @unique         // "math", "chinese", "english"
+  name      String                          // "数学", "语文", "英语"
+  createdAt DateTime         @default(now()) @map("created_at")
+
+  knowledgePoints KnowledgePoint[]
+  questions       Question[]
+
+  @@map("subjects")
+}
+
+model KnowledgePoint {
+  id          String           @id @default(cuid())
+  subjectId   String           @map("subject_id")
+  code        String                          // 学科内唯一编码（与 subjectId 联合唯一），如 "math-g8-linear-eq-01"
+  name        String
+  description String?
+  difficulty  Int              @default(3)    // 1-5
+  parentId    String?          @map("parent_id")
+  createdAt   DateTime         @default(now()) @map("created_at")
+
+  subject     Subject          @relation(fields: [subjectId], references: [id])
+  parent      KnowledgePoint?  @relation("KPTree", fields: [parentId], references: [id])
+  children    KnowledgePoint[] @relation("KPTree")
+  questions   QuestionKPLink[]
+
+  @@unique([subjectId, code])
+  @@map("knowledge_points")
+}
+
+// === Question Bank ===
+
+enum QuestionType {
+  SINGLE_CHOICE
+  MULTI_CHOICE
+  FILL_BLANK
+  CALCULATION
+  PROOF
+  ESSAY
+}
+
+enum QuestionStatus {
+  DRAFT
+  REVIEW
+  PUBLISHED
+  RETIRED
+}
+
+model Question {
+  id             String           @id @default(cuid())
+  subjectId      String           @map("subject_id")
+  stemMd         String           @map("stem_md")
+  stemImageKeys  String[]         @default([]) @map("stem_image_keys")
+  type           QuestionType
+  difficulty     Int              @default(3)
+  status         QuestionStatus   @default(DRAFT)
+  source         String?
+  createdAt      DateTime         @default(now()) @map("created_at")
+  updatedAt      DateTime         @updatedAt @map("updated_at")
+
+  subject        Subject          @relation(fields: [subjectId], references: [id])
+  answer         QuestionAnswer?
+  knowledgePoints QuestionKPLink[]
+
+  @@map("questions")
+}
+
+model QuestionAnswer {
+  questionId  String   @id @map("question_id")
+  contentMd   String   @map("content_md")
+  solutionMd  String   @map("solution_md")
+
+  question    Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@map("question_answers")
+}
+
+model QuestionKPLink {
+  questionId String         @map("question_id")
+  kpId       String         @map("kp_id")
+  weight     Float          @default(1.0)
+
+  question   Question       @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  kp         KnowledgePoint @relation(fields: [kpId], references: [id], onDelete: Cascade)
+
+  @@id([questionId, kpId])
+  @@map("question_kp_links")
+}
+
+// === AI Audit ===
+
+enum ModelCallStatus {
+  SUCCESS
+  PARSE_FAILED
+  ADAPTER_ERROR
+  TIMEOUT
+}
+
+model PromptTemplate {
+  id          String       @id @default(cuid())
+  name        String
+  version     String
+  body        String       @db.Text
+  fingerprint String       @unique
+  createdAt   DateTime     @default(now()) @map("created_at")
+  retiredAt   DateTime?    @map("retired_at")
+
+  modelCalls  ModelCall[]
+
+  @@unique([name, version])
+  @@map("prompt_templates")
+}
+
+model ModelCall {
+  id               String           @id @default(cuid())
+  taskKind         String           @map("task_kind")
+  promptTemplateId String?          @map("prompt_template_id")
+  model            String
+  requestJson      Json             @map("request_json")
+  responseJson     Json?            @map("response_json")
+  latencyMs        Int?             @map("latency_ms")
+  tokensIn         Int?             @map("tokens_in")
+  tokensOut        Int?             @map("tokens_out")
+  status           ModelCallStatus
+  errorMessage     String?          @map("error_message")
+  // 故意不建到 User 的外键：审计记录与用户生命周期解耦——删用户不应级联删审计
+  userId           String?          @map("user_id")
+  createdAt        DateTime         @default(now()) @map("created_at")
+
+  promptTemplate   PromptTemplate?  @relation(fields: [promptTemplateId], references: [id])
+
+  @@index([taskKind, createdAt])
+  @@index([userId, createdAt])
+  @@map("model_calls")
+}

@@ -76,6 +76,28 @@
 
 **建议首发垂直方向：初中数学**（题型结构清晰、举一反三价值高、教师组卷使用频次高）。
 
-## 开始实现时
+## 开始实现时（已落地）
 
-在搭建脚手架之前，先与用户确认：前端框架、后端框架、单仓 vs 多仓、包管理器、LLM 提供商、数据库选型、托管与地域（**中国市场的 ICP 备案影响**）。一旦上述决策落地，立即把所选技术栈与 `build` / `lint` / `test`（含运行单条测试）命令更新到本文件末尾。
+技术栈与项目结构详见 `docs/superpowers/specs/2026-05-18-tech-stack-and-project-structure-design.md` §1.2。本仓库已完成 Plan 1（仓库脚手架 + Identity/Curriculum/Question Bank/AI Audit schemas + TUTOR_TURN 端到端）—— 见 `docs/superpowers/plans/2026-05-18-foundation-and-tutor-turn.md`。
+
+**常用命令**：
+
+```bash
+pnpm setup              # 一键起本地依赖（首次）
+pnpm dev                # 启动所有 app（含 apps/web 在 :3000）
+pnpm test               # 全量 unit + integration
+pnpm --filter @zhijiao/web test:e2e   # E2E
+pnpm typecheck          # TS 全量检查
+pnpm db:migrate         # apply 新 migration（Windows 上可能需要 docker-exec 绕过，见 README）
+pnpm db:seed            # 重新 seed
+pnpm db:studio          # Prisma Studio 浏览数据
+
+# 单条测试：
+pnpm --filter @zhijiao/ai test -- tests/router.test.ts
+pnpm --filter @zhijiao/domain test -- tests/rbac.test.ts
+```
+
+**下一步候选 Plan**：
+- Plan 2: 真鉴权（手机号 OTP + 微信 H5 OAuth + Session + JWT + tRPC 落地）
+- Plan 3: Credit 计费体系 + 微信支付沙箱
+- Plan 4: 举一反三 + 错因分析（VariantGroup + ErrorBookEntry + 三阶变式生成）
