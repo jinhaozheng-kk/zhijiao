@@ -1,0 +1,54 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+.next/
+out/
+dist/
+build/
+.turbo/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Word / Office lock files
+~$*
+
+# Local scratch
+.docx_extract/
+.doc_copy.docx
+*.tmp
+
+# Claude Code local settings (personal; commit .claude/settings.json if you want a shared one)
+.claude/settings.local.json
+
+# TypeScript
+*.tsbuildinfo
+
+# Test
+coverage/
+.nyc_output/
+test-results/
+playwright-report/
+
+# Prisma
+prisma/migrations/dev/
+
+# Secrets (extra safety even though .env* is already ignored)
+certs/
+*.pem
+*.key
