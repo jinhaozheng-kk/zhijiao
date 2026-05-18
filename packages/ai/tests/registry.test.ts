@@ -86,4 +86,25 @@ describe("ensurePromptInDb", () => {
     });
     expect(row.body).toBe("first body");
   });
+
+  // 回归测试：fingerprint 不再是全表唯一（Fix 8）。两个不同 (name, version) 的 prompt
+  // 即使内容完全相同（→ 相同 fingerprint）也必须能共存。如果未来有人把 @unique 加回到
+  // schema 的 fingerprint 字段上，这个测试会立刻报警。
+  it("allows two different (name, version) rows to share an identical fingerprint", async () => {
+    const sharedBody = "identical body across two distinct prompts";
+    const a = fakePrompt(sharedBody, "shared-fp-a", "v1");
+    const b = fakePrompt(sharedBody, "shared-fp-b", "v1");
+    expect(a.fingerprint).toBe(b.fingerprint);
+
+    const idA = await ensurePromptInDb(prisma, a);
+    const idB = await ensurePromptInDb(prisma, b);
+    expect(idA).not.toBe(idB);
+
+    const rows = await prisma.promptTemplate.findMany({
+      where: { fingerprint: a.fingerprint },
+      orderBy: { name: "asc" },
+    });
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => r.name)).toEqual(["shared-fp-a", "shared-fp-b"]);
+  });
 });
