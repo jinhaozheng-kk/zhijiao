@@ -15,13 +15,16 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@prisma/client": "^5.18.0"
+    "@prisma/adapter-pg": "^7.8.0",
+    "@prisma/client": "^5.18.0",
+    "@types/pg": "^8.20.0",
+    "pg": "^8.21.0"
   },
   "devDependencies": {
     "prisma": "^5.18.0",
-    "vitest": "^1.6.0",
     "tsx": "^4.16.0",
-    "typescript": "^5.4.0"
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.0"
   },
   "prisma": {
     "seed": "tsx prisma/seed/index.ts"
