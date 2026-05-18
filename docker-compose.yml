@@ -1,3 +1,5 @@
+name: zhijiao
+
 services:
   postgres:
     image: pgvector/pgvector:pg16
