@@ -32,6 +32,7 @@ Thumbs.db
 .docx_extract/
 .doc_copy.docx
 *.tmp
+.playwright-server-pid
 
 # Claude Code local settings (personal; commit .claude/settings.json if you want a shared one)
 .claude/settings.local.json

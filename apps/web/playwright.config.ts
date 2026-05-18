@@ -1,16 +1,19 @@
 import { defineConfig, devices } from "@playwright/test";
 
-// E2E runs against an isolated port + DB + production-mode server:
-//   - port 3100 (避开常驻 dev server 占用的 3000)
-//   - DB zhijiao_test (避免污染开发库)
-//   - `next start` against a prebuilt artifact, NOT `next dev`. dev 在 Windows 下
-//     被 Playwright 的 SIGTERM 杀不干净，命令在两个测试都通过后会挂住直到 timeout；
-//     start 是单进程、能干净退出。前置 next build 由 npm script test:e2e 保证。
+// E2E:
+//   - 端口 3100、库 zhijiao_test、production-mode server（next start 而非 next dev）
+//   - 不用 Playwright 内置的 webServer 块——它在 Windows 上 graceful 关停被官方
+//     short-circuit 掉（playwright/lib/runner/index.js:840 直接 throw），导致命令
+//     测试通过后挂死。改走 globalSetup/globalTeardown，自己拿 PID 用 taskkill /T /F
+//     把进程树彻底干掉。
+//   - 前置依赖：`next build` 必须先跑过；test:e2e npm script 会保证这一点。
 const PORT = 3100;
-const TEST_DB_URL = "postgresql://postgres:postgres@127.0.0.1:5432/zhijiao_test";
 
 export default defineConfig({
   testDir: "./e2e",
+  testIgnore: ["**/global-setup.ts", "**/global-teardown.ts"],
+  globalSetup: "./e2e/global-setup.ts",
+  globalTeardown: "./e2e/global-teardown.ts",
   fullyParallel: false,
   retries: 0,
   reporter: [["list"]],
@@ -18,16 +21,6 @@ export default defineConfig({
     baseURL: `http://localhost:${PORT}`,
     headless: true,
     trace: "on-first-retry",
-  },
-  webServer: {
-    command: `pnpm exec next start -p ${PORT}`,
-    url: `http://localhost:${PORT}`,
-    reuseExistingServer: false,
-    timeout: 60_000,
-    env: {
-      AI_USE_MOCK: "true",
-      DATABASE_URL: TEST_DB_URL,
-    },
   },
   projects: [
     { name: "chromium", use: { ...devices["Desktop Chrome"] } },
