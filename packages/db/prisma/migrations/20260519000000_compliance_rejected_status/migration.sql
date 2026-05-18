@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "ModelCallStatus" ADD VALUE 'COMPLIANCE_REJECTED';

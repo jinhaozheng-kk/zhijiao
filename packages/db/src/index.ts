@@ -1,6 +1,15 @@
 import { PrismaClient } from "@prisma/client";
 
-export const prisma = new PrismaClient();
+// Singleton pattern for Next.js dev hot-reload:
+// 不缓存的话，每次模块重新求值会创建新的 PrismaClient，长时间开 dev server 会泄漏连接。
+// 用 globalThis 作为模块边界外的稳定句柄；生产环境每个 process 都是全新启动，不走缓存。
+const globalForPrisma = globalThis as unknown as { __zhijiaoPrisma?: PrismaClient };
+
+export const prisma = globalForPrisma.__zhijiaoPrisma ?? new PrismaClient();
+
+if (process.env.NODE_ENV !== "production") {
+  globalForPrisma.__zhijiaoPrisma = prisma;
+}
 
 // 类型导出（让消费者不必直接依赖 @prisma/client）
 export type {

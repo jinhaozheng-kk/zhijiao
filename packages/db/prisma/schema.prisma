@@ -160,6 +160,7 @@ enum ModelCallStatus {
   PARSE_FAILED
   ADAPTER_ERROR
   TIMEOUT
+  COMPLIANCE_REJECTED
 }
 
 model PromptTemplate {
@@ -167,7 +168,9 @@ model PromptTemplate {
   name        String
   version     String
   body        String       @db.Text
-  fingerprint String       @unique
+  // 指纹用于「同 name+version 是否被改动」的内容校验（registry.ensurePromptInDb），
+  // 不需要跨表全局唯一——不同 prompt 偶然撞 hash 是可能且无害的。
+  fingerprint String
   createdAt   DateTime     @default(now()) @map("created_at")
   retiredAt   DateTime?    @map("retired_at")
 

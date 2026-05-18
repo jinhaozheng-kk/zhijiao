@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { PrismaClient } from "@prisma/client";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROMPTS_DIR = join(__dirname, "prompts");
@@ -49,9 +50,26 @@ export async function loadPrompt(name: string, version: string): Promise<LoadedP
   return prompt;
 }
 
-// 把 prompt 同步到 DB 表 PromptTemplate，幂等
-import type { PrismaClient } from "@prisma/client";
+export class PromptVersionConflictError extends Error {
+  constructor(
+    public promptName: string,
+    public version: string,
+    public dbFingerprint: string,
+    public fileFingerprint: string,
+  ) {
+    super(
+      `Prompt ${promptName}@${version} content changed without a version bump ` +
+        `(db=${dbFingerprint.slice(0, 12)}…, file=${fileFingerprint.slice(0, 12)}…). ` +
+        `Bump the version (rename ${promptName}/${version}.md → ${promptName}/<next>.md) instead of editing in place.`,
+    );
+    this.name = "PromptVersionConflictError";
+  }
+}
 
+// 把 prompt 同步到 DB 表 PromptTemplate。版本一旦写入即不可变：
+//   - 不存在 → 创建
+//   - 存在且指纹相同 → 复用
+//   - 存在但指纹不同 → 抛 PromptVersionConflictError（强制 dev 升版本号）
 export async function ensurePromptInDb(
   prisma: PrismaClient,
   prompt: LoadedPrompt,
@@ -59,20 +77,22 @@ export async function ensurePromptInDb(
   const existing = await prisma.promptTemplate.findUnique({
     where: { name_version: { name: prompt.name, version: prompt.version } },
   });
-  if (existing && existing.fingerprint === prompt.fingerprint) return existing.id;
-
-  const upserted = await prisma.promptTemplate.upsert({
-    where: { name_version: { name: prompt.name, version: prompt.version } },
-    create: {
+  if (existing) {
+    if (existing.fingerprint === prompt.fingerprint) return existing.id;
+    throw new PromptVersionConflictError(
+      prompt.name,
+      prompt.version,
+      existing.fingerprint,
+      prompt.fingerprint,
+    );
+  }
+  const created = await prisma.promptTemplate.create({
+    data: {
       name: prompt.name,
       version: prompt.version,
       body: prompt.body,
       fingerprint: prompt.fingerprint,
     },
-    update: {
-      body: prompt.body,
-      fingerprint: prompt.fingerprint,
-    },
   });
-  return upserted.id;
+  return created.id;
 }
