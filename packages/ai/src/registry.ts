@@ -52,15 +52,15 @@ export async function loadPrompt(name: string, version: string): Promise<LoadedP
 
 export class PromptVersionConflictError extends Error {
   constructor(
-    public name: string,
+    public promptName: string,
     public version: string,
     public dbFingerprint: string,
     public fileFingerprint: string,
   ) {
     super(
-      `Prompt ${name}@${version} content changed without a version bump ` +
+      `Prompt ${promptName}@${version} content changed without a version bump ` +
         `(db=${dbFingerprint.slice(0, 12)}…, file=${fileFingerprint.slice(0, 12)}…). ` +
-        `Bump the version (rename ${name}/${version}.md → ${name}/<next>.md) instead of editing in place.`,
+        `Bump the version (rename ${promptName}/${version}.md → ${promptName}/<next>.md) instead of editing in place.`,
     );
     this.name = "PromptVersionConflictError";
   }
