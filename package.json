@@ -13,7 +13,7 @@
     "db:migrate": "pnpm --filter @zhijiao/db db:migrate",
     "db:seed": "pnpm --filter @zhijiao/db db:seed",
     "db:studio": "pnpm --filter @zhijiao/db db:studio",
-    "setup": "cp .env.example .env.local && docker compose up -d && pnpm install && pnpm db:migrate && pnpm db:seed"
+    "setup": "node -e \"require('fs').copyFileSync('.env.example','.env.local')\" && docker compose up -d && pnpm install && pnpm db:migrate && pnpm db:seed"
   },
   "devDependencies": {
     "turbo": "^2.0.0",
