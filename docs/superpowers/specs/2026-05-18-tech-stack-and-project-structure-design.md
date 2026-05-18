@@ -46,6 +46,7 @@ source: 来自 brainstorming session（C:\Users\17798\.claude\plans\lively-gathe
 - **缓存与队列**：阿里云 Tair (Redis 协议兼容) + BullMQ 作 background jobs
 - **对象存储**：阿里云 OSS；本地开发用 MinIO 模拟
 - **LLM**：通义千问（DashScope）主，DeepSeek 备；OCR 用阿里云通用文字识别
+  - 按 task 配 model 的初稿映射（router 中可调）：`TUTOR_TURN` → `qwen-plus`；`ERROR_DIAGNOSIS` → `qwen-plus`；`VARIANT_L1_GEN` → `qwen-turbo`；`VARIANT_L2_GEN` / `L3_GEN` → `qwen-plus`；`PAPER_GEN` → `qwen-max`；`FORECAST_*` → `qwen-max`；`EMBEDDING` → `text-embedding-v2`
 - **包管理 + monorepo**：pnpm workspaces + Turborepo
 - **类型 + ORM**：TypeScript 全栈 + Prisma
 - **结构化输出校验**：Zod
