@@ -1,11 +1,30 @@
 import { z } from "zod";
 import type { PrismaClient } from "@prisma/client";
 import { ModelCallStatus } from "@prisma/client";
+import { findForbidden } from "@zhijiao/domain";
 import type { ModelAdapter } from "./adapters/types.js";
 import { TASK_MODEL_MAP, type TaskKind } from "./tasks.js";
 import { TutoringInputSchema, TutoringOutputSchema, type TutoringOutput } from "./schemas.js";
 import { loadPrompt, ensurePromptInDb } from "./registry.js";
 import { writeAudit } from "./audit.js";
+
+export class ComplianceRejectedError extends Error {
+  constructor(public hits: readonly string[]) {
+    super(`TUTOR_TURN rejected by compliance filter: ${hits.join(", ")}`);
+    this.name = "ComplianceRejectedError";
+  }
+}
+
+function scanTutoringOutputForForbidden(out: TutoringOutput): string[] {
+  const corpus = [
+    out.restatement,
+    out.finalAnswer,
+    ...out.knowledgePoints,
+    ...out.steps,
+    ...out.pitfalls,
+  ].join("\n");
+  return findForbidden(corpus);
+}
 
 export interface RouterOptions {
   prisma: PrismaClient;
@@ -52,6 +71,22 @@ export class AiRouter {
         const json = JSON.parse(response.content);
         const validated = TutoringOutputSchema.parse(json);
 
+        // 合规 post-filter（spec §3.5）：扫描整段输出，命中黑词则审计 + 抛
+        const hits = scanTutoringOutputForForbidden(validated);
+        if (hits.length > 0) {
+          await writeAudit(this.opts.prisma, {
+            taskKind,
+            promptTemplateId,
+            request,
+            response,
+            latencyMs: Date.now() - start,
+            status: ModelCallStatus.COMPLIANCE_REJECTED,
+            errorMessage: `forbidden phrases: ${hits.join(", ")}`,
+            userId: this.opts.userId ?? null,
+          });
+          throw new ComplianceRejectedError(hits);
+        }
+
         await writeAudit(this.opts.prisma, {
           taskKind,
           promptTemplateId,
@@ -65,6 +100,9 @@ export class AiRouter {
 
         return validated;
       } catch (e) {
+        // 合规拒绝已在 try 中审计；直接抛，不要走 retry / 二次审计
+        if (e instanceof ComplianceRejectedError) throw e;
+
         lastError = e;
         parseAttempts++;
         if (e instanceof z.ZodError || e instanceof SyntaxError) {

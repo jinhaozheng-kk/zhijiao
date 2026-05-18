@@ -160,6 +160,7 @@ enum ModelCallStatus {
   PARSE_FAILED
   ADAPTER_ERROR
   TIMEOUT
+  COMPLIANCE_REJECTED
 }
 
 model PromptTemplate {

@@ -1,4 +1,4 @@
-export { AiRouter, type RouterOptions } from "./router.js";
+export { AiRouter, ComplianceRejectedError, type RouterOptions } from "./router.js";
 export { DashScopeAdapter } from "./adapters/dashscope.js";
 export { MockAdapter } from "./adapters/mock.js";
 export type { ModelAdapter, AdapterRequest, AdapterResponse } from "./adapters/types.js";

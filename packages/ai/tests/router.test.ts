@@ -1,6 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { PrismaClient, ModelCallStatus } from "@prisma/client";
-import { AiRouter, MockAdapter } from "../src/index.js";
+import { AiRouter, ComplianceRejectedError, MockAdapter } from "../src/index.js";
 
 const TEST_DB_URL =
   process.env.DATABASE_URL_TEST ??
@@ -91,6 +91,31 @@ describe("AiRouter.tutor", () => {
   it("validates input via Zod", async () => {
     const router = new AiRouter({ prisma, adapter: new MockAdapter() });
     await expect(router.tutor({ questionStem: "" })).rejects.toThrow();
+  });
+
+  it("rejects output containing forbidden phrases and writes COMPLIANCE_REJECTED audit", async () => {
+    const adapter = new MockAdapter({
+      respondWith: async () => ({
+        content: JSON.stringify({
+          restatement: "ok",
+          knowledgePoints: ["kp"],
+          steps: ["step"],
+          pitfalls: [],
+          finalAnswer: "我们押中原题了。",
+        }),
+        model: "mock-v1",
+      }),
+    });
+    const router = new AiRouter({ prisma, adapter, userId: "dev-student-01" });
+
+    await expect(router.tutor({ questionStem: "x" })).rejects.toBeInstanceOf(
+      ComplianceRejectedError,
+    );
+
+    const calls = await prisma.modelCall.findMany();
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.status).toBe(ModelCallStatus.COMPLIANCE_REJECTED);
+    expect(calls[0]!.errorMessage).toContain("押中原题");
   });
 
   it("writes ADAPTER_ERROR audit when adapter throws a non-parse error", async () => {
