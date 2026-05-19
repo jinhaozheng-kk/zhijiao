@@ -11,6 +11,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@prisma/client": "^5.18.0",
     "@zhijiao/db": "workspace:*",
     "@zhijiao/domain": "workspace:*",
     "ioredis": "^5.4.1",

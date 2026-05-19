@@ -5,3 +5,4 @@ export * from "./ratelimit/types.js";
 export * from "./ratelimit/in-memory-store.js";
 export * from "./ratelimit/redis-store.js";
 export * from "./ratelimit/rules.js";
+export * from "./otp.js";
