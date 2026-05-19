@@ -131,20 +131,28 @@ model AuthIdentity {
 ### 2.3 Session（新）
 
 ```prisma
-model Session {
-  id                String    @id @default(cuid())
-  userId            String    @map("user_id")
-  refreshTokenHash  String    @unique @map("refresh_token_hash")  // SHA-256(refreshToken)
-  deviceLabel       String?   @map("device_label")
-  ipCreated         String?   @map("ip_created")
-  userAgent         String?   @map("user_agent")
-  createdAt         DateTime  @default(now()) @map("created_at")
-  lastUsedAt        DateTime  @default(now()) @map("last_used_at")
-  expiresAt         DateTime  @map("expires_at")                  // createdAt + 30d
-  revokedAt         DateTime? @map("revoked_at")
-  revokedReason     String?   @map("revoked_reason")              // ROTATED / USER_LOGOUT / REUSE_DETECTED / ADMIN_REVOKED
+enum SessionRevokeReason {
+  ROTATED
+  USER_LOGOUT
+  REUSE_DETECTED
+  ADMIN_REVOKED
+  EXPIRED
+}
 
-  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+model Session {
+  id                String                @id @default(cuid())
+  userId            String                @map("user_id")
+  refreshTokenHash  String                @unique @map("refresh_token_hash")  // SHA-256(refreshToken)
+  deviceLabel       String?               @map("device_label")
+  ipCreated         String?               @map("ip_created")
+  userAgent         String?               @map("user_agent")
+  createdAt         DateTime              @default(now()) @map("created_at")
+  lastUsedAt        DateTime              @default(now()) @map("last_used_at")
+  expiresAt         DateTime              @map("expires_at")                  // createdAt + 30d
+  revokedAt         DateTime?             @map("revoked_at")
+  revokedReason     SessionRevokeReason?  @map("revoked_reason")
+
+  user              User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, revokedAt])
   @@index([expiresAt])
@@ -247,9 +255,9 @@ POST /api/trpc/auth.otpVerify           (publicProcedure)
     │ AuthIdentity.findUnique({provider:PHONE, providerScope:"GLOBAL", providerUserId:phone})
     │   ├─ 命中 → 已注册：调 issueSession(userId)；回 {status:"logged_in", user, defaultRoute}
     │   └─ 未命中 → 未注册：
-    │        registerToken = jose.sign({provider:"PHONE", scope:"GLOBAL", providerUserId:phone, purpose:"register"}, REGISTER_SECRET, "10m")
     │        nonce = randomBase64url(16)
-    │        redis SET register:<nonce> {tokenHash, used:false} EX 600
+    │        payload = {provider:"PHONE", providerScope:"GLOBAL", providerUserId:phone}
+    │        redis SET register:<nonce> JSON({payload, used:false}) EX 600
     │        Set-Cookie __Host-zj_register_token = <nonce>   (HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=600)
     │        回 {status:"need_register"}
     ▼
@@ -262,37 +270,48 @@ POST /api/trpc/auth.otpVerify           (publicProcedure)
 [LoginForm "微信登录" tab]
     │ click
     ▼
-GET /auth/wechat/start                  (Node runtime route handler，NOT tRPC)
+GET /auth/wechat/start?mode=login|bind   (Node runtime route handler，NOT tRPC)
+    │ mode = query.mode ?? "login"
+    │ bindUserId = null
+    │ if mode == "bind":
+    │     // route handler 无 tRPC ctx；自行验 access JWT 拿 userId
+    │     accessJwt = cookie["__Host-zj_at"]
+    │     v = verifyAccess(accessJwt)
+    │     if !v.ok → 302 /login?next=/profile  （绑定必须先登录）
+    │     bindUserId = v.claims.userId
     │ state = randomBase64url(16)
-    │ redis SET wx:state:<state> {mode:"login", csrf:<hash>} EX 300
-    │ Set-Cookie __Host-zj_wx_state = <state>       (HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=300)
+    │ redis SET wx:state:<state> JSON({mode, userId:bindUserId}) EX 300
+    │ Set-Cookie __Host-zj_wx_state = <state>      (HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=300)
     │ adapter.buildAuthorizeUrl({state, scope:"snsapi_userinfo"})
     │ 302 → 微信授权页
     ▼
 [微信] 用户同意 → 302 → /auth/wechat/callback?code=XXX&state=YYY
     ▼
 GET /auth/wechat/callback               (Node runtime route handler)
-    │ 校验 cookie state == URL state；否则 WECHAT_STATE_MISMATCH
-    │ redis GETDEL wx:state:<state> → 拿到 {mode, csrf, userId?}；不存在 → WECHAT_STATE_MISMATCH
+    │ 校验 cookie["__Host-zj_wx_state"] == URL state；否则 WECHAT_STATE_MISMATCH
+    │ redis GETDEL wx:state:<state> → 拿到 {mode, userId?}；不存在 → WECHAT_STATE_MISMATCH
     │ adapter.exchangeCodeForUser(code) → {openid, unionid?, nickname?, avatarUrl?}
     │   real: 调微信 access_token + userinfo
     │   mock: 按 code 字符串映射伪 openid（test 用 code="mock-new-user"/"mock-existing"/etc 区分场景）
     │   失败 → WECHAT_CODE_INVALID
     │
     │ if mode == "login":
-    │     AuthIdentity.findUnique({provider:WECHAT_H5, scope:appId, providerUserId:openid})
+    │     AuthIdentity.findUnique({provider:WECHAT_H5, providerScope:appId, providerUserId:openid})
     │       ├─ 命中 → issueSession + 302 → defaultRoute
     │       └─ 未命中 →
     │             若 unionid 命中其他 WECHAT_* 行 → 复用其 userId（unionid 合并）+ 写新 Identity + issueSession + 302
     │             否则 → 走 need_register 同套流程：
-    │                 registerToken = jose.sign({provider:"WECHAT_H5", scope:appId, providerUserId:openid, unionid, profile, purpose:"register"}, REGISTER_SECRET, "10m")
+    │                 nonce = randomBase64url(16)
+    │                 payload = {provider:"WECHAT_H5", providerScope:appId, providerUserId:openid, unionid, profile}
+    │                 redis SET register:<nonce> JSON({payload, used:false}) EX 600
     │                 Set-Cookie __Host-zj_register_token = <nonce>
     │                 302 → /register?from=wechat
     │
-    │ if mode == "bind":  (用户在 profile 页发起绑定)
-    │     AuthIdentity.findUnique 命中且 userId == ctx.userId → 已绑过，302 /profile?bind=noop
-    │     未命中 → AuthIdentity.create({userId:ctx.userId, ...}) + 302 /profile?bind=ok
-    │     命中且 userId != ctx.userId → 302 /profile?bind=conflict（WECHAT_BIND_CONFLICT）
+    │ if mode == "bind":  (用户在 profile 页发起绑定；userId 来自 Redis state，不是 route handler ctx)
+    │     bindUserId = state.userId   // 由 /auth/wechat/start?mode=bind 在 Redis 写入；callback 只读
+    │     AuthIdentity.findUnique 命中且 userId == bindUserId → 已绑过，302 /profile?bind=noop
+    │     未命中 → AuthIdentity.create({userId:bindUserId, ...}) + 302 /profile?bind=ok
+    │     命中且 userId != bindUserId → 302 /profile?bind=conflict（WECHAT_BIND_CONFLICT）
 ```
 
 > **state 安全**：state 仅是一个 UUID；mode/userId 等敏感数据**只存 Redis**，OAuth 回跳中不暴露。GETDEL 保证一次性消费。
@@ -302,21 +321,24 @@ GET /auth/wechat/callback               (Node runtime route handler)
 ```
 [/register]                              (Server Component 渲染)
     │ 从 cookie 读 __Host-zj_register_token nonce
-    │ 调 auth.registerInfo (publicProcedure) 取出 registerToken payload（只读，不消耗）
-    │   → 渲染：provider 显示（手机号 vs 微信）+ persona picker + (gradeLevel 在 persona=STUDENT 时显示)
+    │ 调 auth.registerInfo (publicProcedure) → redis GET register:<nonce> 拿 {payload, used}（只读，不消耗）
+    │   不存在 → REGISTER_TOKEN_MISSING（页面提示并自动跳 /login）
+    │   used:true → REGISTER_TOKEN_MISSING（同上）
+    │   存在 → 渲染：provider 显示（手机号 vs 微信）+ persona picker + (gradeLevel 在 persona=STUDENT 时显示)
     ▼ 用户填表
 POST /api/trpc/auth.register             (publicProcedure)
     │ ratelimit("register:ip:<ip>")  capacity=5 / refill 5/60s                       [fail-open]
     │ 从 cookie 读 nonce → redis GET register:<nonce>
-    │   ├─ 不存在 / used:true → REGISTER_TOKEN_MISSING；清 cookie；客户端跳 /login
-    │   └─ 存在 → 取出 tokenHash，校对 jose 验签
-    │ 验证 token sub 一致 → 不一致 → REGISTER_TOKEN_EXPIRED；清 cookie
+    │   ├─ 不存在 → REGISTER_TOKEN_MISSING；清 cookie（服务端 Set-Cookie Max-Age=0）
+    │   ├─ used:true → REGISTER_TOKEN_MISSING；清 cookie
+    │   └─ 存在 → 取出 payload
     │
     │ 事务：
     │   1. create User{persona, gradeLevel?, isMinor:derive(persona, gradeLevel), name?}
-    │   2. create AuthIdentity{userId, provider, providerScope, providerUserId, unionId?, metadata?}
+    │   2. create AuthIdentity{userId, provider:payload.provider, providerScope:payload.providerScope,
+    │                          providerUserId:payload.providerUserId, unionId:payload.unionid?, metadata:payload.profile?}
     │   3. issueSession(userId, deviceMeta) → 写 Session 行 + 拿 access/refresh
-    │   4. redis SET register:<nonce> {used:true} EX 60  （短期保留防 race）
+    │   4. redis SET register:<nonce> JSON({payload, used:true}) EX 60  （短期保留防 race）
     │
     │ Set-Cookie 清 __Host-zj_register_token；写 __Host-zj_at + zj_rt
     │ 回 {user, defaultRoute: byPersona(persona)}
@@ -447,7 +469,21 @@ export async function createContext({ req, resHeaders }: FetchCreateContextFnOpt
 
 ```ts
 // apps/web/server/trpc.ts
-const t = initTRPC.context<Ctx>().create({ transformer: superjson });
+// 关键：errorFormatter 把 TRPCError.cause.reason 写到 shape.data.reason
+//       —— 否则客户端 §4.4 拿不到 reason，refresh-on-401 判断会失效。
+const t = initTRPC.context<Ctx>().create({
+  transformer: superjson,
+  errorFormatter({ shape, error }) {
+    const cause = error.cause as { reason?: string } | undefined;
+    return {
+      ...shape,
+      data: {
+        ...shape.data,
+        reason: cause?.reason ?? null,
+      },
+    };
+  },
+});
 
 export const publicProcedure = t.procedure;
 
@@ -456,7 +492,7 @@ export const authedProcedure = t.procedure.use(({ ctx, next }) => {
     throw new TRPCError({
       code: "UNAUTHORIZED",
       message: "请先登录",
-      cause: { reason: ctx.authError ?? "NO_SESSION" },  // 序列化到 error.data.reason
+      cause: { reason: ctx.authError ?? "NO_SESSION" },  // → 经 errorFormatter → error.data.reason
     });
   }
   return next({ ctx: { ...ctx, auth: ctx.auth } });
@@ -505,7 +541,8 @@ appRouter = router({
 // apps/web/lib/trpc-client.ts （httpBatchLink 之上加一层 errorRetryLink）
 // 仅满足 error.data?.code === "UNAUTHORIZED" && error.data?.reason === "ACCESS_EXPIRED" 才尝试
 // op.context.refreshAttempted 标记防止递归；最多重试 1 次
-// SESSION_REVOKED / REUSE_DETECTED / NO_SESSION / ACCESS_INVALID → 不重试，全清 cookies + redirect /login
+// SESSION_REVOKED / REUSE_DETECTED / ACCESS_INVALID → 不重试，调 POST /api/auth/logout 让服务端清 __Host-zj_at + zj_rt（Set-Cookie Max-Age=0），再 redirect /login
+// NO_SESSION → 不重试，直接 redirect /login（本来就没 cookie 可清）
 ```
 
 ---
@@ -550,7 +587,7 @@ export async function take(rule: RateLimitRule, keySuffix: string): Promise<{all
 | reason | code | 用户面文案 | 客户端动作 |
 |---|---|---|---|
 | ACCESS_EXPIRED | UNAUTHORIZED | （静默） | 调 `/api/auth/refresh` 一次，重放原请求；失败 → /login |
-| ACCESS_INVALID | UNAUTHORIZED | "登录状态已失效，请重新登录" | 全清 cookies + redirect /login |
+| ACCESS_INVALID | UNAUTHORIZED | "登录状态已失效，请重新登录" | 调 POST /api/auth/logout 让服务端 Set-Cookie Max-Age=0 清 __Host-zj_at + zj_rt + redirect /login |
 | NO_SESSION | UNAUTHORIZED | "请先登录" | redirect /login?next=... |
 | SESSION_REVOKED | UNAUTHORIZED | "登录已被吊销" | 同 ACCESS_INVALID |
 | REUSE_DETECTED | UNAUTHORIZED | "检测到异常登录，所有设备已被退出，请重新登录" | 同 ACCESS_INVALID |
@@ -564,8 +601,7 @@ export async function take(rule: RateLimitRule, keySuffix: string): Promise<{all
 | WECHAT_STATE_MISMATCH | BAD_REQUEST | "登录链路异常，请重试" | redirect /login |
 | WECHAT_CODE_INVALID | BAD_REQUEST | "微信授权失败" | redirect /login |
 | WECHAT_BIND_CONFLICT | CONFLICT | "该微信已绑定其他账号" | profile 页 toast |
-| REGISTER_TOKEN_MISSING | BAD_REQUEST | "注册链路已过期，请重新登录" | redirect /login |
-| REGISTER_TOKEN_EXPIRED | BAD_REQUEST | 同上 | 同上 |
+| REGISTER_TOKEN_MISSING | BAD_REQUEST | "注册链路已过期，请重新登录" | 服务端响应里 Set-Cookie 清 __Host-zj_register_token；客户端 redirect /login |
 | REGISTER_TOO_FREQUENT | TOO_MANY_REQUESTS | "请稍后再试" | toast |
 | INSUFFICIENT_CREDITS | FORBIDDEN | （Plan 3 才落） | — |
 
@@ -637,10 +673,10 @@ export async function take(rule: RateLimitRule, keySuffix: string): Promise<{all
 
 2. **`.env.example` 新增**：
    ```
-   ACCESS_JWT_SECRET=
-   REFRESH_NONCE_SECRET=      # 用于 register nonce 与其它短期签名
-   OTP_PEPPER=                 # codeHash 的 pepper
+   ACCESS_JWT_SECRET=          # access JWT 签名（HS256）
+   OTP_PEPPER=                 # OtpRequest.codeHash 的 pepper
    REDIS_URL=redis://localhost:6379
+   # 注：registerToken / wx state 不再用签名密钥 —— nonce 存 Redis 作 source of truth
 
    ALIYUN_SMS_ACCESS_KEY_ID=
    ALIYUN_SMS_ACCESS_KEY_SECRET=
@@ -684,7 +720,12 @@ export async function take(rule: RateLimitRule, keySuffix: string): Promise<{all
 9. §3.6 refresh 查询不带 `revokedAt IS NULL`，改先查后分支
 10. wechatStart 改 GET route handler，不走 tRPC
 11. `__Host-` 前缀 cookies 显式标注 `Secure + Path=/ + 无 Domain`
-12. bindMode state 不明文编码 userId，改 Redis 存 `{mode,userId,csrf}` + UUID GETDEL
+12. bindMode state 不明文编码 userId，改 Redis 存 `{mode, userId?}` + UUID GETDEL；cookie 值 == state（== URL state）作 CSRF 校验
 13. tRPC 错误 code 必须用原生支持值（移除 `SERVICE_UNAVAILABLE` / `PAYMENT_REQUIRED`）
 14. registerToken cookie 仅在成功 / token 无效时清，不因表单错误清
 15. OTP E2E 只通过 `TestSmsAdapter` 读明文 code，不提 codeHash 反推
+16. registerToken 不用 JWS，nonce 在 cookie、payload 在 Redis；Redis 为 source of truth（hash 不可逆原问题消失）
+17. `initTRPC.create({ errorFormatter })` 显式把 `cause.reason` 写入 `shape.data.reason`，否则客户端拿不到
+18. WeChat bind callback 是 route handler，无 tRPC ctx；userId 必须由 `/auth/wechat/start?mode=bind` 验 access JWT 后写入 Redis state，callback 只从 Redis 读
+19. "全清 cookies"在 HttpOnly 下不准确；改由服务端 `/api/auth/logout` 用 Set-Cookie Max-Age=0 清
+20. `Session.revokedReason` 改为 Prisma enum `SessionRevokeReason`
