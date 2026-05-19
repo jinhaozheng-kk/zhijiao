@@ -3,3 +3,7 @@ export * from "./sms/mock.js";
 export * from "./sms/test.js";
 export * from "./sms/aliyun.js";
 export * from "./sms/build.js";
+export * from "./wechat/h5-oauth/types.js";
+export * from "./wechat/h5-oauth/mock.js";
+export * from "./wechat/h5-oauth/real.js";
+export * from "./wechat/h5-oauth/build.js";
