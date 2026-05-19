@@ -16,14 +16,14 @@ CREATE TYPE "OtpPurpose" AS ENUM ('LOGIN', 'BIND_PHONE');
 -- new OPS/ADMIN-only Role enum. Task 2 (seed rewrite) will repopulate OPS/ADMIN rows.
 TRUNCATE TABLE "user_roles";
 
--- Step 3: Reshape Role enum (drop STUDENT/TEACHER/PARENT, keep OPS/ADMIN only)
-BEGIN;
+-- Step 3: Reshape Role enum (drop STUDENT/TEACHER/PARENT, keep OPS/ADMIN only).
+-- Prisma already wraps each migration file in a single transaction; do NOT add
+-- a nested BEGIN/COMMIT here (would commit the outer txn prematurely on Postgres).
 CREATE TYPE "Role_new" AS ENUM ('OPS', 'ADMIN');
 ALTER TABLE "user_roles" ALTER COLUMN "role" TYPE "Role_new" USING ("role"::text::"Role_new");
 ALTER TYPE "Role" RENAME TO "Role_old";
 ALTER TYPE "Role_new" RENAME TO "Role";
 DROP TYPE "Role_old";
-COMMIT;
 
 -- Step 4: Add new columns to users (persona/grade_level/is_minor) before creating
 -- auth_identities so the table is ready for the FK relationship
