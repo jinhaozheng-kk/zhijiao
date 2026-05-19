@@ -10,11 +10,11 @@ import {
   RateLimitBackendDownError,
 } from "@zhijiao/auth";
 import { buildSmsAdapter } from "@zhijiao/integrations";
-import { router, publicProcedure } from "../trpc.js";
+import { router, publicProcedure, authedProcedure } from "../trpc.js";
 import { appendSetCookie } from "../cookie-utils.js";
 import { issueSessionAndCookies, findUserByPhone } from "../auth-service.js";
 import { deriveIsMinor, type Persona } from "@zhijiao/domain";
-import { Prisma } from "@prisma/client";
+import { Prisma, SessionRevokeReason } from "@prisma/client";
 
 const PhoneSchema = z.string().regex(/^1\d{10}$/, "手机号格式不正确（11 位以 1 开头）");
 
@@ -161,5 +161,34 @@ export const authRouter = router({
         }
         throw e;
       }
+    }),
+
+  me: authedProcedure.query(async ({ ctx }) => {
+    const user = await ctx.db.user.findUniqueOrThrow({
+      where: { id: ctx.auth.userId }, include: { roles: true },
+    });
+    const sessions = await ctx.db.session.findMany({
+      where: { userId: user.id, revokedAt: null },
+      select: { id: true, deviceLabel: true, ipCreated: true, userAgent: true, createdAt: true, lastUsedAt: true, expiresAt: true },
+      orderBy: { lastUsedAt: "desc" },
+    });
+    return {
+      user: { id: user.id, name: user.name, persona: user.persona, gradeLevel: user.gradeLevel, isMinor: user.isMinor, roles: user.roles.map(r => r.role) },
+      sessions,
+    };
+  }),
+
+  revokeSession: authedProcedure
+    .input(z.object({ sessionId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const sess = await ctx.db.session.findUnique({ where: { id: input.sessionId } });
+      if (!sess || sess.userId !== ctx.auth.userId) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "not yours", cause: { reason: "PERMISSION_DENIED" } });
+      }
+      await ctx.db.session.update({
+        where: { id: input.sessionId },
+        data: { revokedAt: new Date(), revokedReason: SessionRevokeReason.ADMIN_REVOKED },
+      });
+      return { ok: true as const };
     }),
 });
