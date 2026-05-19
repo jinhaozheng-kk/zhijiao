@@ -16,25 +16,49 @@ datasource db {
 // === Identity ===
 
 enum Role {
-  STUDENT
-  TEACHER
-  PARENT
   OPS
   ADMIN
 }
 
-model User {
-  id              String     @id @default(cuid())
-  phone           String?    @unique
-  wechatOpenid    String?    @unique @map("wechat_openid")
-  wechatUnionid   String?    @map("wechat_unionid")
-  email           String?    @unique
-  name            String?
-  avatarUrl       String?    @map("avatar_url")
-  createdAt       DateTime   @default(now()) @map("created_at")
-  updatedAt       DateTime   @updatedAt @map("updated_at")
+enum Persona {
+  STUDENT
+  TEACHER
+  PARENT
+}
 
-  roles           UserRole[]
+enum AuthProvider {
+  PHONE
+  WECHAT_H5
+  WECHAT_OPEN
+  WECHAT_MINIAPP
+}
+
+enum SessionRevokeReason {
+  ROTATED
+  USER_LOGOUT
+  REUSE_DETECTED
+  ADMIN_REVOKED
+  EXPIRED
+}
+
+enum OtpPurpose {
+  LOGIN
+  BIND_PHONE
+}
+
+model User {
+  id          String      @id @default(cuid())
+  name        String?
+  avatarUrl   String?     @map("avatar_url")
+  persona     Persona     @default(STUDENT)
+  gradeLevel  GradeLevel? @map("grade_level")
+  isMinor     Boolean     @default(true) @map("is_minor")
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt      @map("updated_at")
+
+  roles       UserRole[]
+  identities  AuthIdentity[]
+  sessions    Session[]
 
   @@map("users")
 }
@@ -48,6 +72,63 @@ model UserRole {
 
   @@id([userId, role])
   @@map("user_roles")
+}
+
+model AuthIdentity {
+  id              String       @id @default(cuid())
+  userId          String       @map("user_id")
+  provider        AuthProvider
+  providerScope   String       @map("provider_scope")
+  providerUserId  String       @map("provider_user_id")
+  unionId         String?      @map("union_id")
+  metadata        Json?
+  createdAt       DateTime     @default(now()) @map("created_at")
+  lastUsedAt      DateTime?    @map("last_used_at")
+
+  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerScope, providerUserId], name: "uniq_identity")
+  @@index([provider, unionId])
+  @@index([userId])
+  @@map("auth_identities")
+}
+
+model Session {
+  id                String                @id @default(cuid())
+  userId            String                @map("user_id")
+  refreshTokenHash  String                @unique @map("refresh_token_hash")
+  deviceLabel       String?               @map("device_label")
+  ipCreated         String?               @map("ip_created")
+  userAgent         String?               @map("user_agent")
+  createdAt         DateTime              @default(now()) @map("created_at")
+  lastUsedAt        DateTime              @default(now()) @map("last_used_at")
+  expiresAt         DateTime              @map("expires_at")
+  revokedAt         DateTime?             @map("revoked_at")
+  revokedReason     SessionRevokeReason?  @map("revoked_reason")
+
+  user              User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+model OtpRequest {
+  id          String     @id @default(cuid())
+  phone       String
+  purpose     OtpPurpose
+  codeHash    String     @map("code_hash")
+  attempts    Int        @default(0)
+  ipCreated   String?    @map("ip_created")
+  userAgent   String?    @map("user_agent")
+  createdAt   DateTime   @default(now()) @map("created_at")
+  expiresAt   DateTime   @map("expires_at")
+  consumedAt  DateTime?  @map("consumed_at")
+  expiredAt   DateTime?  @map("expired_at")
+
+  @@index([phone, createdAt])
+  @@index([expiresAt])
+  @@map("otp_requests")
 }
 
 // === Curriculum ===
