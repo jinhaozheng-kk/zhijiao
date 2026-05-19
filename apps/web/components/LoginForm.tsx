@@ -29,7 +29,7 @@ export function LoginForm() {
       </button>
       {send.error && <p className="text-red-600 text-sm" data-testid="login-error">{send.error.message}</p>}
       <div className="text-center text-sm text-slate-500">
-        <a href="/auth/wechat/start" data-testid="login-wechat">使用微信登录</a>
+        <a href="/wechat/start" data-testid="login-wechat">使用微信登录</a>
       </div>
     </div>
   );

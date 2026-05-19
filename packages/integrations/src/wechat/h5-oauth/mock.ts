@@ -14,7 +14,7 @@ export class MockWechatH5Adapter implements WechatH5Adapter {
   buildAuthorizeUrl(opts: { state: string; scope: "snsapi_base" | "snsapi_userinfo" }): string {
     // 测试时浏览器跳本地回调即可；E2E 用 Playwright route 拦截真跳转。
     const code = `mock-new-${Date.now()}`;
-    return `/auth/wechat/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(opts.state)}`;
+    return `/wechat/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(opts.state)}`;
   }
 
   async exchangeCodeForUser(code: string): Promise<WechatH5UserInfo> {

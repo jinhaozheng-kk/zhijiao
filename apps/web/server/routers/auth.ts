@@ -50,6 +50,11 @@ export const authRouter = router({
       const { code } = await issueOtp(ctx.db, { phone: input.phone, purpose: "LOGIN", pepper: process.env.OTP_PEPPER ?? "", ipCreated: ctx.ip, userAgent: ctx.ua });
       const sms = buildSmsAdapter(process.env);
       await sms.send(input.phone, code);
+      // In E2E test mode, stash the code in Redis so /api/e2e-hooks/last-otp can retrieve it
+      // across webpack bundle boundaries (each Next.js route is an isolated bundle).
+      if (process.env.E2E_TEST_HOOKS === "1") {
+        await ctx.redis.set(`e2e:last-otp:${input.phone}`, code, "EX", 300);
+      }
       return { ok: true as const };
     }),
 
