@@ -39,3 +39,5 @@ export enum GradeLevel {
   G11 = "G11",
   G12 = "G12",
 }
+
+export { seedTestUsers } from "../prisma/seed/1_test_users.js";

@@ -23,6 +23,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@prisma/client':
+        specifier: ^5.18.0
+        version: 5.22.0(prisma@5.22.0)
       '@tanstack/react-query':
         specifier: ^5.51.0
         version: 5.100.11(react@18.3.1)
@@ -102,6 +105,9 @@ importers:
       typescript:
         specifier: ^5.4.0
         version: 5.9.3
+      vitest:
+        specifier: ^1.6.0
+        version: 1.6.1(@types/node@20.19.41)
 
   packages/ai:
     dependencies:
