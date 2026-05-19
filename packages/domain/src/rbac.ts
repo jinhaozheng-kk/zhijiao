@@ -1,12 +1,11 @@
-export type Role = "STUDENT" | "TEACHER" | "PARENT" | "OPS" | "ADMIN";
+export type Role = "OPS" | "ADMIN";
 
 export type Permission =
-  | "STUDENT_ASK"
-  | "STUDENT_VIEW_OWN_ERRORS"
-  | "STUDENT_VIEW_OWN_PROFILE"
-  | "TEACHER_GEN_PAPER"
-  | "TEACHER_EXPORT_PAPER"
-  | "PARENT_VIEW_CHILD"
+  | "TUTOR_ASK"
+  | "PAPER_GEN"
+  | "LESSON_PLAN_GEN"
+  | "PPT_GEN"
+  | "ERROR_BOOK_VIEW_OWN"
   | "OPS_PUBLISH_FORECAST"
   | "OPS_CURATE_CONTENT"
   | "OPS_ADJUST_CREDIT"
@@ -14,23 +13,22 @@ export type Permission =
   | "ADMIN_MANAGE_MODELS"
   | "ADMIN_VIEW_AUDIT";
 
-const OPS_PERMS: Permission[] = ["OPS_PUBLISH_FORECAST", "OPS_CURATE_CONTENT", "OPS_ADJUST_CREDIT"];
-
-const ADMIN_PERMS: Permission[] = [
-  ...OPS_PERMS,
-  "ADMIN_MANAGE_USERS",
-  "ADMIN_MANAGE_MODELS",
-  "ADMIN_VIEW_AUDIT",
+export const DEFAULT_LOGGED_IN_PERMS: Permission[] = [
+  "TUTOR_ASK",
+  "PAPER_GEN",
+  "LESSON_PLAN_GEN",
+  "PPT_GEN",
+  "ERROR_BOOK_VIEW_OWN",
 ];
 
+const OPS_PERMS: Permission[] = ["OPS_PUBLISH_FORECAST", "OPS_CURATE_CONTENT", "OPS_ADJUST_CREDIT"];
+
 export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
-  STUDENT: ["STUDENT_ASK", "STUDENT_VIEW_OWN_ERRORS", "STUDENT_VIEW_OWN_PROFILE"],
-  TEACHER: ["TEACHER_GEN_PAPER", "TEACHER_EXPORT_PAPER"],
-  PARENT:  ["PARENT_VIEW_CHILD"],
-  OPS:     OPS_PERMS,
-  ADMIN:   ADMIN_PERMS,
+  OPS: OPS_PERMS,
+  ADMIN: [...OPS_PERMS, "ADMIN_MANAGE_USERS", "ADMIN_MANAGE_MODELS", "ADMIN_VIEW_AUDIT"],
 };
 
 export function hasPermission(roles: Role[], perm: Permission): boolean {
-  return roles.some((r) => ROLE_PERMISSIONS[r].includes(perm));
+  if (DEFAULT_LOGGED_IN_PERMS.includes(perm)) return true;
+  return roles.some((r) => ROLE_PERMISSIONS[r]?.includes(perm));
 }

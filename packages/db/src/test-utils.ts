@@ -8,6 +8,9 @@ export const testPrisma = new PrismaClient({
   datasources: { db: { url: TEST_DATABASE_URL } },
 });
 
+// Alias so consumers can `import { prisma, resetDb } from "@zhijiao/db/test-utils"`
+export const prisma = testPrisma;
+
 // 截断所有表（保留 schema），按依赖反向顺序
 export async function resetDb() {
   const tables = [
@@ -18,6 +21,9 @@ export async function resetDb() {
     "questions",
     "knowledge_points",
     "subjects",
+    "otp_requests",
+    "sessions",
+    "auth_identities",
     "user_roles",
     "users",
   ];

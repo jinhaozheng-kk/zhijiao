@@ -78,7 +78,17 @@
 
 ## 开始实现时（已落地）
 
-技术栈与项目结构详见 `docs/superpowers/specs/2026-05-18-tech-stack-and-project-structure-design.md` §1.2。本仓库已完成 Plan 1（仓库脚手架 + Identity/Curriculum/Question Bank/AI Audit schemas + TUTOR_TURN 端到端）—— 见 `docs/superpowers/plans/2026-05-18-foundation-and-tutor-turn.md`。
+技术栈与项目结构详见 `docs/superpowers/specs/2026-05-18-tech-stack-and-project-structure-design.md` §1.2。
+本仓库已完成：
+- **Plan 1**（仓库脚手架 + Identity/Curriculum/Question Bank/AI Audit schemas + TUTOR_TURN 端到端）—— 见 `docs/superpowers/plans/2026-05-18-foundation-and-tutor-turn.md`
+- **Plan 2**（真鉴权：手机号 OTP + 微信 H5 OAuth 骨架 + Session/JWT + tRPC）—— 见 `docs/superpowers/plans/2026-05-19-real-auth.md`，spec 在 `docs/superpowers/specs/2026-05-19-real-auth-design.md`
+
+**鉴权现状**：
+- 自建 JWT（jose HS256）+ Prisma `Session` 表（含 rotate + reuse detection）+ Redis（限频 / OTP nonce / register payload / wx state）
+- 手机号 OTP：阿里云 SMS 真接代码留好，开发态 `SMS_USE_MOCK=true` 走 console；E2E 走 Redis 内的 `e2e-hooks/last-otp` test endpoint
+- 微信 H5 OAuth：完整路由 + adapter 接口；`MockWechatH5Adapter` 默认，真接公众号留下个 plan
+- `Role` 仅 `OPS / ADMIN`；`Persona`（STUDENT/TEACHER/PARENT）是 onboarding 默认入口，不再是权限门槛；`PAPER_GEN / LESSON_PLAN_GEN / PPT_GEN / TUTOR_ASK / ERROR_BOOK_VIEW_OWN` 对所有登录用户开放
+- tRPC v11 全量落地；`apps/web/app/(student)/tutor/actions.ts` 已删除，改走 `tutor.ask` procedure；`DEV_USER_ID` 已下线
 
 **常用命令**：
 
@@ -94,10 +104,11 @@ pnpm db:studio          # Prisma Studio 浏览数据
 
 # 单条测试：
 pnpm --filter @zhijiao/ai test -- tests/router.test.ts
-pnpm --filter @zhijiao/domain test -- tests/rbac.test.ts
+pnpm --filter @zhijiao/auth test -- tests/session.test.ts
+pnpm --filter @zhijiao/web  test -- tests/integration/auth-register-race.test.ts
 ```
 
 **下一步候选 Plan**：
-- Plan 2: 真鉴权（手机号 OTP + 微信 H5 OAuth + Session + JWT + tRPC 落地）
-- Plan 3: Credit 计费体系 + 微信支付沙箱
+- Plan 3: Credit 计费体系 + 微信支付沙箱（替换 `creditPlaceholder` 占位中间件）
 - Plan 4: 举一反三 + 错因分析（VariantGroup + ErrorBookEntry + 三阶变式生成）
+- Plan 5: 真接阿里云 SMS + 微信公众号（ICP 备案通过后；替换 `RealSmsAdapter` / `RealWechatH5Adapter` 的 stub 实现）

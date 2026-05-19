@@ -66,6 +66,16 @@ export default async function globalSetup(): Promise<void> {
       ...process.env,
       AI_USE_MOCK: "true",
       DATABASE_URL: TEST_DB_URL,
+      // NODE_ENV=test is intentionally omitted: next start refuses to run when NODE_ENV=test.
+      // E2E_TEST_HOOKS=1 alone is sufficient to unlock /api/__test__/last-otp and route SMS
+      // to sharedTestSmsAdapter inside the spawned server process.
+      E2E_TEST_HOOKS: "1",
+      SMS_USE_MOCK: "true",
+      WECHAT_OAUTH_USE_MOCK: "true",
+      ACCESS_JWT_SECRET: "e2e-test-secret-at-least-32-bytes-long",
+      OTP_PEPPER: "e2e-pepper",
+      WECHAT_H5_APPID: "wx-mock-app",
+      REDIS_URL: process.env.REDIS_URL ?? "redis://localhost:6379",
     },
     stdio: "inherit",
     shell: true,
