@@ -5,14 +5,27 @@ import {
   AuthError, issueOtp, verifyOtp,
   takeRule, RedisRateLimitStore, RULE_OTP_SEND_PHONE, RULE_OTP_SEND_IP, RULE_OTP_VERIFY_PH,
   putRegisterPayload, buildRegisterCookie,
+  peekRegisterPayload, markRegisterUsed, abortRegister,
+  COOKIE_REGISTER, clearCookie,
   RateLimitBackendDownError,
 } from "@zhijiao/auth";
 import { buildSmsAdapter } from "@zhijiao/integrations";
 import { router, publicProcedure } from "../trpc.js";
 import { appendSetCookie } from "../cookie-utils.js";
 import { issueSessionAndCookies, findUserByPhone } from "../auth-service.js";
+import { deriveIsMinor, type Persona } from "@zhijiao/domain";
+import { Prisma } from "@prisma/client";
 
 const PhoneSchema = z.string().regex(/^1\d{10}$/, "手机号格式不正确（11 位以 1 开头）");
+
+const RegisterInput = z.object({
+  persona: z.enum(["STUDENT", "TEACHER", "PARENT"]),
+  gradeLevel: z.enum(["G5","G6","G7","G8","G9","G10","G11","G12"]).optional().nullable(),
+  name: z.string().min(1).max(40).optional(),
+});
+
+const isPrismaUnique = (e: unknown): boolean =>
+  e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002";
 
 function ratelimitStore(redis: import("ioredis").default) { return new RedisRateLimitStore(redis); }
 
@@ -73,5 +86,80 @@ export const authRouter = router({
       });
       appendSetCookie(ctx.resHeaders, buildRegisterCookie(nonce));
       return { status: "need_register" as const };
+    }),
+
+  registerInfo: publicProcedure.query(async ({ ctx }) => {
+    const nonce = ctx.cookies[COOKIE_REGISTER];
+    if (!nonce) {
+      throw new TRPCError({ code: "BAD_REQUEST", message: "REGISTER_TOKEN_MISSING", cause: { reason: "REGISTER_TOKEN_MISSING" } });
+    }
+    try {
+      const payload = await peekRegisterPayload(ctx.redis, nonce);
+      return { provider: payload.provider, providerScope: payload.providerScope, suggestedName: payload.profile?.nickname ?? null };
+    } catch {
+      // 清前端 cookie，避免反复重试
+      appendSetCookie(ctx.resHeaders, clearCookie(COOKIE_REGISTER, "/"));
+      throw new TRPCError({ code: "BAD_REQUEST", message: "REGISTER_TOKEN_MISSING", cause: { reason: "REGISTER_TOKEN_MISSING" } });
+    }
+  }),
+
+  register: publicProcedure
+    .input(RegisterInput)
+    .mutation(async ({ ctx, input }) => {
+      const nonce = ctx.cookies[COOKIE_REGISTER];
+      if (!nonce) toTRPCError("REGISTER_TOKEN_MISSING", "BAD_REQUEST");
+
+      let payload;
+      try {
+        payload = await peekRegisterPayload(ctx.redis, nonce);
+      } catch {
+        appendSetCookie(ctx.resHeaders, clearCookie(COOKIE_REGISTER, "/"));
+        toTRPCError("REGISTER_TOKEN_MISSING", "BAD_REQUEST");
+      }
+
+      if (input.persona === "STUDENT" && !input.gradeLevel) {
+        // 表单错误 —— 不清 cookie，让用户改完再交（spec §3.3）
+        toTRPCError("REGISTER_GRADE_REQUIRED", "BAD_REQUEST");
+      }
+
+      const isMinor = deriveIsMinor(input.persona as Persona, input.gradeLevel ?? null);
+
+      try {
+        const userId = await ctx.db.$transaction(async (tx) => {
+          const u = await tx.user.create({
+            data: {
+              persona: input.persona,
+              gradeLevel: input.gradeLevel ?? undefined,
+              isMinor,
+              name: input.name ?? payload!.profile?.nickname ?? null,
+              identities: {
+                create: [{
+                  provider: payload!.provider,
+                  providerScope: payload!.providerScope,
+                  providerUserId: payload!.providerUserId,
+                  unionId: payload!.unionId,
+                  metadata: payload!.profile as object | undefined,
+                }],
+              },
+            },
+          });
+          return u.id;
+        });
+
+        await markRegisterUsed(ctx.redis, nonce, payload!);
+        appendSetCookie(ctx.resHeaders, clearCookie(COOKIE_REGISTER, "/"));
+        const { user, defaultRoute } = await issueSessionAndCookies({
+          prisma: ctx.db, userId, resHeaders: ctx.resHeaders, ip: ctx.ip, ua: ctx.ua,
+        });
+        return { user, defaultRoute };
+      } catch (e) {
+        if (isPrismaUnique(e)) {
+          // 并发/双击：identity 已被另一个并发请求建出来
+          await abortRegister(ctx.redis, nonce, payload!);
+          appendSetCookie(ctx.resHeaders, clearCookie(COOKIE_REGISTER, "/"));
+          toTRPCError("REGISTER_CONFLICT", "CONFLICT");
+        }
+        throw e;
+      }
     }),
 });
