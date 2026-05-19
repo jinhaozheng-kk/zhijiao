@@ -9,8 +9,6 @@ function buildAdapter(): ModelAdapter {
   return new DashScopeAdapter();
 }
 
-export function getAiRouter(userId: string | null) {
+export function getAiRouter(userId: string) {
   return new AiRouter({ prisma, adapter: buildAdapter(), userId });
 }
-
-export const DEV_USER_ID = process.env.DEV_USER_ID ?? "dev-student-01";
