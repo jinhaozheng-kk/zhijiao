@@ -2,10 +2,11 @@ import { describe, it, expect } from "vitest";
 import { MockWechatH5Adapter } from "../src/wechat/h5-oauth/mock.js";
 
 describe("MockWechatH5Adapter", () => {
-  it("buildAuthorizeUrl 含 state、指向 /auth/wechat/callback", () => {
+  it("buildAuthorizeUrl 含 state、指向 /wechat/callback", () => {
     const a = new MockWechatH5Adapter();
     const url = a.buildAuthorizeUrl({ state: "s1", scope: "snsapi_userinfo" });
-    expect(url).toContain("/auth/wechat/callback");
+    // Next 路由组 (auth) 在 URL 中不出现 → 实际路径是 /wechat/callback
+    expect(url).toContain("/wechat/callback");
     expect(url).toContain("state=s1");
   });
   it("exchangeCodeForUser 按 code 前缀分支", async () => {
