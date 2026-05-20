@@ -14,6 +14,7 @@
 // we are adding.
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import Redis from "ioredis";
+import { SignJWT } from "jose";
 import { resetDb, prisma } from "@zhijiao/db/test-utils";
 import { Persona, SessionRevokeReason } from "@prisma/client";
 import {
@@ -123,5 +124,33 @@ describe("session revocation (Task 5 — DB-truth)", () => {
     const ctx = await ctxFor(reqWithAccessCookie("garbage.jwt.value"));
     expect(ctx.auth).toBeNull();
     expect(ctx.authError).toBe("ACCESS_INVALID");
+  });
+
+  // Regression guard for Task 5: the DB session check MUST run only after
+  // verifyAccess succeeds. If someone later restructured createContext to do
+  // the DB lookup based on the decoded payload regardless of signature/exp
+  // validity, an expired JWT pointing at a still-active session would be
+  // reported as authenticated, OR a valid-payload-but-expired JWT pointing at
+  // a revoked session would be relabelled SESSION_REVOKED instead of
+  // ACCESS_EXPIRED — both leak server-side state and confuse the client
+  // (ACCESS_EXPIRED → /api/auth/refresh; SESSION_REVOKED → clear cookies +
+  // surface error). Sign a JWT with a past `exp` against a still-active
+  // session row and assert the reason stays ACCESS_EXPIRED.
+  it("过期 JWT → ACCESS_EXPIRED（session 仍活跃；DB 检查只在 verify 成功后做）", async () => {
+    const { user, sessionId } = await seedUserWithSession();
+    const claims: AccessClaims = {
+      userId: user.id, sessionId, persona: Persona.STUDENT, roles: [],
+    };
+    const nowSec = Math.floor(Date.now() / 1000);
+    const expired = await new SignJWT({ ...claims })
+      .setProtectedHeader({ alg: "HS256" })
+      .setIssuedAt(nowSec - 7200)
+      .setExpirationTime(nowSec - 1)
+      .setSubject(user.id)
+      .sign(new TextEncoder().encode(process.env.ACCESS_JWT_SECRET!));
+
+    const ctx = await ctxFor(reqWithAccessCookie(expired));
+    expect(ctx.auth).toBeNull();
+    expect(ctx.authError).toBe("ACCESS_EXPIRED");
   });
 });
