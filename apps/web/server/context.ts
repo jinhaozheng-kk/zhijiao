@@ -3,6 +3,7 @@ import type { FetchCreateContextFnOptions } from "@trpc/server/adapters/fetch";
 import { prisma } from "@zhijiao/db";
 import { redis } from "../lib/redis.js";
 import { verifyAccess, type AccessClaims, COOKIE_AT } from "@zhijiao/auth";
+import { env } from "./env.js";
 
 export type AuthError = "ACCESS_EXPIRED" | "ACCESS_INVALID" | "NO_SESSION";
 
@@ -37,7 +38,7 @@ export async function createContext({ req, resHeaders }: FetchCreateContextFnOpt
   let authError: AuthError | null = null;
   if (!at) authError = "NO_SESSION";
   else {
-    const v = await verifyAccess(at, process.env.ACCESS_JWT_SECRET ?? "");
+    const v = await verifyAccess(at, env.ACCESS_JWT_SECRET);
     if (v.ok) auth = v.claims; else authError = v.reason;
   }
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";

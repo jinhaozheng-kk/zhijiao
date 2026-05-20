@@ -15,6 +15,7 @@ import { appendSetCookie } from "../cookie-utils.js";
 import { issueSessionAndCookies, findUserByPhone } from "../auth-service.js";
 import { deriveIsMinor, type Persona } from "@zhijiao/domain";
 import { Prisma, SessionRevokeReason } from "@prisma/client";
+import { env } from "../env.js";
 
 const PhoneSchema = z.string().regex(/^1\d{10}$/, "手机号格式不正确（11 位以 1 开头）");
 
@@ -47,7 +48,7 @@ export const authRouter = router({
         if (e instanceof RateLimitBackendDownError) toTRPCError("RATELIMIT_BACKEND_DOWN", "INTERNAL_SERVER_ERROR");
         throw e;
       }
-      const { code } = await issueOtp(ctx.db, { phone: input.phone, purpose: "LOGIN", pepper: process.env.OTP_PEPPER ?? "", ipCreated: ctx.ip, userAgent: ctx.ua });
+      const { code } = await issueOtp(ctx.db, { phone: input.phone, purpose: "LOGIN", pepper: env.OTP_PEPPER, ipCreated: ctx.ip, userAgent: ctx.ua });
       const sms = buildSmsAdapter(process.env);
       await sms.send(input.phone, code);
       // In E2E test mode, stash the code in Redis so /api/e2e-hooks/last-otp can retrieve it
@@ -70,7 +71,7 @@ export const authRouter = router({
         throw e;
       }
       try {
-        await verifyOtp(ctx.db, input.phone, input.code, process.env.OTP_PEPPER ?? "");
+        await verifyOtp(ctx.db, input.phone, input.code, env.OTP_PEPPER);
       } catch (e) {
         if (e instanceof AuthError) toTRPCError(e.reason, "BAD_REQUEST", e.extra);
         throw e;

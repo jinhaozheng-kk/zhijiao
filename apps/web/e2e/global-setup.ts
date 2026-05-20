@@ -87,8 +87,13 @@ export default async function globalSetup(): Promise<void> {
       SMS_USE_MOCK: "true",
       WECHAT_OAUTH_USE_MOCK: "true",
       ACCESS_JWT_SECRET: "e2e-test-secret-at-least-32-bytes-long",
-      OTP_PEPPER: "e2e-pepper",
+      // OTP_PEPPER must be >= 16 bytes (env validator min(16)). Previous value
+      // "e2e-pepper" (10 bytes) would now fail boot.
+      OTP_PEPPER: "e2e-otp-pepper-min16-bytes",
       WECHAT_H5_APPID: "wx-mock-app",
+      // NEXT_PUBLIC_APP_URL is required by env validator. Use the E2E port so
+      // route handlers that derive absolute URLs match the running server.
+      NEXT_PUBLIC_APP_URL: `http://127.0.0.1:${PORT}`,
       REDIS_URL: process.env.REDIS_URL ?? "redis://localhost:6379",
     },
     stdio: "inherit",

@@ -6,11 +6,9 @@ import { GET as wxCallback } from "@/app/(auth)/wechat/callback/route";
 import { COOKIE_WX_STATE } from "@zhijiao/auth";
 import { AuthProvider, Persona } from "@prisma/client";
 
-process.env.WECHAT_OAUTH_USE_MOCK = "true";
-process.env.WECHAT_H5_APPID = "wx-mock-app";
-process.env.ACCESS_JWT_SECRET = "test-secret-at-least-32-bytes-long-aaaa";
-// DATABASE_URL comes from vitest.config.ts `test.env` (plan §Task -1, zhijiao_test_web).
-// Clear any cached singleton so it re-initialises with the test DB URL.
+// env (WECHAT_OAUTH_USE_MOCK / WECHAT_H5_APPID / ACCESS_JWT_SECRET / OTP_PEPPER /
+// DATABASE_URL / etc.) is set centrally in apps/web/tests/setup.ts (Task 1).
+// Clear any cached prisma singleton so it re-initialises with the test DB URL.
 (globalThis as Record<string, unknown>)["__zhijiaoPrisma"] = undefined;
 
 const redis = new Redis(process.env.REDIS_URL ?? "redis://localhost:6379");

@@ -5,10 +5,9 @@ import { seedTestUsers } from "@zhijiao/db";
 import { appRouter } from "@/server/routers/_root";
 import { sharedTestSmsAdapter } from "@zhijiao/integrations";
 
-process.env.SMS_USE_MOCK = "true";
 (process.env as { NODE_ENV: string }).NODE_ENV = "test";
-process.env.ACCESS_JWT_SECRET = "test-secret-at-least-32-bytes-long-aaaa";
-process.env.OTP_PEPPER = "test-pepper";
+// env (DATABASE_URL / ACCESS_JWT_SECRET / OTP_PEPPER / *_USE_MOCK / NEXT_PUBLIC_APP_URL)
+// is set by apps/web/tests/setup.ts (Task 1: env validator requires fail-close).
 
 const redis = new Redis(process.env.REDIS_URL ?? "redis://localhost:6379");
 

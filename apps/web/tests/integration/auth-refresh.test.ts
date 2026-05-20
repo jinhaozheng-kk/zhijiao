@@ -6,9 +6,9 @@ import { Persona } from "@prisma/client";
 import { POST as refreshPOST } from "@/app/api/auth/refresh/route";
 import { POST as logoutPOST } from "@/app/api/auth/logout/route";
 
-process.env.ACCESS_JWT_SECRET = "test-secret-at-least-32-bytes-long-aaaa";
-// DATABASE_URL comes from vitest.config.ts `test.env` (plan §Task -1, zhijiao_test_web).
-// Clear any cached singleton so it re-initialises with the test DB URL.
+// env (ACCESS_JWT_SECRET / OTP_PEPPER / DATABASE_URL / etc.) is set centrally in
+// apps/web/tests/setup.ts (Task 1: env validator). Clear any cached prisma
+// singleton so it re-initialises with the test DB URL.
 (globalThis as Record<string, unknown>)["__zhijiaoPrisma"] = undefined;
 const redis = new Redis(process.env.REDIS_URL ?? "redis://localhost:6379");
 

@@ -6,6 +6,7 @@ import {
   AuthError, COOKIE_AT,
 } from "@zhijiao/auth";
 import { Persona } from "@prisma/client";
+import { env } from "@/server/env";
 
 export const runtime = "nodejs";
 
@@ -22,7 +23,7 @@ export async function POST(req: Request) {
     const user = await prisma.user.findUniqueOrThrow({ where: { id: userId }, include: { roles: true } });
     const access = await signAccess(
       { userId, sessionId, persona: user.persona as Persona, roles: user.roles.map(r => r.role) as never },
-      process.env.ACCESS_JWT_SECRET ?? "",
+      env.ACCESS_JWT_SECRET,
     );
     const res = NextResponse.json({ ok: true, expiresIn: 900 });
     res.headers.append("Set-Cookie", buildAccessCookie(access));
