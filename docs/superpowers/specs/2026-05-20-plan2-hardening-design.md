@@ -617,9 +617,70 @@ Remove-Item -Recurse -Force -LiteralPath .claude/worktrees/plan-2-real-auth  # �
 ## 附录 A：审计原文摘要（来自用户 2026-05-20 消息）
 
 - 验证 agent 强制跑 `pnpm.cmd exec turbo typecheck --force`，6/6 packages 成功
-- 强制跑 `pnpm.cmd exec turbo test --force` 时 `@zhijiao/ai tests/router.test.ts:132` 失败一次，单包重跑又通过 → 根级并行测试至少不稳定（**本 plan 不直接修这个 flake，但 Merge 验收清单要求 `--force` 跑通才算通过；如果反复 flake，开独立 plan 修 turbo 并发**）
+- 强制跑 `pnpm.cmd exec turbo test --force` 时 `@zhijiao/ai tests/router.test.ts:132` 失败一次，单包重跑又通过 → 根级并行测试至少不稳定
 - E2E 验证 agent 单独跑 3/3 通过；并发验证时 `next build` 在 `.next\export\500.html` rename 失败 → 并发构建写 `.next` 冲突（**E2E 不与 typecheck/test 并发跑** 进 Merge 清单）
 
-附录 A 的两条次级稳定性问题（turbo 并发 test flake、e2e 与 build 的 `.next` 写冲突）**不在本 plan 修**，但在 CLAUDE.md Merge 清单里写明"不要并发跑"。
+附录 A 的 e2e 与 build 的 `.next` 写冲突 **不在本 plan 修**，但在 CLAUDE.md Merge 清单里写明"不要并发跑"。
 
-**baseline 立场更新**（2026-05-20 review）：原 plan 写"baseline 假设绿"是错的——同 review 已经记录到至少一次 `pnpm exec turbo test --force` 时 `@zhijiao/ai tests/router.test.ts:132` 失败。本 plan 的 **Task 0-baseline**（plan §"前置"）必须连跑 3 次 `--force` 测试，记录每次结果；如果 flake 复现 → 进入决策点（要么把 flake 修进本 plan、要么单独开 plan）；不允许在没复现 baseline 状态的情况下继续。
+---
+
+## 附录 B：worktree baseline 实测复盘（2026-05-20 在 `.claude/worktrees/plan-2-hardening` 内）
+
+附录 A 的 "ai router.test.ts:132 偶发失败" 在本次 baseline 里**升级为稳定失败**，且**位置不在 132**——是同文件 line 23 的 happy path。原假设也部分误判：不是 turbo 调度的"偶发并发问题"，根因是 **跨 package 共用一个 `zhijiao_test` 库**。本附录把 2026-05-20 baseline 的实际证据 + 升级动作钉死。
+
+### B.1 实测 baseline
+
+| 阶段 | 结果 |
+|---|---|
+| typecheck 3/3 | 全绿，6/6 packages |
+| test 3/3 | 稳定挂 `@zhijiao/ai > tests/router.test.ts > happy path` —— `PrismaClientKnownRequestError P2003: Foreign key constraint violated: model_calls_prompt_template_id_fkey` at `packages/ai/src/audit.ts:17`。单跑 `pnpm.cmd --filter @zhijiao/ai test` 13/13 全绿；只在 turbo 全图并发时挂 |
+| E2E 1 轮 | `globalSetup: server didn't start within 60s on http://127.0.0.1:3000`；`next build` 通过，playwright global-setup spawn dev server 60s 没起来；teardown `port-kill=[none]` |
+
+证据原始文件：`.claude/worktrees/plan-2-hardening/baseline-runs.txt`。
+
+### B.2 根因（test 这路）
+
+1. ai 测试 `beforeEach` 自己只 TRUNCATE `model_calls` + `prompt_templates`
+2. `router.tutor` 先 `ensurePromptInDb` 创 PromptTemplate (id `X`)，再 `writeAudit` 写 ModelCall ref `X`
+3. **同时段** 另一 vitest 子进程（auth / web / integrations）的 `beforeEach` 调 `packages/db/src/test-utils.ts` 的 `resetDb()` → TRUNCATE 12 张表（包含 `prompt_templates`）CASCADE
+4. ai 的 `modelCall.create` 此时找不到 `X` → P2003
+
+所有 package 共用 `zhijiao_test` 一个 Postgres database，是这条 race 的结构性根因；`beforeEach(resetDb)` 是无辜的常规模式，问题在数据库层没切干净。
+
+### B.3 升级动作
+
+- **Task -1（per-package test DB isolation）** 进本 plan，放在 Task 0 之前。设计要点见 §B.4。
+- **Task -1B（E2E global-setup 60s 起不来 server 根因）** 同样进本 plan。scope 待 user 手工 reproduce 后定具体步骤；明确禁止"改大 60s timeout"。
+- spec 原 §1.1 issue 表不动（B 类是 baseline 复盘产物，不是 audit 漏掉的 issue）；Task -1/-1B 在 plan 文档里的位置 = Pre-Task → Task -1 → Task -1B → Task 0 → ...
+
+### B.4 Task -1 设计要点
+
+| 议题 | 方案 | 关键影响 |
+|---|---|---|
+| test DB 拓扑 | 每个 package 一个独立的 Postgres database：`zhijiao_test_ai` / `_auth` / `_db` / `_integrations` / `_web`；`apps/web` 的 unit/integration 与 E2E 共用 `_web`（两者不并发跑） | 切干净 race；race tests 加进来不会被并发掩盖 |
+| 注入方式 | `vitest.config.ts` 的 `test.env.DATABASE_URL` 直接 hardcode 各包对应 URL；vitest fork 子进程内 `process.env.DATABASE_URL` 就是这条 | 不引入 `_TEST` 后缀变量族；vitest 原生表达 |
+| 默认值处理 | `packages/db/src/test-utils.ts` 和 `packages/ai/tests/router.test.ts` 等读 `process.env.DATABASE_URL` 时 **fail-close**：未设 → throw。**不**保留 `??` 兜底（否则错配会"看起来跑通"但穿到错库） | 与本 plan 整体的"env fail-close" 哲学一致 |
+| 库的创建 | 新增 `packages/db/scripts/setup-test-dbs.ts`：用 `psql`（不可用时用 `docker exec`）跑 `CREATE DATABASE` × 5 + `prisma migrate deploy` × 5，幂等；根 `package.json` 加 `test:setup` 脚本 | 一行 `pnpm.cmd test:setup` 完成首次 / 任意 worktree 起步 |
+| seed | 不动 `db:seed`（面向 dev 用的主 `zhijiao` 库）；test DB 的 fixtures 都由各 test 文件按需 `prisma.x.create` 自填 | 不增加 seed 维护面 |
+| E2E DB | `apps/web/e2e/global-setup.ts` spawn child 的 env 里显式 `DATABASE_URL=zhijiao_test_web` | E2E 与 unit/integration 共用 `_web`；不并发即可 |
+| 不做 | `--concurrency=1`（race 掩盖）；跨进程 advisory lock（绕弯）；`beforeEach` 改动（数据库层切干净更对） | — |
+
+DoD：`pnpm.cmd exec turbo test --force` 3 轮全绿；各包单跑全绿。
+
+### B.5 Task -1B 设计要点（scope pending）
+
+确定的事：
+- 60s timeout **不许改大**——要找出 server 为啥不起来
+- 候选根因池（待手工 reproduce 验证）：`next start` 因 env 缺失退出 / pidfile 残留 / standalone build 与 start 命令错配 / Windows fork env 不全 / `.next` 缓存损坏
+
+待定的事：
+- 具体修法依赖 user 手工 `pnpm.cmd --filter @zhijiao/web build` + `--filter @zhijiao/web start` 的日志证据
+- 如果根因是 env 缺失 → 与 Task 1 env validator 提前部分合并；如果是 pidfile / standalone → 单点改 global-setup.ts
+
+DoD：`pnpm.cmd --filter @zhijiao/web test:e2e` 3 轮全绿；60s timeout 未变；根因写一句进 CLAUDE.md。
+
+---
+
+## 附录 C：原始 baseline 立场说明（pre-worktree，留底）
+
+原 plan 起草时写"baseline 假设绿"是错的，2026-05-20 review 已记录到至少一次 `pnpm exec turbo test --force` 失败。本 plan 的 **Pre-Task P.3**（plan §"前置"）必须连跑 3 次 `--force` 测试，记录每次结果。**实测结果见 §B.1**——实际 3/3 稳定挂，触发 §P.4 决策表第 3 行，已升级为 Task -1。本附录留底是为了让后续 review 能看清"立场更新 → 实测复盘 → Task -1"这条逻辑链。

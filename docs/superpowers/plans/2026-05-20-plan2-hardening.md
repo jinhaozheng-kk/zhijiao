@@ -153,15 +153,280 @@ Get-Content baseline-runs.txt
 
 - [ ] **步骤 P.4：依据 baseline 结果决策**
 
-2026-05-20 review 已记录到：`@zhijiao/ai tests/router.test.ts:132` 在 `--force` 模式下偶发失败（spec 附录 A）。**复现到 flake 的处理**：
+**2026-05-20 实测 baseline**（在 `.claude/worktrees/plan-2-hardening` 内跑）：
 
-| baseline 现象 | 处理 |
+| 阶段 | 结果 |
+|---|---|
+| typecheck 3/3 轮 | 全绿，6/6 packages |
+| test 3/3 轮 | **稳定挂** `@zhijiao/ai > tests/router.test.ts > happy path` —— `P2003 Foreign key constraint violated: model_calls_prompt_template_id_fkey` at `packages/ai/src/audit.ts:17`。单跑 `pnpm.cmd --filter @zhijiao/ai test` 13/13 全绿；只在 turbo 全图并发时挂。**机制**：所有 package 共用 `zhijiao_test` 一个库，ai 的 `ensurePromptInDb` 创建 PromptTemplate 行后，`writeAudit` 写 ModelCall 之前被另一进程（packages/db/src/test-utils.ts 的 `resetDb()`）TRUNCATE CASCADE 掉，FK 引用即时失效。spec 附录 A 原标的 `router.test.ts:132` 位置不准——实际稳定点是 happy path 第 23 行 |
+| E2E 1 轮 | `globalSetup: server didn't start within 60s` —— `next build` 通过，playwright global-setup spawn dev server 60s 内没起来 |
+
+**走向**（依 P.4 决策表 "3/3 全挂 / 同一处稳定失败 → 停"）：
+
+| 现象 | 处理 |
 |---|---|
 | 3/3 全绿 | 在 PR 描述里记录"baseline 3 轮全绿"，继续 |
 | 1-2/3 flake，单包重跑可恢复 | 在 PR 描述里贴 baseline-runs.txt 的失败现场；**继续**，但 Task 9 验收必须连跑 3 次都绿；如果新增 race tests 让 flake 变密，必须暂停 |
-| 3/3 全挂 / 同一处稳定失败 | **停**，不进 Task 0；要么先修 flake（拉一个 Task -1 进本 plan），要么开独立 plan 修 flake；本 plan 阻塞 |
+| 3/3 全挂 / 同一处稳定失败 | **停**，不进 Task 0；将 fix 拉进本 plan 作为 Task -1（baseline blocker）；本 plan 顺序前移 Task -1 → Task -1B → Task 0 → … |
 
-> 不允许的：跳过这一步、或在 baseline 不绿的情况下继续推进。"测试全绿"和"系统就绪"已经被 review 区分清楚——baseline 是后续每个 task 测试结果的参照系。
+**本次 baseline 落到第 3 行 → 触发 Task -1 + Task -1B**（见下）。Task 0+ 在 Task -1/-1B 全绿后才能开始。
+
+> 不允许：跳过这一步、或在 baseline 不绿的情况下继续推进。"测试全绿"和"系统就绪"已经被 review 区分清楚——baseline 是后续每个 task 测试结果的参照系。
+
+---
+
+## Task -1：跨 package 测试 DB 隔离（baseline blocker）
+
+> **为什么先做**：2026-05-20 baseline 3 轮 `pnpm.cmd exec turbo test --force` 全在 `@zhijiao/ai > router.test.ts > happy path` 同一处挂，错误 `P2003 model_calls_prompt_template_id_fkey`。机制：所有 package 共用 `zhijiao_test` 一个 Postgres database，每包各自的 `beforeEach(resetDb)` 互踩——ai 测试在 `ensurePromptInDb` 建的 PromptTemplate 行，在 `writeAudit` 之前被另一进程（`packages/db/src/test-utils.ts` 里的 `resetDb()`，TRUNCATE 全表 CASCADE）擦掉，FK 即时失效。
+>
+> **明确不做的事**：
+> - **不**加 `turbo --concurrency=1`（race 本身没修，未来 race tests 直接被串行掩盖）
+> - **不**引入跨进程 advisory lock（复杂度高、绕弯）
+> - **不**改 `beforeEach`（数据库层切干净更彻底）
+
+**Files：**
+- Modify: `packages/ai/vitest.config.ts` — env DATABASE_URL 指 `zhijiao_test_ai`
+- Modify: `packages/auth/vitest.config.ts` — 指 `zhijiao_test_auth`
+- Modify: `packages/db/vitest.config.ts` — 指 `zhijiao_test_db`
+- Modify: `packages/integrations/vitest.config.ts` — 指 `zhijiao_test_integrations`
+- Modify: `apps/web/vitest.config.ts` — 指 `zhijiao_test_web`
+- Modify: `packages/db/src/test-utils.ts` — 删硬编码默认，fail-close（无 `DATABASE_URL` → throw）
+- Modify: `packages/ai/tests/router.test.ts` — `TEST_DB_URL` 同样 fail-close（不再 `??` 兜默认）
+- Create: `packages/db/scripts/setup-test-dbs.ts` — 一次性创建 5 个库 + 跑 migrate（幂等）
+- Modify: 根 `package.json` — 加 `test:setup` 脚本
+- Modify: `apps/web/e2e/global-setup.ts` — spawn child env 里写 `DATABASE_URL=zhijiao_test_web`
+- Modify: `apps/web/tests/setup.ts` — 删硬编码默认，依赖 vitest config 注入
+- Modify: `CLAUDE.md` — 加一句多 test DB 约定
+
+- [ ] **步骤 -1.1：DB 命名表**
+
+| package | test DB |
+|---|---|
+| `packages/ai` | `zhijiao_test_ai` |
+| `packages/auth` | `zhijiao_test_auth` |
+| `packages/db` | `zhijiao_test_db` |
+| `packages/integrations` | `zhijiao_test_integrations` |
+| `apps/web`（unit + integration + E2E） | `zhijiao_test_web` |
+
+`apps/web` 的 unit / integration 和 E2E **共用一个** test DB：两者不会并发跑（E2E 与 `turbo test --force` 已被 .next 写冲突约束分开，见 spec 附录 A）。
+
+- [ ] **步骤 -1.2：`packages/db/scripts/setup-test-dbs.ts`**
+
+```ts
+import { execSync } from "node:child_process";
+
+const HOST = process.env.PGHOST ?? "127.0.0.1";
+const PORT = process.env.PGPORT ?? "5432";
+const USER = process.env.PGUSER ?? "postgres";
+const PWD  = process.env.PGPASSWORD ?? "postgres";
+
+const ROOT = `postgresql://${USER}:${PWD}@${HOST}:${PORT}/postgres`;
+
+const dbs = [
+  "zhijiao_test_ai",
+  "zhijiao_test_auth",
+  "zhijiao_test_db",
+  "zhijiao_test_integrations",
+  "zhijiao_test_web",
+];
+
+function ensureDb(name: string) {
+  const sql = `CREATE DATABASE "${name}";`;
+  try {
+    execSync(`psql "${ROOT}" -v ON_ERROR_STOP=1 -c "${sql}"`, { stdio: "pipe" });
+    console.log(`[setup-test-dbs] created ${name}`);
+  } catch (e) {
+    const msg = String((e as any)?.stderr ?? e);
+    if (!msg.includes("already exists")) throw e;
+    console.log(`[setup-test-dbs] ${name} already exists`);
+  }
+}
+
+function migrate(name: string) {
+  const url = `postgresql://${USER}:${PWD}@${HOST}:${PORT}/${name}`;
+  execSync(`pnpm.cmd --filter @zhijiao/db db:migrate:deploy`, {
+    stdio: "inherit",
+    env: { ...process.env, DATABASE_URL: url },
+  });
+}
+
+for (const db of dbs) {
+  ensureDb(db);
+  migrate(db);
+}
+console.log("[setup-test-dbs] all 5 test DBs ready");
+```
+
+> 为什么走 `psql` 不走 Prisma：Prisma 没有 `CREATE DATABASE` 能力，必须走 root postgres user。Windows 上 psql 通常在 docker 容器内，所以备用方案是 `docker exec -i zhijiao-postgres psql -U postgres -c "..."` —— 见步骤 -1.8 兜底。
+
+- [ ] **步骤 -1.3：每个 package 的 `vitest.config.ts`**
+
+Pattern（以 ai 为例，其它包同构）：
+
+```ts
+import { defineConfig } from "vitest/config";
+
+export default defineConfig({
+  test: {
+    globals: true,
+    environment: "node",
+    pool: "forks",
+    poolOptions: { forks: { singleFork: true } },
+    env: {
+      DATABASE_URL: "postgresql://postgres:postgres@127.0.0.1:5432/zhijiao_test_ai",
+    },
+  },
+});
+```
+
+把现有 `process.env.DATABASE_URL_TEST ?? "..."` 那段直接换。**vitest 的 `test.env` 是写到 child fork 的 `process.env`**，子进程内 prisma client 拿到的就是这个 URL。
+
+> 反对的写法：不要再保留 `??` 后备值——一旦默认值仍然指向 `zhijiao_test`（旧库），命名错的库会"看起来跑通"但实际穿到错库。
+
+- [ ] **步骤 -1.4：`packages/db/src/test-utils.ts` fail-close**
+
+```ts
+const TEST_DATABASE_URL = process.env.DATABASE_URL;
+if (!TEST_DATABASE_URL) {
+  throw new Error(
+    "test-utils.ts: DATABASE_URL must be set by vitest config (per-package test DB). " +
+    "Did you forget vitest.config.ts `test.env.DATABASE_URL`?"
+  );
+}
+export const testPrisma = new PrismaClient({
+  datasources: { db: { url: TEST_DATABASE_URL } },
+});
+```
+
+- [ ] **步骤 -1.5：`packages/ai/tests/router.test.ts` 同样移除硬编码**
+
+```ts
+const TEST_DB_URL = process.env.DATABASE_URL;
+if (!TEST_DB_URL) throw new Error("router.test.ts: DATABASE_URL must come from vitest config env");
+const prisma = new PrismaClient({ datasources: { db: { url: TEST_DB_URL } } });
+```
+
+并 grep 一遍 `packages/*/tests/`、`apps/web/tests/` 里所有硬编码字串 `zhijiao_test` —— 全部去掉 `??` 默认，统一 fail-close。
+
+- [ ] **步骤 -1.6：`apps/web/e2e/global-setup.ts`**
+
+spawn child 的 env 里：
+
+```ts
+DATABASE_URL: "postgresql://postgres:postgres@127.0.0.1:5432/zhijiao_test_web",
+```
+
+注意不要从 `process.env.DATABASE_URL` 透传（global-setup 自身没有 vitest-style env 注入；spawn child 的 env 是 explicit object）。
+
+- [ ] **步骤 -1.7：根 `package.json` 加 `test:setup`**
+
+```json
+"scripts": {
+  "test:setup": "tsx packages/db/scripts/setup-test-dbs.ts"
+}
+```
+
+如果根 `package.json` 有 `setup` 脚本，把 `test:setup` 串进去 `pnpm setup && pnpm test:setup`。
+
+- [ ] **步骤 -1.8：跑 setup**
+
+```powershell
+pnpm.cmd test:setup
+```
+
+期望：5 个库全部 `created` 或 `already exists`，每个跑 `No pending migrations to apply.`。
+
+> psql 不可用兜底：把 `setup-test-dbs.ts` 改为走 `docker exec -i zhijiao-postgres psql -U postgres -c "..."`。dev 环境必装 docker，这条路稳。
+
+- [ ] **步骤 -1.9：seed 不动**
+
+`db:seed` 现在面向主 `zhijiao` 库（dev server 用）。test DB 的 fixtures 都由各 test 文件按需 `prisma.x.create` 自填。本步骤不动 seed。
+
+- [ ] **步骤 -1.10：3 轮 baseline 复跑**
+
+```powershell
+"" | Out-File baseline-runs.txt -Encoding utf8 -Force
+foreach ($i in 1..3) {
+  "=== Run $i (post Task -1) ===" | Out-File baseline-runs.txt -Encoding utf8 -Append
+  $tc = pnpm.cmd exec turbo typecheck --force 2>&1
+  $tc | Select-Object -Last 5  | Out-File baseline-runs.txt -Encoding utf8 -Append
+  $tt = pnpm.cmd exec turbo test --force 2>&1
+  $tt | Select-Object -Last 10 | Out-File baseline-runs.txt -Encoding utf8 -Append
+}
+Get-Content baseline-runs.txt
+```
+
+DoD：3 轮全绿。仍挂 → 重新诊断（**不允许**绕 race 测试或 concurrency=1）。
+
+- [ ] **步骤 -1.11：commit**
+
+```powershell
+git add packages/ai/vitest.config.ts packages/auth/vitest.config.ts packages/db/vitest.config.ts packages/db/src/test-utils.ts packages/db/scripts/ packages/integrations/vitest.config.ts apps/web/vitest.config.ts apps/web/e2e/global-setup.ts apps/web/tests/setup.ts package.json packages/ai/tests/router.test.ts CLAUDE.md
+git commit -m "test(infra): isolate per-package test DBs (zhijiao_test_<pkg>); fix Plan 2 Hardening baseline blocker (router.test.ts P2003 race)"
+```
+
+**Task -1 DoD：**
+- `pnpm.cmd test:setup` 幂等成功
+- 5 个 test DB 各跑 migrate 通过
+- `pnpm.cmd exec turbo test --force` 3 轮全绿
+- `pnpm.cmd --filter @zhijiao/ai test` / `--filter @zhijiao/auth test` / `--filter @zhijiao/integrations test` / `--filter @zhijiao/web test` 单跑全绿
+- CLAUDE.md "常用命令" 段加一句 `pnpm.cmd test:setup`（首次跑测前必做）
+
+---
+
+## Task -1B：E2E global-setup 60s 起不来 server 根因（baseline blocker）
+
+> **现状**：baseline E2E `next build && playwright test`，build 通过，进 playwright global-setup spawn dev server 60s 没起来；teardown `port-kill=[none]` 说明端口上没监听。
+>
+> **明确不做的事**：**禁止**改大 60s timeout；要求找出 server 为什么没起来。
+>
+> **scope 待定**：先手工 reproduce 拿证据再定 fix。本节先列诊断 + 候选根因表；具体步骤待 user 回报手工跑结果后补实。
+
+- [ ] **步骤 -1B.1：手工 reproduce（user 跑或 user 授权 Claude 跑）**
+
+```powershell
+Set-Location D:\智教\.claude\worktrees\plan-2-hardening
+
+# (1) 单跑 next build，看 .next 是否完整
+pnpm.cmd --filter @zhijiao/web build 2>&1 | Tee-Object -FilePath e2e-diag-build.log
+
+# (2) 单跑 next start（绕过 playwright global-setup），看 server 起不起来
+$env:DATABASE_URL = 'postgresql://postgres:postgres@127.0.0.1:5432/zhijiao_test_web'
+pnpm.cmd --filter @zhijiao/web start 2>&1 | Tee-Object -FilePath e2e-diag-start.log
+# 同时另开 powershell：
+#   Invoke-WebRequest http://127.0.0.1:3000/healthz -UseBasicParsing
+# 看几秒内能不能拿到 200 / 看 e2e-diag-start.log 输出。
+Remove-Item Env:\DATABASE_URL
+```
+
+把 `e2e-diag-build.log` 和 `e2e-diag-start.log` 头/末 50 行交给 review。
+
+- [ ] **步骤 -1B.2：候选根因 → 实际看到的现象 → 修法**
+
+| 假说 | 验证信号 | 修法 |
+|---|---|---|
+| H1: `next start` 因 env 缺失（`ACCESS_JWT_SECRET` / `OTP_PEPPER` 等）throw 退出 | start.log 看到 throw stack | Task 1 env validator 落地后 server 必然 fail-fast；本步骤先在 `apps/web/e2e/global-setup.ts` spawn child env 里把 ACCESS_JWT_SECRET / OTP_PEPPER fixture 值显式写齐——本质是把 Task 1 子集前移 |
+| H2: pidfile 残留误判 | global-setup 在 spawn 之前没 `clearStaleState`；磁盘上有 `apps/web/.next/e2e.pid` | spawn 前先 `clearStaleState`；teardown 已有，启动入口也加 |
+| H3: `next build` 是 standalone 但 `start` 没指 `server.js` | next.config.js `output: "standalone"` 但 `start` 跑 `next start`（找不到 .next 主入口） | 改 start 命令走 `node .next/standalone/server.js`；或撤掉 standalone |
+| H4: Windows fork 下 child env 不完整 | start.log 完全空白 / 启动一半挂 | spawn 显式 inherit env，关 `windowsHide`，看子进程 PID 是否真的存活 |
+| H5: 60s 真的不够（小概率） | start.log 显示在 60–90s 范围内才出 "ready" | **不修 timeout**，转而排查为何 ready 慢（如 next build cache miss 重编译） |
+
+- [ ] **步骤 -1B.3：实施 fix（步骤待 user 观察后填实）**
+
+- [ ] **步骤 -1B.4：验证**
+
+```powershell
+foreach ($i in 1..3) {
+  "=== E2E Run $i ===" | Out-File e2e-runs.txt -Encoding utf8 -Append
+  pnpm.cmd --filter @zhijiao/web test:e2e 2>&1 | Select-Object -Last 15 | Out-File e2e-runs.txt -Encoding utf8 -Append
+}
+Get-Content e2e-runs.txt
+```
+
+**Task -1B DoD：**
+- 单跑 `pnpm.cmd --filter @zhijiao/web test:e2e` 3 轮全绿
+- global-setup.ts 里 60s timeout **未改大**
+- 修动到的根因点写一句进 CLAUDE.md（避免回归）
 
 ---
 
