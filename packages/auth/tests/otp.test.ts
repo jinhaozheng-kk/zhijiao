@@ -113,6 +113,15 @@ describe("otp", () => {
       // 3) 行只 consumed 1 次
       const row = await prisma.otpRequest.findFirstOrThrow({ where: { phone: PHONE } });
       expect(row.consumedAt).not.toBeNull();
+
+      // 4) 证明 race window 真的打开：N 个并发 caller 都越过了 findFirst（看到
+      //    consumedAt:null）并各自完成了 attempts++，所以最终 attempts === N。
+      //    没有这条断言，即便实际被串行化（每个 caller 在下一个 findFirst 前就
+      //    已经 commit 了 consumedAt → 后续 caller 在 findFirst 阶段直接拿到
+      //    OTP_EXPIRED 而从未 increment），上面 1)~3) 也会误绿 —— 与旧的非原子
+      //    实现表现一致。attempts === N 是 "predicate-on-update 真的在 consume
+      //    阶段做出仲裁" 的唯一证据。
+      expect(row.attempts).toBe(N);
     } finally {
       await Promise.all(clients.map((c) => c.$disconnect()));
     }
