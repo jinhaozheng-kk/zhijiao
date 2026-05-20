@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { execSync } from "node:child_process";
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
 // E2E webServer 自管理：见 playwright.config.ts 的说明。本文件负责：
@@ -13,6 +14,8 @@ const PID_FILE = ".playwright-server-pid";
 // Per-package test DB (plan §Task -1). Shared with apps/web vitest tests; not
 // concurrent because E2E and unit/integration aren't run together by design.
 const TEST_DB_URL = "postgresql://postgres:postgres@127.0.0.1:5432/zhijiao_test_web";
+const WORKSPACE_ROOT = resolve(process.cwd(), "../..");
+const PNPM_BIN = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 
 function killWindowsTree(pid: string | number): void {
   try {
@@ -55,13 +58,22 @@ function clearStaleState(): void {
   }
 }
 
+function seedE2eDb(): void {
+  execSync(`${PNPM_BIN} --filter @zhijiao/db db:seed`, {
+    cwd: WORKSPACE_ROOT,
+    env: { ...process.env, DATABASE_URL: TEST_DB_URL },
+    stdio: "inherit",
+  });
+}
+
 export default async function globalSetup(): Promise<void> {
   clearStaleState();
+  seedE2eDb();
 
   // 单串命令，shell: true 走 cmd.exe /c。spawn 返回的是 cmd.exe 的 PID；teardown 用
   // taskkill /T /F 会沿树往下走，仍能干掉 next start 本身。如果到 teardown 时这个 PID
   // 已经不存在，teardown 还会按端口扫一遍兜底。
-  const cmd = `pnpm exec next start -p ${PORT}`;
+  const cmd = `${PNPM_BIN} exec next start -p ${PORT}`;
   const child = spawn(cmd, {
     cwd: process.cwd(),
     env: {
