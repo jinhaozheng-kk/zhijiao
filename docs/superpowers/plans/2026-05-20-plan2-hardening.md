@@ -384,28 +384,46 @@ git commit -m "test(infra): isolate per-package test DBs (zhijiao_test_<pkg>); f
 
 - [ ] **步骤 -1B.1：手工 reproduce（user 跑或 user 授权 Claude 跑）**
 
+`apps/web/e2e/global-setup.ts:62-82` 实际 spawn 的命令是 `pnpm exec next start -p 3100`，并向 child 注入一组 env（`E2E_TEST_HOOKS=1`、`*_USE_MOCK=true`、`ACCESS_JWT_SECRET`、`OTP_PEPPER`、`WECHAT_H5_APPID`、`DATABASE_URL`、`REDIS_URL`）。手工 reproduce 必须复刻这一组，否则测的不是同一现场。
+
 ```powershell
-Set-Location D:\智教\.claude\worktrees\plan-2-hardening
+Set-Location D:\智教\.claude\worktrees\plan-2-hardening\apps\web
 
-# (1) 单跑 next build，看 .next 是否完整
-pnpm.cmd --filter @zhijiao/web build 2>&1 | Tee-Object -FilePath e2e-diag-build.log
+# (1) 先把 next 构建产物准备好；E2E 的 test:e2e 是 next build && playwright test
+pnpm.cmd --filter @zhijiao/web build 2>&1 | Tee-Object -FilePath ..\..\e2e-diag-build.log
 
-# (2) 单跑 next start（绕过 playwright global-setup），看 server 起不起来
+# (2) 复制 E2E spawn 的 env 后单跑 next start
 $env:DATABASE_URL = 'postgresql://postgres:postgres@127.0.0.1:5432/zhijiao_test_web'
-pnpm.cmd --filter @zhijiao/web start 2>&1 | Tee-Object -FilePath e2e-diag-start.log
-# 同时另开 powershell：
-#   Invoke-WebRequest http://127.0.0.1:3000/healthz -UseBasicParsing
-# 看几秒内能不能拿到 200 / 看 e2e-diag-start.log 输出。
-Remove-Item Env:\DATABASE_URL
+$env:AI_USE_MOCK = 'true'
+$env:SMS_USE_MOCK = 'true'
+$env:WECHAT_OAUTH_USE_MOCK = 'true'
+$env:E2E_TEST_HOOKS = '1'
+$env:ACCESS_JWT_SECRET = 'e2e-test-secret-at-least-32-bytes-long'
+$env:OTP_PEPPER = 'e2e-pepper'                       # 当前 10 字节；Task 1 落地后改 ≥16
+$env:WECHAT_H5_APPID = 'wx-mock-app'
+$env:REDIS_URL = 'redis://localhost:6379'
+
+pnpm.cmd exec next start -p 3100 2>&1 | Tee-Object -FilePath ..\..\e2e-diag-start.log
+# 看到 "Ready in Xms" 或 "ready - started server" 才算起来。
+# 另开一个 powershell 窗口探活：
+#   Invoke-WebRequest http://127.0.0.1:3100/login -UseBasicParsing
+#   Invoke-WebRequest http://127.0.0.1:3100/ -UseBasicParsing
+# Ctrl+C 收 server 后清 env：
+@('DATABASE_URL','AI_USE_MOCK','SMS_USE_MOCK','WECHAT_OAUTH_USE_MOCK','E2E_TEST_HOOKS',
+  'ACCESS_JWT_SECRET','OTP_PEPPER','WECHAT_H5_APPID','REDIS_URL') | %{ Remove-Item Env:\$_ -ErrorAction SilentlyContinue }
 ```
+
+> 注意端口是 **3100** 不是 3000。`apps/web/e2e/global-setup.ts:11` `PORT = 3100`。
 
 把 `e2e-diag-build.log` 和 `e2e-diag-start.log` 头/末 50 行交给 review。
 
 - [ ] **步骤 -1B.2：候选根因 → 实际看到的现象 → 修法**
 
+> baseline 现场 global-setup 已经向 child 注入了 ACCESS_JWT_SECRET / OTP_PEPPER / *_USE_MOCK / WECHAT_H5_APPID / DATABASE_URL / REDIS_URL（见 global-setup.ts:65-79），所以 H1（env 缺失）概率较低。但仍列入候选，因为代码里 `e2e-pepper` 是 10 字节，**如果当前 master 上 OTP_PEPPER 还没强制 min(16)** 则 H1 不触发；若 Task 1 已 land，min(16) 会让 child 启动即 throw。
+
 | 假说 | 验证信号 | 修法 |
 |---|---|---|
-| H1: `next start` 因 env 缺失（`ACCESS_JWT_SECRET` / `OTP_PEPPER` 等）throw 退出 | start.log 看到 throw stack | Task 1 env validator 落地后 server 必然 fail-fast；本步骤先在 `apps/web/e2e/global-setup.ts` spawn child env 里把 ACCESS_JWT_SECRET / OTP_PEPPER fixture 值显式写齐——本质是把 Task 1 子集前移 |
+| H1: child 进程加载时 throw（env / module init 出错） | start.log 看到 throw stack 或非 0 exit 立刻退出 | 视 stack 修；OTP_PEPPER 长度不足 → 直接改 fixture |
 | H2: pidfile 残留误判 | global-setup 在 spawn 之前没 `clearStaleState`；磁盘上有 `apps/web/.next/e2e.pid` | spawn 前先 `clearStaleState`；teardown 已有，启动入口也加 |
 | H3: `next build` 是 standalone 但 `start` 没指 `server.js` | next.config.js `output: "standalone"` 但 `start` 跑 `next start`（找不到 .next 主入口） | 改 start 命令走 `node .next/standalone/server.js`；或撤掉 standalone |
 | H4: Windows fork 下 child env 不完整 | start.log 完全空白 / 启动一半挂 | spawn 显式 inherit env，关 `windowsHide`，看子进程 PID 是否真的存活 |

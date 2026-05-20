@@ -9,8 +9,8 @@ import { AuthProvider, Persona } from "@prisma/client";
 process.env.WECHAT_OAUTH_USE_MOCK = "true";
 process.env.WECHAT_H5_APPID = "wx-mock-app";
 process.env.ACCESS_JWT_SECRET = "test-secret-at-least-32-bytes-long-aaaa";
-process.env.DATABASE_URL =
-  process.env.DATABASE_URL_TEST ?? "postgresql://postgres:postgres@localhost:5432/zhijiao_test";
+// DATABASE_URL comes from vitest.config.ts `test.env` (plan §Task -1, zhijiao_test_web).
+// Clear any cached singleton so it re-initialises with the test DB URL.
 (globalThis as Record<string, unknown>)["__zhijiaoPrisma"] = undefined;
 
 const redis = new Redis(process.env.REDIS_URL ?? "redis://localhost:6379");

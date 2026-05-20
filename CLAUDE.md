@@ -93,13 +93,14 @@
 **常用命令**：
 
 ```bash
-pnpm setup              # 一键起本地依赖（首次）
+pnpm setup              # 一键起本地依赖（首次；含 test:setup）
 pnpm dev                # 启动所有 app（含 apps/web 在 :3000）
 pnpm test               # 全量 unit + integration
+pnpm test:setup         # 建/迁 5 个 per-package test DB（zhijiao_test_{ai,auth,db,integrations,web}）。首次跑测前必做；之后幂等
 pnpm --filter @zhijiao/web test:e2e   # E2E
 pnpm typecheck          # TS 全量检查
 pnpm db:migrate         # apply 新 migration（Windows 上可能需要 docker-exec 绕过，见 README）
-pnpm db:seed            # 重新 seed
+pnpm db:seed            # 重新 seed（只灌主 zhijiao 库；test DB fixtures 由各 test 文件自填）
 pnpm db:studio          # Prisma Studio 浏览数据
 
 # 单条测试：

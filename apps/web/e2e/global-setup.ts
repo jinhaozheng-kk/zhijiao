@@ -10,7 +10,9 @@ import { setTimeout as sleep } from "node:timers/promises";
 
 const PORT = 3100;
 const PID_FILE = ".playwright-server-pid";
-const TEST_DB_URL = "postgresql://postgres:postgres@127.0.0.1:5432/zhijiao_test";
+// Per-package test DB (plan §Task -1). Shared with apps/web vitest tests; not
+// concurrent because E2E and unit/integration aren't run together by design.
+const TEST_DB_URL = "postgresql://postgres:postgres@127.0.0.1:5432/zhijiao_test_web";
 
 function killWindowsTree(pid: string | number): void {
   try {
