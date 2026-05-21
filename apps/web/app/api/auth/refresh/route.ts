@@ -4,13 +4,45 @@ import {
   rotateSession, signAccess,
   COOKIE_RT, buildAccessCookie, buildRefreshCookie, clearCookie,
   AuthError, COOKIE_AT,
+  takeRule, RedisRateLimitStore, RULE_REFRESH, RateLimitBackendDownError,
 } from "@zhijiao/auth";
 import { Persona } from "@prisma/client";
 import { env } from "@/server/env";
+import { redis } from "@/lib/redis";
 
 export const runtime = "nodejs";
 
 export async function POST(req: Request) {
+  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+
+  // 限频闸门：放在 cookie 校验之前。理由：refresh token 单次轮换，token-hash 永远打不到同一个桶；
+  // IP-based 才是抗"同源大量 refresh 滥用"的有意义维度（spec §3.8）。
+  // failMode: open —— Redis 挂时不踩用户脚。
+  const store = new RedisRateLimitStore(redis);
+  try {
+    const r = await takeRule(store, RULE_REFRESH, ip);
+    if (!r.allowed) {
+      return new NextResponse(
+        JSON.stringify({ ok: false, reason: "REFRESH_TOO_FREQUENT" }),
+        {
+          status: 429,
+          headers: {
+            "Content-Type": "application/json",
+            "Retry-After": String(Math.ceil(r.retryAfterMs / 1000)),
+          },
+        },
+      );
+    }
+  } catch (e) {
+    if (e instanceof RateLimitBackendDownError) {
+      return new NextResponse(
+        JSON.stringify({ ok: false, reason: "RATELIMIT_BACKEND_DOWN" }),
+        { status: 500, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    throw e;
+  }
+
   const cookies = parseCookies(req.headers.get("cookie"));
   const rt = cookies[COOKIE_RT];
   if (!rt) return json401("NO_SESSION");
