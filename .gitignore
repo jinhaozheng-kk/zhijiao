@@ -58,5 +58,6 @@ certs/
 .claude/worktrees/
 .claire/
 
-# Baseline harness runtime artifact (regenerated each baseline run)
+# Baseline / final-regression harness runtime artifacts (regenerated each run; PR-attached, not tracked)
 baseline-runs.txt
+final-runs.txt
