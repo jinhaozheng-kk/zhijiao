@@ -14,7 +14,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@zhijiao/db": "workspace:*"
+    "@zhijiao/db": "workspace:*",
+    "@prisma/client": "^5.18.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
