@@ -201,7 +201,7 @@ model CreditLedger {
 model TopupOrder {
   id            String       @id @default(cuid())
   userId        String       @map("user_id")
-  // 用户实付金额（分）；输入校验 amountCents ∈ [100, 100_000]
+  // 用户实付金额（分）；输入校验 amountCents ∈ [100, 100_000] 且必须是 100 的倍数（整元）
   amountCents   Int          @map("amount_cents")
   // 兑换 Credit 数（创建时按当时 CREDIT_PER_YUAN 冻结进去）
   credits       Int
@@ -378,12 +378,19 @@ export async function applyWechatPayNotify(
     return await prisma.$transaction(async (tx) => {
       const order = await tx.topupOrder.findUnique({ where: { outTradeNo: verify.outTradeNo } });
       if (!order) return { kind: "ORDER_NOT_FOUND" as const };
-      if (order.status === "PAID") return { kind: "ALREADY_PAID" as const };
 
       // L3/L4: 三联校验（金额 / appId / mchId）
       if (verify.amountCents !== order.amountCents) return { kind: "AMOUNT_MISMATCH" as const };
       if (verify.appId !== expectedAppId || verify.mchId !== expectedMchId) {
         return { kind: "APP_OR_MCH_MISMATCH" as const };
+      }
+      // 已支付订单只在 SUCCESS replay 且交易号一致时短路为 ALREADY_PAID。
+      // 这样 PAID 后的异常 webhook（REFUND / unknown / 金额错 / app错）仍会被记录成异常事件。
+      if (order.status === "PAID" && verify.tradeState === "SUCCESS") {
+        if (order.transactionId && order.transactionId !== verify.transactionId) {
+          return { kind: "DUPLICATE_TRANSACTION_ID" as const };
+        }
+        return { kind: "ALREADY_PAID" as const };
       }
 
       // L5: trade_state 分支
@@ -442,22 +449,74 @@ export async function applyWechatPayNotify(
     });
   } catch (e) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
-      const target = (e.meta as { target?: string[] | string } | undefined)?.target;
-      const targetStr = Array.isArray(target) ? target.join(",") : (target ?? "");
-      // CreditLedger.idemKey 冲突 = 并发 webhook，另一条已 win 并入账成功
-      if (targetStr.includes("idem_key")) return { kind: "ALREADY_PAID" as const };
-      // TopupOrder.transactionId 冲突 = 微信支付订单号已被另一单 outTradeNo 用过；异常告警
-      if (targetStr.includes("transaction_id")) return { kind: "DUPLICATE_TRANSACTION_ID" as const };
+      // P2002 后重读 DB 确认状态一致，再返业务码（防"P2002 但 DB 实际不在预期状态"的边角异常）
+      if (isUniqueTargetMatching(e, ["idemKey", "idem_key"])) {
+        // CreditLedger.idemKey 冲突 = 并发 webhook 另一条已 win
+        // 重读：确认 ledger 已存在 + order 已 PAID
+        const [existingLedger, order] = await Promise.all([
+          prisma.creditLedger.findUnique({
+            where: { idemKey: `topup:${verify.outTradeNo}` },
+            select: { id: true },
+          }),
+          prisma.topupOrder.findUnique({
+            where: { outTradeNo: verify.outTradeNo },
+            select: { status: true },
+          }),
+        ]);
+        if (existingLedger && order?.status === "PAID") return { kind: "ALREADY_PAID" as const };
+        // 不一致 = 并发模型 / schema 设计 bug，应抛让微信重发并触发告警
+        logger.error({
+          event: "p2002_idemkey_inconsistent",
+          outTradeNo: verify.outTradeNo,
+          hasLedger: !!existingLedger,
+          orderStatus: order?.status,
+        }, "P2002 on CreditLedger.idemKey but DB state not as expected");
+        throw e;
+      }
+      if (isUniqueTargetMatching(e, ["transactionId", "transaction_id"])) {
+        // TopupOrder.transactionId 冲突 = 微信支付订单号已被另一单 outTradeNo 用过
+        // 重读：找到使用该 transaction_id 的 order，写诊断日志
+        const conflicting = await prisma.topupOrder.findUnique({
+          where: { transactionId: verify.transactionId },
+          select: { id: true, outTradeNo: true, status: true },
+        });
+        logger.error({
+          event: "wechat_pay_duplicate_transaction_id",
+          incomingOutTradeNo: verify.outTradeNo,
+          existingOrderId: conflicting?.id,
+          existingOutTradeNo: conflicting?.outTradeNo,
+          existingStatus: conflicting?.status,
+        }, "Duplicate transaction_id from WeChat Pay webhook");
+        return { kind: "DUPLICATE_TRANSACTION_ID" as const };
+      }
     }
     // 非 UNIQUE 冲突的程序/DB 错 → 冒到 route handler 返 500（微信会重发）
     throw e;
   }
 }
+
+/**
+ * Prisma P2002 的 meta.target 行为说明：
+ * - Prisma 5.x：target 是 schema **field 名**（camelCase），不是 @map 后的 column 名
+ *   例：schema `idemKey String @unique @map("idem_key")` → meta.target = ["idemKey"]
+ * - 历史上不同 Prisma 版本 / 不同数据库 driver 行为有偏差（部分场景返 column 名）
+ * - 我们同时匹配 camelCase + snake_case 防御性写法，避免 Prisma 升级 / driver 差异打穿
+ */
+function isUniqueTargetMatching(
+  e: Prisma.PrismaClientKnownRequestError,
+  fields: string[],
+): boolean {
+  const target = (e.meta as { target?: string[] | string } | undefined)?.target;
+  const targetStr = Array.isArray(target) ? target.join(",") : (target ?? "");
+  return fields.some(f => targetStr.includes(f));
+}
 ```
 
 **为什么 transaction 外 catch**：Prisma transaction 内部抛错时 transaction 自动 rollback，事务内的 try/catch 无法阻止 abort 状态。把 catch 放在 `prisma.$transaction(...)` 调用**外**才能在 rollback 之后转返码。
 
-**route handler 处理**：`{ kind: "ALREADY_PAID" }` / `{ kind: "PAID" }` 都是成功处理（return 200，不让微信重发）；`{ kind: "DUPLICATE_TRANSACTION_ID" }` 是异常告警 + return 200（不可恢复，重发也不会改善）；其它非 PAID/ALREADY_PAID 的 kind 都 return 200 + 写 event.error。
+**为什么 P2002 后必须重读**：P2002 + idemKey 撞理论上**应该**意味着另一条 webhook 已 win 且订单已 PAID，但理论模型与实际 DB 状态可能因 schema 设计错 / 并发模型 bug 而背离。重读 DB 是 spec 给实现者的安全网——如果重读发现状态不符（ledger 不存在或 order 不 PAID），抛错让微信重发，给运营人工介入机会，而不是吞掉错误返 ALREADY_PAID 假装成功。
+
+**route handler 处理**：`{ kind: "ALREADY_PAID" }` / `{ kind: "PAID" }` 都是成功处理（return 200，不让微信重发）；`{ kind: "DUPLICATE_TRANSACTION_ID" }` 是异常告警 + return 200（不可恢复，重发也不会改善）；其它非 PAID/ALREADY_PAID 的 kind 都 return 200 + 写 event.error。仅 P2002 重读发现不一致 / 非 P2002 程序 bug / DB 不可达才 return 500。
 
 #### 4.1.2 TopupStatus 状态机（完整版）
 
@@ -474,7 +533,7 @@ export async function applyWechatPayNotify(
 | ANY → (no change) | NOTPAY / USERPAYING 中间态 | **只**写 WechatPayEvent.error；TopupOrder 不动 |
 | ANY → (no change) | AMOUNT_MISMATCH / APP_OR_MCH_MISMATCH | **只**写 WechatPayEvent.error；TopupOrder 不动 + 告警日志 |
 | ANY → (no change) | UNEXPECTED_REFUND / UNKNOWN_TRADE_STATE | **只**写 WechatPayEvent.error；TopupOrder 不动 + 告警日志 |
-| PAID → (no change) | 并发 webhook 撞 `CreditLedger.idemKey` UNIQUE → 事务 rollback → 外层 catch → `ALREADY_PAID` | 已 PAID 一次的订单第二次重发：不写 ledger、不重复加 balance；event.handled=true |
+| PAID → (no change) | SUCCESS replay 且金额/app/mch/transactionId 一致 → `ALREADY_PAID`；或并发 webhook 撞 `CreditLedger.idemKey` UNIQUE → 事务 rollback → 外层 catch → `ALREADY_PAID` | 已 PAID 一次的订单第二次重发：不写 ledger、不重复加 balance；event.handled=true；PAID 后的 REFUND/unknown/mismatch 仍写 event.error |
 | ANY → (no change) | 同 transactionId 已被另一单用过 → P2002 → `DUPLICATE_TRANSACTION_ID` | **只**写 WechatPayEvent.error；TopupOrder 不动 + 严重告警（数据/配置异常） |
 
 #### 4.1.3 Mock Adapter 与真路径对齐
@@ -503,7 +562,12 @@ export interface WechatPayAdapter {
    * 在 TopupOrder.status 已 update 到 PENDING 之后调用。
    * Mock 实现：按 notifyMode 触发本地 webhook（sync 同步 fire / async-delayed 排程 fire / manual 不动）。
    * Real 实现：no-op（真 webhook 由微信发）。
-   * 不应抛错破坏 topupCreate 主流程——fire 失败应 swallow + log（webhook 重发机制兜底）。
+   *
+   * **接口契约 —— 实现者必须遵守**：返回的 Promise 不能 reject。任何内部错（network/HTTP/JSON）
+   * 都必须在实现内部 swallow + log。原因：topupCreate 已经 persist PENDING，业务流程上
+   * 创单已经完成，notify 触发失败属于 fire-and-forget 的次要副作用；真实路径有微信
+   * webhook 重发机制兜底，mock 路径可以由测试用 "manual" mode 精确控制。约束写在接口层
+   * 是因为 topupCreate 调用方在 `await adapter.signalOrderReady(...)` 后**不**会再 catch。
    */
   signalOrderReady(outTradeNo: string, amountCents: number): Promise<void>;
 }
@@ -742,7 +806,8 @@ export const walletRouter = router({
 
   topupCreate: authedProcedure
     .input(z.object({
-      amountCents: z.number().int().min(100).max(100_000),  // 1 元 - 1000 元
+      // 只允许整元充值，保证 credits 是 Int（amountCents / 100 * CREDIT_PER_YUAN 不出小数）
+      amountCents: z.number().int().min(100).max(100_000).refine(v => v % 100 === 0),
     }))
     .mutation(async ({ ctx, input }) => {
       // 1. ratelimit (RULE_TOPUP_CREATE_IP + RULE_TOPUP_CREATE_USER, fail-CLOSE)
@@ -774,6 +839,7 @@ export const walletRouter = router({
       }
 
       // 4. credits & outTradeNo & expiredAt
+      // amountCents 已保证是 100 的倍数，所以 credits 是整数，可写入 Prisma Int
       const credits = (input.amountCents / 100) * env.CREDIT_PER_YUAN;
       const outTradeNo = `zj_${ctx.auth.userId.slice(0, 8)}_${nanoid(12)}`;
       const expiredAt = new Date(Date.now() + 30 * 60 * 1000);
@@ -945,11 +1011,24 @@ export const chargedProcedure = (kind: ActionKind) =>
     const cost = priceOf(kind);
 
     // 1. pre-charge
-    const debit = await chargeForAction(ctx.db, {
-      walletId: wallet.id, kind, cost,
-      idemKey: `debit:${kind.toLowerCase()}:${ctx.auth.userId}:${clientRequestId}`,
-      createdByUserId: ctx.auth.userId,
-    });
+    let debit: Awaited<ReturnType<typeof chargeForAction>>;
+    try {
+      debit = await chargeForAction(ctx.db, {
+        walletId: wallet.id, kind, cost,
+        idemKey: `debit:${kind.toLowerCase()}:${ctx.auth.userId}:${clientRequestId}`,
+        createdByUserId: ctx.auth.userId,
+      });
+    } catch (e) {
+      if (e instanceof ActionAlreadyChargedError) {
+        // 同一 clientRequestId 已扣过点：不能再次执行 next()，也不能补偿上一笔成功扣费。
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "请求已处理，请勿重复提交",
+          cause: { reason: "ACTION_IDEMPOTENCY_HIT" },
+        });
+      }
+      throw e;
+    }
     if (debit.kind === "INSUFFICIENT_BALANCE") {
       throw new TRPCError({
         code: "PRECONDITION_FAILED",
@@ -1005,7 +1084,9 @@ chargeForAction(prisma, { walletId, kind, cost, idemKey, createdByUserId })
   //   2. count !== 1 → re-read balance → return INSUFFICIENT_BALANCE
   //   3. findUnique select balance
   //   4. ledger.create DEBIT idemKey actionKind=kind balanceAfter
-  // ledger 撞 UNIQUE → idemKey 已被用过（前端重试同一操作）→ throw IDEMPOTENT_HIT
+  // ledger 撞 UNIQUE → idemKey 已被用过（前端重试同一操作）
+  //   → throw ActionAlreadyChargedError，由 chargedProcedure 转 CONFLICT/ACTION_IDEMPOTENCY_HIT
+  //   → 不再调用 next()，不二次扣点，也不补偿上一笔已成功扣费
 
 compensate(prisma, { originalLedgerId, walletId, cost, kind, reason })
   // 全程 $transaction：
@@ -1131,7 +1212,7 @@ export const RULE_TOPUP_CREATE_USER: RateLimitRule = {
 
 | 字段 | 校验 |
 |---|---|
-| `amountCents` | `z.number().int().min(100).max(100_000)`（1 元 - 1000 元） |
+| `amountCents` | `z.number().int().min(100).max(100_000).refine(v => v % 100 === 0)`（1 元 - 1000 元，整元；防 credits 小数写入 Int） |
 | `clientRequestId`（任何 chargedProcedure input） | `z.string().uuid()` 必填 |
 | `outTradeNo` | **服务端生成**，`zj_${userId.slice(0,8)}_${nanoid(12)}`；客户端无法影响 |
 | `topupStatus.orderId` query | userId scope filter，防越权查他人订单 |
@@ -1147,9 +1228,9 @@ export const RULE_TOPUP_CREATE_USER: RateLimitRule = {
 
 | 表 / 字段 | 含 PII | 保留 | 上线前必须由 |
 |---|---|---|---|
-| `Wallet` (userId / balance) | 否 | 不实现自动清理；DB 全量保留 | — |
-| `CreditLedger` | 否（不存 IP / UA / payload）| 同上 | — |
-| `TopupOrder.ipCreated / userAgent` | 是（IP / UA） | 同上 | **PII 治理 plan** 定保留期 + 脱敏 |
+| `Wallet` (userId / balance) | 是（userId 可关联用户；balance 是财务权益数据） | 不实现自动清理；DB 全量保留 | **PII 治理 plan** 定用户注销 / 去标识化策略 |
+| `CreditLedger` | 是（walletId / createdByUserId 可关联用户；不存 IP / UA / payload）| 同上 | **PII 治理 plan** 定用户注销 / 去标识化策略 |
+| `TopupOrder` (userId / ipCreated / userAgent / outTradeNo / transactionId) | 是（用户标识 + IP / UA + 支付订单标识） | 同上 | **PII 治理 plan** 定保留期 + 脱敏 |
 | `WechatPayEvent.rawBody` | 含微信支付订单号；V3 resource 解密后可能含 `payer.openid` | 同上 | **PII 治理 plan** 定保留期 + 脱敏 |
 | structured logger 输出 | 含 userId / IP / outTradeNo | 取决于运维 pipeline | 运维 plan |
 
@@ -1192,8 +1273,10 @@ Plan 3 第一次有"需要正经结构化日志"的需求（不补偿告警 / we
 ### 7.2 必须覆盖的关键 race / 边界
 
 - **充值幂等**：UNIQUE(idemKey=`topup:${outTradeNo}`) 顶重复 webhook
-- **扣点幂等**：UNIQUE(idemKey=`debit:...:${clientRequestId}`) 顶 client 重试
+- **扣点幂等**：UNIQUE(idemKey=`debit:...:${clientRequestId}`) 顶 client 重试；同一 `clientRequestId` 第二次请求返 `CONFLICT/ACTION_IDEMPOTENCY_HIT`，不再执行 `next()`、不二次扣点、不补偿上一笔
+- **充值金额整元校验**：`amountCents=101` / `150` 返 BAD_REQUEST；`amountCents=100` / `100_000` 通过，`credits` 始终为 Prisma Int
 - **充值并发 → ALREADY_PAID**：`Promise.all([fireMockNotify, fireMockNotify])` 同 outTradeNo 两条 webhook 同时进入 `applyWechatPayNotify`，第二条 P2002 → 外层 catch → 返 `ALREADY_PAID`；DB 真理断言 `wallet.balance` 只 +credits 一次、`creditLedger` TOPUP entry 恰好 1 条、route 返 200（**不**返 500）
+- **PAID replay 一致性**：已 PAID 订单收到相同 SUCCESS replay → `ALREADY_PAID`；收到金额/app/mch/transactionId 不一致或 REFUND/unknown trade_state → 不短路为成功，写 event.error + 告警
 - **扣点并发**：两 charged action 同时（同 / 不同 clientRequestId）按余额够不够并发安全
 - **跨月边界**：5/31 23:55 创建 + 6/1 00:10 付款 → 5 月 query 看不到此单计数（已切到 paidAt=6/1）；6 月 query 算进 paidAt=6/1 那条
 - **未付订单占额度**：CREATED/PENDING 订单按 createdAt 占当月额度；EXPIRED/FAILED 即时释放（不再算）
