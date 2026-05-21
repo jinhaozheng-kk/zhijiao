@@ -1,31 +1,9 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { ensureWallet } from "../src/wallet";
 import {
   chargeForAction,
   ActionAlreadyChargedError,
 } from "../src/ledger";
-import { prismaTest, resetBillingTables } from "../src/test-utils";
-
-async function makeUserWithBalance(initial: number) {
-  const u = await prismaTest.user.create({ data: { isMinor: false } });
-  const w = await ensureWallet(prismaTest, u.id);
-  if (initial > 0) {
-    await prismaTest.wallet.update({
-      where: { id: w.id },
-      data: { balance: initial },
-    });
-    await prismaTest.creditLedger.create({
-      data: {
-        walletId: w.id,
-        kind: "TOPUP",
-        delta: initial,
-        balanceAfter: initial,
-        idemKey: `topup:bootstrap:${u.id}`,
-      },
-    });
-  }
-  return { user: u, wallet: w };
-}
+import { prismaTest, resetBillingTables, makeUserWithBalance } from "../src/test-utils";
 
 describe("chargeForAction", () => {
   beforeEach(resetBillingTables);

@@ -8,6 +8,13 @@ export class ActionAlreadyChargedError extends Error {
   }
 }
 
+export class CompensationAlreadyAppliedError extends Error {
+  constructor(public originalLedgerId: string) {
+    super(`compensation already applied for ledger entry: ${originalLedgerId}`);
+    this.name = "CompensationAlreadyAppliedError";
+  }
+}
+
 export type ChargeResult =
   | { kind: "OK"; ledgerId: string; balanceAfter: number }
   | { kind: "INSUFFICIENT_BALANCE"; balance: number };
@@ -86,30 +93,45 @@ export async function compensate(
   prisma: PrismaClient,
   args: CompensateArgs,
 ): Promise<{ ledgerId: string; balanceAfter: number }> {
-  return prisma.$transaction(async (tx) => {
-    await tx.wallet.update({
-      where: { id: args.walletId },
-      data: { balance: { increment: args.cost } },
+  try {
+    return await prisma.$transaction(async (tx) => {
+      await tx.wallet.update({
+        where: { id: args.walletId },
+        data: { balance: { increment: args.cost } },
+      });
+      const after = await tx.wallet.findUniqueOrThrow({
+        where: { id: args.walletId },
+        select: { balance: true },
+      });
+      const entry = await tx.creditLedger.create({
+        data: {
+          walletId: args.walletId,
+          kind: "COMPENSATION",
+          delta: args.cost,
+          balanceAfter: after.balance,
+          idemKey: `comp:${args.originalLedgerId}`,
+          refTable: "credit_ledger",
+          refId: args.originalLedgerId,
+          actionKind: args.kind,
+          metadata: { reason: args.reason, originalLedgerId: args.originalLedgerId },
+        },
+      });
+      return { ledgerId: entry.id, balanceAfter: after.balance };
     });
-    const after = await tx.wallet.findUniqueOrThrow({
-      where: { id: args.walletId },
-      select: { balance: true },
-    });
-    const entry = await tx.creditLedger.create({
-      data: {
-        walletId: args.walletId,
-        kind: "COMPENSATION",
-        delta: args.cost,
-        balanceAfter: after.balance,
-        idemKey: `comp:${args.originalLedgerId}`,
-        refTable: "credit_ledger",
-        refId: args.originalLedgerId,
-        actionKind: args.kind,
-        metadata: { reason: args.reason, originalLedgerId: args.originalLedgerId },
-      },
-    });
-    return { ledgerId: entry.id, balanceAfter: after.balance };
-  });
+  } catch (e) {
+    if (
+      e instanceof Prisma.PrismaClientKnownRequestError &&
+      e.code === "P2002"
+    ) {
+      const target = (e.meta as { target?: string[] | string } | undefined)
+        ?.target;
+      const targetStr = Array.isArray(target) ? target.join(",") : (target ?? "");
+      if (targetStr.includes("idem_key") || targetStr.includes("idemKey")) {
+        throw new CompensationAlreadyAppliedError(args.originalLedgerId);
+      }
+    }
+    throw e;
+  }
 }
 
 /**

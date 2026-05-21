@@ -1,4 +1,6 @@
 import { PrismaClient } from "@prisma/client";
+import type { User, Wallet } from "@prisma/client";
+import { ensureWallet } from "./wallet";
 
 if (!process.env.DATABASE_URL) {
   throw new Error(
@@ -14,6 +16,29 @@ export async function resetBillingTables(): Promise<void> {
   await prismaTest.$executeRawUnsafe(
     'TRUNCATE TABLE "wallets", "credit_ledger", "topup_orders", "wechat_pay_events", "users" RESTART IDENTITY CASCADE;',
   );
+}
+
+export async function makeUserWithBalance(
+  initial: number,
+): Promise<{ user: User; wallet: Wallet }> {
+  const user = await prismaTest.user.create({ data: { isMinor: false } });
+  const wallet = await ensureWallet(prismaTest, user.id);
+  if (initial > 0) {
+    await prismaTest.wallet.update({
+      where: { id: wallet.id },
+      data: { balance: initial },
+    });
+    await prismaTest.creditLedger.create({
+      data: {
+        walletId: wallet.id,
+        kind: "TOPUP",
+        delta: initial,
+        balanceAfter: initial,
+        idemKey: `topup:bootstrap:${user.id}`,
+      },
+    });
+  }
+  return { user, wallet };
 }
 
 export async function waitForCondition(
