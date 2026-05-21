@@ -6,12 +6,9 @@ import { Persona } from "@prisma/client";
 import { POST as refreshPOST } from "@/app/api/auth/refresh/route";
 import { POST as logoutPOST } from "@/app/api/auth/logout/route";
 
-process.env.ACCESS_JWT_SECRET = "test-secret-at-least-32-bytes-long-aaaa";
-// Route handlers import the @zhijiao/db production singleton which reads DATABASE_URL.
-// Point it at the test DB so the singleton connects to the right place.
-process.env.DATABASE_URL =
-  process.env.DATABASE_URL_TEST ?? "postgresql://postgres:postgres@localhost:5432/zhijiao_test";
-// Clear any cached singleton so it re-initialises with DATABASE_URL above.
+// env (ACCESS_JWT_SECRET / OTP_PEPPER / DATABASE_URL / etc.) is set centrally in
+// apps/web/tests/setup.ts (Task 1: env validator). Clear any cached prisma
+// singleton so it re-initialises with the test DB URL.
 (globalThis as Record<string, unknown>)["__zhijiaoPrisma"] = undefined;
 const redis = new Redis(process.env.REDIS_URL ?? "redis://localhost:6379");
 

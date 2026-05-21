@@ -2,8 +2,15 @@ import { NextResponse } from "next/server";
 import { prisma } from "@zhijiao/db";
 import { redis } from "@/lib/redis";
 import { buildWechatH5Adapter } from "@zhijiao/integrations";
-import { consumeWechatState, COOKIE_WX_STATE, clearCookie } from "@zhijiao/auth";
+import {
+  consumeWechatState,
+  verifyAccess,
+  COOKIE_AT,
+  COOKIE_WX_STATE,
+  clearCookie,
+} from "@zhijiao/auth";
 import { loginOrPrepareRegisterByWechat, bindWechatToUser } from "@/server/auth-service";
+import { env } from "@/server/env";
 
 export const runtime = "nodejs";
 
@@ -46,8 +53,40 @@ export async function GET(req: Request) {
 
   // bind
   if (!meta.userId) return redirectWithClear(new URL("/profile?bind=state_lost", url));
+
+  // Plan 2 Hardening — Task 6 (I4): re-verify the CURRENT access cookie + DB
+  // session before binding. `meta.userId` is set by /wechat/start at flow
+  // initiation; if we trust it alone, a user who has since logged out / had
+  // their session burned / switched accounts would still get a wechat
+  // identity attached to the original (possibly revoked) user. Worst case:
+  // user A starts a bind, user B's access cookie ends up in the browser (eg
+  // shared device, account switch, cookie theft), and the callback attaches
+  // A's wechat identity to A — except now B is the one driving the request.
+  // We require the freshly-verified JWT.userId to match meta.userId, AND
+  // the underlying session row to be active.
+  //
+  // On rejection: only clear COOKIE_WX_STATE. Auth cookies (zj_at, zj_rt)
+  // are NOT touched — if they're stale, Task 5's createContext gate catches
+  // them on the next request. Touching them here would clear good cookies
+  // (eg JWT is fine but session was revoked) on a callback path the user
+  // didn't initiate maliciously.
+  const at = cookies[COOKIE_AT];
+  let currentUserId: string | null = null;
+  if (at) {
+    const v = await verifyAccess(at, env.ACCESS_JWT_SECRET);
+    if (v.ok) {
+      const row = await prisma.session.findUnique({ where: { id: v.claims.sessionId } });
+      if (row && row.revokedAt == null && row.expiresAt > new Date()) {
+        currentUserId = v.claims.userId;
+      }
+    }
+  }
+  if (!currentUserId || currentUserId !== meta.userId) {
+    return redirectWithClear(new URL("/login?bind=session_lost", url));
+  }
+
   const outcome = await bindWechatToUser({
-    prisma, appId: adapter.appId, openid: userInfo.openid, unionid: userInfo.unionid, bindUserId: meta.userId,
+    prisma, appId: adapter.appId, openid: userInfo.openid, unionid: userInfo.unionid, bindUserId: currentUserId,
   });
   const target = outcome === "ok" ? "/profile?bind=ok" : outcome === "noop" ? "/profile?bind=noop" : "/profile?bind=conflict";
   const res = NextResponse.redirect(new URL(target, url));

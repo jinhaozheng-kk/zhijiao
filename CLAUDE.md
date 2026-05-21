@@ -82,6 +82,7 @@
 本仓库已完成：
 - **Plan 1**（仓库脚手架 + Identity/Curriculum/Question Bank/AI Audit schemas + TUTOR_TURN 端到端）—— 见 `docs/superpowers/plans/2026-05-18-foundation-and-tutor-turn.md`
 - **Plan 2**（真鉴权：手机号 OTP + 微信 H5 OAuth 骨架 + Session/JWT + tRPC）—— 见 `docs/superpowers/plans/2026-05-19-real-auth.md`，spec 在 `docs/superpowers/specs/2026-05-19-real-auth-design.md`
+- **Plan 2 Hardening**（env validator + 原子化 refresh/OTP + 会话吊销即时生效 + bind 身份重校验 + register/refresh 限频接入 + race tests + 跨 package 测试 DB 隔离 + 仓库卫生）—— 见 `docs/superpowers/plans/2026-05-20-plan2-hardening.md`，spec 在 `docs/superpowers/specs/2026-05-20-plan2-hardening-design.md`
 
 **鉴权现状**：
 - 自建 JWT（jose HS256）+ Prisma `Session` 表（含 rotate + reuse detection）+ Redis（限频 / OTP nonce / register payload / wx state）
@@ -93,13 +94,14 @@
 **常用命令**：
 
 ```bash
-pnpm setup              # 一键起本地依赖（首次）
+pnpm setup              # 一键起本地依赖（首次；含 test:setup）
 pnpm dev                # 启动所有 app（含 apps/web 在 :3000）
 pnpm test               # 全量 unit + integration
-pnpm --filter @zhijiao/web test:e2e   # E2E
+pnpm test:setup         # 建/迁 5 个 per-package test DB（zhijiao_test_{ai,auth,db,integrations,web}）。首次跑测前必做；之后幂等
+pnpm --filter @zhijiao/web test:e2e   # E2E；global-setup 会在启动前 seed zhijiao_test_web
 pnpm typecheck          # TS 全量检查
 pnpm db:migrate         # apply 新 migration（Windows 上可能需要 docker-exec 绕过，见 README）
-pnpm db:seed            # 重新 seed
+pnpm db:seed            # 重新 seed（只灌主 zhijiao 库；unit/integration fixtures 由各 test 文件自填；E2E 由 global-setup seed）
 pnpm db:studio          # Prisma Studio 浏览数据
 
 # 单条测试：
@@ -108,7 +110,18 @@ pnpm --filter @zhijiao/auth test -- tests/session.test.ts
 pnpm --filter @zhijiao/web  test -- tests/integration/auth-register-race.test.ts
 ```
 
+### Merge 后必跑（不是"绿测试"就行）
+
+1. `git status --short --branch` 干净（无 `??`）；若有 `.claude/worktrees/<old-plan>/` 残留 → 先 `git worktree list` 看 git 是否还认它：认就 `git worktree remove`（必要时 `git worktree prune`）；不认则 PowerShell `Remove-Item -Recurse -Force -LiteralPath` 物理删（先确认不是当前 worktree）
+2. `pnpm.cmd exec turbo typecheck --force`（不走 cache）
+3. `pnpm.cmd exec turbo test --force`（不走 cache）。Task -1 之后 5 个 per-package test DB 切干净；如再出现稳定 flake 须开独立 plan
+4. E2E：`pnpm.cmd --filter @zhijiao/web test:e2e`（**单独跑**，不要与 typecheck/test 并发 —— 会写 `.next` 冲突）
+5. env 探针（fail-close）：把 `.env.local` 的 `ACCESS_JWT_SECRET` 注释掉再 `pnpm.cmd --filter @zhijiao/web dev`，期望进程立刻 throw 并列出 zod issue
+6. 路由契约：grep `apps/web/app/**/route.ts` 与 `packages/integrations/src/**/build.ts` 里写的 callback URL，统一到 `/wechat/callback`
+7. revoke 即时生效：手动 logout 后把旧 `__Host-zj_at` 重新塞回，调一个 authed tRPC endpoint（例 `auth.me`），期望 401 `SESSION_REVOKED`。**不要测 `/tutor`** —— 它不在 middleware 保护范围；要测 middleware 走 `/profile`
+8. PowerShell 调用约定：本机 execution policy 拦 `.ps1`，所有命令一律 `pnpm.cmd`（不是 `pnpm`），否则报 "running scripts is disabled"
+
 **下一步候选 Plan**：
 - Plan 3: Credit 计费体系 + 微信支付沙箱（替换 `creditPlaceholder` 占位中间件）
 - Plan 4: 举一反三 + 错因分析（VariantGroup + ErrorBookEntry + 三阶变式生成）
-- Plan 5: 真接阿里云 SMS + 微信公众号（ICP 备案通过后；替换 `RealSmsAdapter` / `RealWechatH5Adapter` 的 stub 实现）
+- Plan 5: 真接阿里云 SMS + 微信公众号（ICP 备案通过后；**且 Plan 2 Hardening 必须先 ship**；替换 `RealSmsAdapter` / `RealWechatH5Adapter` 的 stub 实现）

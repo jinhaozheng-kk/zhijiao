@@ -650,7 +650,7 @@ Remove-Item -Recurse -Force -LiteralPath .claude/worktrees/plan-2-real-auth  # �
 ### B.3 升级动作
 
 - **Task -1（per-package test DB isolation）** 进本 plan，放在 Task 0 之前。设计要点见 §B.4。
-- **Task -1B（E2E global-setup 60s 起不来 server 根因）** 同样进本 plan。scope 待 user 手工 reproduce 后定具体步骤；明确禁止"改大 60s timeout"。
+- **Task -1B（E2E global-setup 失败根因）** 同样进本 plan。已 land：commit `af89bd4`。设计要点见 §B.5。
 - spec 原 §1.1 issue 表不动（B 类是 baseline 复盘产物，不是 audit 漏掉的 issue）；Task -1/-1B 在 plan 文档里的位置 = Pre-Task → Task -1 → Task -1B → Task 0 → ...
 
 ### B.4 Task -1 设计要点
@@ -667,17 +667,22 @@ Remove-Item -Recurse -Force -LiteralPath .claude/worktrees/plan-2-real-auth  # �
 
 DoD：`pnpm.cmd exec turbo test --force` 3 轮全绿；各包单跑全绿。
 
-### B.5 Task -1B 设计要点（scope pending）
+### B.5 Task -1B 设计与实际根因（已 land：commit `af89bd4`）
 
-确定的事：
-- 60s timeout **不许改大**——要找出 server 为啥不起来
-- 候选根因池（待手工 reproduce 验证）：`next start` 因 env 缺失退出 / pidfile 残留 / standalone build 与 start 命令错配 / Windows fork env 不全 / `.next` 缓存损坏
+**误诊与真因**：原假说池里 H1-H5（env 缺失 / pidfile 残留 / standalone build / Windows fork env / 60s 不够）全部排除。手工 `next start -p 3100` 复刻 E2E spawn env 跑通后，server 1s 内 ready、`/login` 200——证实 server 启动本身没问题。真因是 H6（事后追加）：Task -1 把 E2E 切到 `zhijiao_test_web` 库，但 `setup-test-dbs.ts` 只跑 `migrate:deploy` 没跑 `db:seed`，测试种子用户（13800000001 等）不存在；登录后 `auth_identities.findFirst` 返空，被 redirect 到 `/register`，playwright 等不到登录后 home url，60s 超时 teardown 报 "server didn't start"——这条措辞是 runner 总体超时，不是 server 单独超时，是误导第一轮诊断的关键。
 
-待定的事：
-- 具体修法依赖 user 手工 `pnpm.cmd --filter @zhijiao/web build` + `--filter @zhijiao/web start` 的日志证据
-- 如果根因是 env 缺失 → 与 Task 1 env validator 提前部分合并；如果是 pidfile / standalone → 单点改 global-setup.ts
+**修法**：
 
-DoD：`pnpm.cmd --filter @zhijiao/web test:e2e` 3 轮全绿；60s timeout 未变；根因写一句进 CLAUDE.md。
+| 议题 | 方案 | 关键影响 |
+|---|---|---|
+| E2E DB 种子来源 | `apps/web/e2e/global-setup.ts` 在 spawn next start 之前，先 `execSync('pnpm --filter @zhijiao/db db:seed', { env: { DATABASE_URL: zhijiao_test_web } })` | 不依赖 setup-test-dbs.ts；apps/web vitest 跑完会 `resetDb` 清空 `zhijiao_test_web`，下次 E2E 也能自恢复 |
+| pnpm 在 Windows 调用 | global-setup 的 spawn 命令统一走 `PNPM_BIN = process.platform === "win32" ? "pnpm.cmd" : "pnpm"` | 与 plan 整体 PowerShell 约定一致；不再依赖 cmd.exe PATHEXT 兜底 |
+| 不做 | `setup-test-dbs.ts` 内 seed `zhijiao_test_web`（会被 vitest resetDb 清掉，不对症）；提早合并 Task 1 env validator（H1 已证伪，没必要前移） | — |
+
+**DoD：✅ 全部满足**
+- 单跑 `pnpm.cmd --filter @zhijiao/web test:e2e` 3 轮全绿（手工验证）
+- `global-setup.ts` 60s timeout 未改大
+- CLAUDE.md 常用命令段补 "global-setup 会在启动前 seed zhijiao_test_web"
 
 ---
 

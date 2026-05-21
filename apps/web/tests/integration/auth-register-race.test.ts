@@ -5,9 +5,7 @@ import { appRouter } from "@/server/routers/_root";
 import { sharedTestSmsAdapter } from "@zhijiao/integrations";
 
 (process.env as { NODE_ENV: string }).NODE_ENV = "test";
-process.env.SMS_USE_MOCK = "true";
-process.env.ACCESS_JWT_SECRET = "test-secret-at-least-32-bytes-long-aaaa";
-process.env.OTP_PEPPER = "test-pepper";
+// env set centrally in apps/web/tests/setup.ts (Task 1).
 
 const redis = new Redis(process.env.REDIS_URL ?? "redis://localhost:6379");
 const createCaller = appRouter.createCaller;

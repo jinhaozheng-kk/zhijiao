@@ -374,59 +374,106 @@ git commit -m "test(infra): isolate per-package test DBs (zhijiao_test_<pkg>); f
 
 ---
 
-## Task -1B：E2E global-setup 60s 起不来 server 根因（baseline blocker）
+## Task -1B：E2E global-setup 失败根因（baseline blocker，已 land：commit `af89bd4`）
 
-> **现状**：baseline E2E `next build && playwright test`，build 通过，进 playwright global-setup spawn dev server 60s 没起来；teardown `port-kill=[none]` 说明端口上没监听。
+> **现状（pre-fix）**：baseline E2E 报 `globalSetup: server didn't start within 60s`、`teardown port-kill=[none]`，看起来像 server 没起来。
 >
-> **明确不做的事**：**禁止**改大 60s timeout；要求找出 server 为什么没起来。
+> **手工 reproduce 结论**：server 起不来是表象，不是根因。`pnpm.cmd exec next start -p 3100`（复刻 E2E spawn 的 env）在 ~1s 内就 ready，`/login` 200。真正的失败点在 playwright 测试本体：`tutor.spec` 用 `13800000001` 登录后被 redirect 到 `/register`——查 `zhijiao_test_web.auth_identities` 是 0 行。Task -1 切到 per-package DB 后，`zhijiao_test_web` 只跑过 `migrate:deploy`、没跑过 `db:seed`，所以测试种子用户根本不存在；登录成功（OTP 是 mock 全 6 位 1）但 `findFirst { provider, providerUserId }` 返回 null 走"未注册"分支，跳 `/register`。teardown 报 60s 是 playwright runner 的总体超时，不是 server 启动超时——这条 log 的措辞误导了第一轮诊断。
 >
-> **scope 待定**：先手工 reproduce 拿证据再定 fix。本节先列诊断 + 候选根因表；具体步骤待 user 回报手工跑结果后补实。
+> **修法（commit `af89bd4`）**：`apps/web/e2e/global-setup.ts` 在 `spawn next start` 之前先对 `zhijiao_test_web` 跑一次现有的 `pnpm --filter @zhijiao/db db:seed`。这样即便刚跑过 `pnpm test`（apps/web vitest 会 `resetDb` 清空 `zhijiao_test_web`），E2E 也能自恢复种子。
+>
+> **明确不做的事**（已遵守）：60s timeout 未改大（global-setup.ts:11 `PORT = 3100` 仍是 60s 超时常量）；未走 `--concurrency=1`；未引入 standalone build 改造。
 
-- [ ] **步骤 -1B.1：手工 reproduce（user 跑或 user 授权 Claude 跑）**
+- [x] **步骤 -1B.1：手工 reproduce（已完成）**
+
+参考下方命令复刻 E2E spawn 的 env 后单跑 `next start -p 3100`：实际现场是 server 自身正常起来（ready 1s 内），错误措辞"60s 起不来"是 playwright runner 的总体超时；真正失败在测试本体登录后跳 `/register`。
+
+`apps/web/e2e/global-setup.ts:62-82` 实际 spawn 的命令是 `pnpm exec next start -p 3100`，并向 child 注入一组 env（`E2E_TEST_HOOKS=1`、`*_USE_MOCK=true`、`ACCESS_JWT_SECRET`、`OTP_PEPPER`、`WECHAT_H5_APPID`、`DATABASE_URL`、`REDIS_URL`）。手工 reproduce 必须复刻这一组，否则测的不是同一现场。
 
 ```powershell
-Set-Location D:\智教\.claude\worktrees\plan-2-hardening
+Set-Location D:\智教\.claude\worktrees\plan-2-hardening\apps\web
 
-# (1) 单跑 next build，看 .next 是否完整
-pnpm.cmd --filter @zhijiao/web build 2>&1 | Tee-Object -FilePath e2e-diag-build.log
+# (1) 先把 next 构建产物准备好；E2E 的 test:e2e 是 next build && playwright test
+pnpm.cmd --filter @zhijiao/web build 2>&1 | Tee-Object -FilePath ..\..\e2e-diag-build.log
 
-# (2) 单跑 next start（绕过 playwright global-setup），看 server 起不起来
+# (2) 复制 E2E spawn 的 env 后单跑 next start
 $env:DATABASE_URL = 'postgresql://postgres:postgres@127.0.0.1:5432/zhijiao_test_web'
-pnpm.cmd --filter @zhijiao/web start 2>&1 | Tee-Object -FilePath e2e-diag-start.log
-# 同时另开 powershell：
-#   Invoke-WebRequest http://127.0.0.1:3000/healthz -UseBasicParsing
-# 看几秒内能不能拿到 200 / 看 e2e-diag-start.log 输出。
-Remove-Item Env:\DATABASE_URL
+$env:AI_USE_MOCK = 'true'
+$env:SMS_USE_MOCK = 'true'
+$env:WECHAT_OAUTH_USE_MOCK = 'true'
+$env:E2E_TEST_HOOKS = '1'
+$env:ACCESS_JWT_SECRET = 'e2e-test-secret-at-least-32-bytes-long'
+$env:OTP_PEPPER = 'e2e-pepper'                       # 当前 10 字节；Task 1 落地后改 ≥16
+$env:WECHAT_H5_APPID = 'wx-mock-app'
+$env:REDIS_URL = 'redis://localhost:6379'
+
+pnpm.cmd exec next start -p 3100 2>&1 | Tee-Object -FilePath ..\..\e2e-diag-start.log
+# 看到 "Ready in Xms" 或 "ready - started server" 才算起来。
+# 另开一个 powershell 窗口探活：
+#   Invoke-WebRequest http://127.0.0.1:3100/login -UseBasicParsing
+#   Invoke-WebRequest http://127.0.0.1:3100/ -UseBasicParsing
+# Ctrl+C 收 server 后清 env：
+@('DATABASE_URL','AI_USE_MOCK','SMS_USE_MOCK','WECHAT_OAUTH_USE_MOCK','E2E_TEST_HOOKS',
+  'ACCESS_JWT_SECRET','OTP_PEPPER','WECHAT_H5_APPID','REDIS_URL') | %{ Remove-Item Env:\$_ -ErrorAction SilentlyContinue }
 ```
+
+> 注意端口是 **3100** 不是 3000。`apps/web/e2e/global-setup.ts:11` `PORT = 3100`。
 
 把 `e2e-diag-build.log` 和 `e2e-diag-start.log` 头/末 50 行交给 review。
 
-- [ ] **步骤 -1B.2：候选根因 → 实际看到的现象 → 修法**
+- [x] **步骤 -1B.2：候选根因实际匹配（已完成）**
 
-| 假说 | 验证信号 | 修法 |
+原假说表（pre-investigation）：
+
+| 假说 | 验证信号 | 实际匹配 |
 |---|---|---|
-| H1: `next start` 因 env 缺失（`ACCESS_JWT_SECRET` / `OTP_PEPPER` 等）throw 退出 | start.log 看到 throw stack | Task 1 env validator 落地后 server 必然 fail-fast；本步骤先在 `apps/web/e2e/global-setup.ts` spawn child env 里把 ACCESS_JWT_SECRET / OTP_PEPPER fixture 值显式写齐——本质是把 Task 1 子集前移 |
-| H2: pidfile 残留误判 | global-setup 在 spawn 之前没 `clearStaleState`；磁盘上有 `apps/web/.next/e2e.pid` | spawn 前先 `clearStaleState`；teardown 已有，启动入口也加 |
-| H3: `next build` 是 standalone 但 `start` 没指 `server.js` | next.config.js `output: "standalone"` 但 `start` 跑 `next start`（找不到 .next 主入口） | 改 start 命令走 `node .next/standalone/server.js`；或撤掉 standalone |
-| H4: Windows fork 下 child env 不完整 | start.log 完全空白 / 启动一半挂 | spawn 显式 inherit env，关 `windowsHide`，看子进程 PID 是否真的存活 |
-| H5: 60s 真的不够（小概率） | start.log 显示在 60–90s 范围内才出 "ready" | **不修 timeout**，转而排查为何 ready 慢（如 next build cache miss 重编译） |
+| H1: child 进程加载时 throw（env / module init 出错） | start.log 看到 throw stack 或非 0 exit 立刻退出 | ❌ server 1s 内 ready |
+| H2: pidfile 残留误判 | spawn 之前没 `clearStaleState` | ❌ 已有 clearStaleState |
+| H3: standalone build 与 start 命令错配 | next.config.js `output: "standalone"` | ❌ 非 standalone |
+| H4: Windows fork 下 child env 不完整 | start.log 完全空白 | ❌ env 正常 |
+| H5: 60s 真的不够 | ready 慢 | ❌ ready 1s |
+| **H6（新）：测试本体在登录后被 redirect 到 `/register`** | playwright 报 60s 超时（runner 总体），实际是 page object 等不到登录后的 home url | ✅ `zhijiao_test_web.auth_identities` 0 行 — Task -1 后只 migrate，没 seed |
 
-- [ ] **步骤 -1B.3：实施 fix（步骤待 user 观察后填实）**
+H6 才是真因，H1-H5 全部排除。误诊根本原因：teardown log 的 "server didn't start within 60s" 措辞实际描述的是 playwright runner 的总体超时窗口（含 server spawn + 测试执行），不是 server 启动单独的超时。
 
-- [ ] **步骤 -1B.4：验证**
+- [x] **步骤 -1B.3：实施 fix（已完成，commit `af89bd4`）**
 
-```powershell
-foreach ($i in 1..3) {
-  "=== E2E Run $i ===" | Out-File e2e-runs.txt -Encoding utf8 -Append
-  pnpm.cmd --filter @zhijiao/web test:e2e 2>&1 | Select-Object -Last 15 | Out-File e2e-runs.txt -Encoding utf8 -Append
+`apps/web/e2e/global-setup.ts`：
+
+```ts
+import { resolve } from "node:path";
+const WORKSPACE_ROOT = resolve(process.cwd(), "../..");
+const PNPM_BIN = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
+
+function seedE2eDb(): void {
+  execSync(`${PNPM_BIN} --filter @zhijiao/db db:seed`, {
+    cwd: WORKSPACE_ROOT,
+    env: { ...process.env, DATABASE_URL: TEST_DB_URL },
+    stdio: "inherit",
+  });
 }
-Get-Content e2e-runs.txt
+
+export default async function globalSetup(): Promise<void> {
+  clearStaleState();
+  seedE2eDb();          // ← 新增：每次 E2E 跑前对 zhijiao_test_web 灌种子
+  // …spawn next start …
+}
 ```
 
-**Task -1B DoD：**
-- 单跑 `pnpm.cmd --filter @zhijiao/web test:e2e` 3 轮全绿
-- global-setup.ts 里 60s timeout **未改大**
-- 修动到的根因点写一句进 CLAUDE.md（避免回归）
+同时把 `spawn` 命令里的 `pnpm exec next start` 也换成 `${PNPM_BIN} exec next start`，让 Windows PowerShell 调用走 `pnpm.cmd`（不再依赖 cmd.exe 通过 PATHEXT 解析 `pnpm` → `pnpm.cmd`）。
+
+> **为什么 seed 放 global-setup 而不是放 setup-test-dbs.ts**：apps/web 的 unit/integration vitest 跑完会 `resetDb()` 清空 `zhijiao_test_web`，下一次 E2E 跑就又是空库。seed 写进 global-setup 保证每次 E2E 都自恢复，与 unit/integration 跑序无关。
+
+- [x] **步骤 -1B.4：验证（已完成）**
+
+- 手工 `pnpm.cmd exec next start -p 3100` + E2E env：ready_at=1s，`Invoke-WebRequest /login` status=200
+- `cmd /c pnpm.cmd --filter @zhijiao/web test:e2e` 连跑 3 次：3/3 passed
+- `cmd /c pnpm.cmd --filter @zhijiao/web typecheck`：通过
+
+**Task -1B DoD：✅ 全部满足**
+- ✅ 单跑 `pnpm.cmd --filter @zhijiao/web test:e2e` 3 轮全绿
+- ✅ global-setup.ts 里 60s timeout **未改大**
+- ✅ "E2E global-setup seeds zhijiao_test_web" 写进 CLAUDE.md 常用命令段（"global-setup 会在启动前 seed zhijiao_test_web"）
 
 ---
 

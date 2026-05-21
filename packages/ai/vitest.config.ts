@@ -7,9 +7,7 @@ export default defineConfig({
     poolOptions: { forks: { singleFork: true } },
     testTimeout: 15000,
     env: {
-      DATABASE_URL:
-        process.env.DATABASE_URL_TEST ??
-        "postgresql://postgres:postgres@localhost:5432/zhijiao_test",
+      DATABASE_URL: "postgresql://postgres:postgres@127.0.0.1:5432/zhijiao_test_ai",
     },
   },
 });

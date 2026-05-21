@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { execSync } from "node:child_process";
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
 // E2E webServer 自管理：见 playwright.config.ts 的说明。本文件负责：
@@ -10,7 +11,11 @@ import { setTimeout as sleep } from "node:timers/promises";
 
 const PORT = 3100;
 const PID_FILE = ".playwright-server-pid";
-const TEST_DB_URL = "postgresql://postgres:postgres@127.0.0.1:5432/zhijiao_test";
+// Per-package test DB (plan §Task -1). Shared with apps/web vitest tests; not
+// concurrent because E2E and unit/integration aren't run together by design.
+const TEST_DB_URL = "postgresql://postgres:postgres@127.0.0.1:5432/zhijiao_test_web";
+const WORKSPACE_ROOT = resolve(process.cwd(), "../..");
+const PNPM_BIN = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 
 function killWindowsTree(pid: string | number): void {
   try {
@@ -53,13 +58,22 @@ function clearStaleState(): void {
   }
 }
 
+function seedE2eDb(): void {
+  execSync(`${PNPM_BIN} --filter @zhijiao/db db:seed`, {
+    cwd: WORKSPACE_ROOT,
+    env: { ...process.env, DATABASE_URL: TEST_DB_URL },
+    stdio: "inherit",
+  });
+}
+
 export default async function globalSetup(): Promise<void> {
   clearStaleState();
+  seedE2eDb();
 
   // 单串命令，shell: true 走 cmd.exe /c。spawn 返回的是 cmd.exe 的 PID；teardown 用
   // taskkill /T /F 会沿树往下走，仍能干掉 next start 本身。如果到 teardown 时这个 PID
   // 已经不存在，teardown 还会按端口扫一遍兜底。
-  const cmd = `pnpm exec next start -p ${PORT}`;
+  const cmd = `${PNPM_BIN} exec next start -p ${PORT}`;
   const child = spawn(cmd, {
     cwd: process.cwd(),
     env: {
@@ -73,8 +87,13 @@ export default async function globalSetup(): Promise<void> {
       SMS_USE_MOCK: "true",
       WECHAT_OAUTH_USE_MOCK: "true",
       ACCESS_JWT_SECRET: "e2e-test-secret-at-least-32-bytes-long",
-      OTP_PEPPER: "e2e-pepper",
+      // OTP_PEPPER must be >= 16 bytes (env validator min(16)). Previous value
+      // "e2e-pepper" (10 bytes) would now fail boot.
+      OTP_PEPPER: "e2e-otp-pepper-min16-bytes",
       WECHAT_H5_APPID: "wx-mock-app",
+      // NEXT_PUBLIC_APP_URL is required by env validator. Use the E2E port so
+      // route handlers that derive absolute URLs match the running server.
+      NEXT_PUBLIC_APP_URL: `http://127.0.0.1:${PORT}`,
       REDIS_URL: process.env.REDIS_URL ?? "redis://localhost:6379",
     },
     stdio: "inherit",

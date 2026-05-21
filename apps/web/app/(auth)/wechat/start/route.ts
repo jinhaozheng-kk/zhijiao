@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { buildWechatH5Adapter } from "@zhijiao/integrations";
 import { redis } from "@/lib/redis";
 import { putWechatState, buildWxStateCookie, verifyAccess, COOKIE_AT } from "@zhijiao/auth";
+import { env } from "@/server/env";
 
 export const runtime = "nodejs";
 
@@ -14,7 +15,7 @@ export async function GET(req: Request) {
     const cookies = parseCookies(req.headers.get("cookie"));
     const at = cookies[COOKIE_AT];
     if (!at) return NextResponse.redirect(new URL("/login?next=/profile", url));
-    const v = await verifyAccess(at, process.env.ACCESS_JWT_SECRET ?? "");
+    const v = await verifyAccess(at, env.ACCESS_JWT_SECRET);
     if (!v.ok) return NextResponse.redirect(new URL("/login?next=/profile", url));
     bindUserId = v.claims.userId;
   }

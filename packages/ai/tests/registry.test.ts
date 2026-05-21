@@ -8,9 +8,10 @@ import {
   type LoadedPrompt,
 } from "../src/registry.js";
 
-const TEST_DB_URL =
-  process.env.DATABASE_URL_TEST ??
-  "postgresql://postgres:postgres@localhost:5432/zhijiao_test";
+const TEST_DB_URL = process.env.DATABASE_URL;
+if (!TEST_DB_URL) {
+  throw new Error("registry.test.ts: DATABASE_URL must come from vitest.config.ts `test.env` (plan §Task -1)");
+}
 const prisma = new PrismaClient({ datasources: { db: { url: TEST_DB_URL } } });
 
 describe("PromptRegistry", () => {

@@ -8,6 +8,7 @@ import {
 } from "@zhijiao/auth";
 import { defaultRouteFor } from "@zhijiao/domain";
 import { appendSetCookie } from "./cookie-utils.js";
+import { env } from "./env.js";
 
 export async function issueSessionAndCookies(opts: {
   prisma: PrismaClient;
@@ -29,7 +30,7 @@ export async function issueSessionAndCookies(opts: {
     persona: user.persona as Persona,
     roles: user.roles.map((r) => r.role) as AccessClaims["roles"],
   };
-  const access = await signAccess(claims, process.env.ACCESS_JWT_SECRET ?? "");
+  const access = await signAccess(claims, env.ACCESS_JWT_SECRET);
   appendSetCookie(opts.resHeaders, buildAccessCookie(access));
   appendSetCookie(opts.resHeaders, buildRefreshCookie(refreshToken));
   return {

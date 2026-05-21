@@ -1,8 +1,17 @@
 import { PrismaClient } from "@prisma/client";
 
-const TEST_DATABASE_URL =
-  process.env.DATABASE_URL_TEST ??
-  "postgresql://postgres:postgres@localhost:5432/zhijiao_test";
+// Per-package test DB: each vitest.config.ts injects its own DATABASE_URL via
+// `test.env`. We fail-close instead of falling back, otherwise a missing config
+// would silently point every package at the same legacy `zhijiao_test` DB and
+// re-introduce the cross-package TRUNCATE race that Task -1 fixed.
+const TEST_DATABASE_URL = process.env.DATABASE_URL;
+if (!TEST_DATABASE_URL) {
+  throw new Error(
+    "@zhijiao/db/test-utils: DATABASE_URL is not set. " +
+      "Vitest config must inject it via `test.env.DATABASE_URL` " +
+      "(see plan §Task -1 / packages/<pkg>/vitest.config.ts).",
+  );
+}
 
 export const testPrisma = new PrismaClient({
   datasources: { db: { url: TEST_DATABASE_URL } },

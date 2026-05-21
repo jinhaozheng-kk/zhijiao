@@ -53,3 +53,11 @@ prisma/migrations/dev/
 certs/
 *.pem
 *.key
+
+# Local tool worktree caches (Claude Code / Claire) — see plan-2-hardening Task 0
+.claude/worktrees/
+.claire/
+
+# Baseline / final-regression harness runtime artifacts (regenerated each run; PR-attached, not tracked)
+baseline-runs.txt
+final-runs.txt
