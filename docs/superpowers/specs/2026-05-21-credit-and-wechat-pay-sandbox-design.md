@@ -39,7 +39,7 @@ prod_ship_prereqs:
 | 3 | 扣费时机 | 先扣后用 + 失败补偿 | 复用 Plan 2 Hardening predicate-on-update 工艺；防透支 + 防并发；失败补偿写第二条 COMPENSATION ledger |
 | 4 | 支付集成 | Adapter 模式（mock 主 + 真接 skeleton） | 与 Plan 2 SMS / WeChat H5 同 pattern；`WECHAT_PAY_USE_MOCK=true` 是进 Mock 的唯一开关；真接代码留好但 ICP 备案前不激活 |
 | 5 | 退款 | MVP 不支持 | 用户协议写"虚拟商品不可退"；异常场景走 `ADJUST_ADD` 补偿（不走真退款）；spec 不引入 V3 refund API |
-| 6 | 未成年人 | 不加门 + 月度软上限（CREATED+PENDING+PAID 累计） | `User.isMinor=true` 时 `wallet.topup.create` 校验本月（含未付）订单累计 ≤ 200 元（可配） |
+| 6 | 未成年人 | 不加门 + 月度软上限（未付按 createdAt + 已付按 paidAt 合算） | `User.isMinor=true` 时 `wallet.topup.create` 校验本月（未付订单按创建时间占用 + 已付订单按支付时间落账）合计 ≤ 200 元（可配）—— 跨月精确，5/31 创建 6/1 付款会从 5 月转到 6 月 |
 | 7 | 账本 | Append-only ledger + `wallet.balance` 缓存 | 写双轨：`wallet.balance` 用 predicate-on-update 原子改；`CreditLedger` append 记每笔；`balanceAfter` 列做对账 snapshot |
 | 8 | 补偿策略 | fail-open compensation | 白名单**不**补偿（如 `ComplianceRejectedError`），其余抛错**默认**补偿（用户未拿到 usable result = 应补） |
 
@@ -223,7 +223,8 @@ model TopupOrder {
 
   @@index([userId, createdAt(sort: Desc)])
   @@index([status, expiredAt])               // sweeper 过期扫描
-  @@index([userId, status, createdAt])       // 未成年月度上限查询路径
+  @@index([userId, status, createdAt])       // 未成年月度上限：未付订单按 createdAt
+  @@index([userId, paidAt])                  // 未成年月度上限：已付订单按 paidAt
   @@map("topup_orders")
 }
 
@@ -295,10 +296,11 @@ await tx.creditLedger.create({ data: { walletId, kind: "DEBIT", delta: -cost, ba
 - 用户注销 / 去标识化路径推迟到 **PII 治理 plan**（prod ship prereq）
 - 不在 Plan 3 自做"软删 User"等账户生命周期管理（耦合过大）
 
-**`TopupOrder` 三复合索引**：
+**`TopupOrder` 四复合索引**：
 - `(userId, createdAt desc)` —— 用户订单列表
 - `(status, expiredAt)` —— sweeper 扫过期订单
-- `(userId, status, createdAt)` —— **未成年月度上限查询专用**（filter on userId + status in CREATED/PENDING/PAID + createdAt ≥ monthStart）
+- `(userId, status, createdAt)` —— 未成年月度上限：**未付**订单按 createdAt 算（CREATED/PENDING）
+- `(userId, paidAt)` —— 未成年月度上限：**已付**订单按 paidAt 算（防跨月边界把"5/31 创建 6/1 支付"错算到 5 月）
 
 ## 4. 核心 Flows
 
@@ -324,13 +326,20 @@ await tx.creditLedger.create({ data: { walletId, kind: "DEBIT", delta: -cost, ba
    │                          ├── create CREATED ─────────────▶│                  │                  │
    │                          │ 7. adapter.unifiedOrder(...) ──────────────────────▶│                 │
    │                          │                                │                  ├── V3 API ───────▶│
-   │                          │                                │                  │ (mock: 本地 HMAC │
-   │                          │                                │                  │  签 fake notify  │
-   │                          │                                │                  │  + 排程 fire)    │
+   │                          │                                │                  │ (mock: 仅生成    │
+   │                          │                                │                  │  prepayId，NOT   │
+   │                          │                                │                  │  自动 fire)      │
    │                          │                                │                  │◀── prepay_id ────│
    │                          │◀── prepayId ───────────────────────────────────────│                  │
    │                          ├── update CREATED→PENDING ─────▶│                  │                  │
    │                          │   set prepayId                 │                  │                  │
+   │                          │ 8. adapter.signalOrderReady(.) ────────────────────▶│                 │
+   │                          │   ⚠️ 必须在 step 7-8 之间 persist PENDING，否则     │                  │
+   │                          │   mock notify 会与 update PENDING 竞态（详 §4.1.3）│                  │
+   │                          │                                │                  │ (mock: 按        │
+   │                          │                                │                  │  notifyMode      │
+   │                          │                                │                  │  本地 HMAC fire) │
+   │                          │                                │                  │ (real: no-op)    │
    │◀── { orderId, prepayId, qrCode/h5Url, expiresAt, credits } ┤                  │                  │
    │                                                                                                  │
    ├── 用户付款（H5/扫码/JSAPI；前端轮询 wallet.topupStatus）─────────────────────▶│                  │
@@ -356,71 +365,99 @@ await tx.creditLedger.create({ data: { walletId, kind: "DEBIT", delta: -cost, ba
 
 #### 4.1.1 atomic apply（webhook 核心；同 `$transaction`）
 
-按 brainstorm Section 3 修正后的顺序（**业务终态最后落**）：
+按 brainstorm Section 3 修正后的顺序（**业务终态最后落**），并在 transaction **外**捕获 Prisma P2002 把 UNIQUE 冲突转化为业务返码（避免 P2002 冒到 route handler 触发 500 + webhook 重发风暴）：
 
 ```ts
-await prisma.$transaction(async (tx) => {
-  const order = await tx.topupOrder.findUnique({ where: { outTradeNo } });
-  if (!order) return { kind: "ORDER_NOT_FOUND" };
-  if (order.status === "PAID") return { kind: "ALREADY_PAID" };
+export async function applyWechatPayNotify(
+  prisma: PrismaClient,
+  verify: VerifyOk,
+  expectedAppId: string,
+  expectedMchId: string,
+): Promise<ApplyNotifyResult> {
+  try {
+    return await prisma.$transaction(async (tx) => {
+      const order = await tx.topupOrder.findUnique({ where: { outTradeNo: verify.outTradeNo } });
+      if (!order) return { kind: "ORDER_NOT_FOUND" as const };
+      if (order.status === "PAID") return { kind: "ALREADY_PAID" as const };
 
-  // L3/L4: 三联校验（金额 / appId / mchId）
-  if (verify.amountCents !== order.amountCents) return { kind: "AMOUNT_MISMATCH" };
-  if (verify.appId !== expectedAppId || verify.mchId !== expectedMchId) return { kind: "APP_OR_MCH_MISMATCH" };
+      // L3/L4: 三联校验（金额 / appId / mchId）
+      if (verify.amountCents !== order.amountCents) return { kind: "AMOUNT_MISMATCH" as const };
+      if (verify.appId !== expectedAppId || verify.mchId !== expectedMchId) {
+        return { kind: "APP_OR_MCH_MISMATCH" as const };
+      }
 
-  // L5: trade_state 分支
-  if (verify.tradeState === "NOTPAY") return { kind: "INTERMEDIATE_STATE_NOTPAY" };
-  if (verify.tradeState === "USERPAYING") return { kind: "INTERMEDIATE_STATE_USERPAYING" };
-  if (["CLOSED", "PAYERROR", "REVOKED"].includes(verify.tradeState)) {
-    await tx.topupOrder.update({
-      where: { outTradeNo },
-      data: { status: "FAILED", transactionId: verify.transactionId ?? null },
+      // L5: trade_state 分支
+      if (verify.tradeState === "NOTPAY") return { kind: "INTERMEDIATE_STATE_NOTPAY" as const };
+      if (verify.tradeState === "USERPAYING") return { kind: "INTERMEDIATE_STATE_USERPAYING" as const };
+      if (["CLOSED", "PAYERROR", "REVOKED"].includes(verify.tradeState)) {
+        await tx.topupOrder.update({
+          where: { outTradeNo: verify.outTradeNo },
+          data: { status: "FAILED", transactionId: verify.transactionId ?? null },
+        });
+        return { kind: "FAILED" as const };
+      }
+      if (verify.tradeState === "REFUND") {
+        // MVP 不开退款，收到此事件即异常 —— 不动账，告警（外层 logger.warn）
+        return { kind: "UNEXPECTED_REFUND" as const };
+      }
+      if (verify.tradeState !== "SUCCESS") {
+        return { kind: "UNKNOWN_TRADE_STATE" as const };
+      }
+
+      // === SUCCESS 路径：业务终态最后落 ===
+      // 1. wallet.update += credits
+      await tx.wallet.update({
+        where: { userId: order.userId },
+        data: { balance: { increment: order.credits } },
+      });
+      // 2. 读新余额
+      const w = await tx.wallet.findUniqueOrThrow({
+        where: { userId: order.userId }, select: { id: true, balance: true },
+      });
+      // 3. ledger.insert（idemKey UNIQUE 顶并发 webhook）
+      //    并发 race：两条 webhook 同时进入此 transaction，第一条写 ledger 成功并 commit，
+      //    第二条 ledger.create 抛 P2002 → 整个 transaction 回滚 → 在外层 catch 转 ALREADY_PAID
+      await tx.creditLedger.create({
+        data: {
+          walletId: w.id,
+          kind: "TOPUP",
+          delta: order.credits,
+          balanceAfter: w.balance,
+          idemKey: `topup:${verify.outTradeNo}`,
+          refTable: "topup_orders",
+          refId: order.id,
+          createdByUserId: null,
+        },
+      });
+      // 4. 业务终态最后落（含 transaction_id UNIQUE；若已被另一单用过会撞 P2002，外层 catch 处理）
+      await tx.topupOrder.update({
+        where: { outTradeNo: verify.outTradeNo },
+        data: {
+          status: "PAID",
+          transactionId: verify.transactionId,
+          paidAt: new Date(verify.successTime),
+        },
+      });
+      return { kind: "PAID" as const };
     });
-    return { kind: "FAILED" };
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      const target = (e.meta as { target?: string[] | string } | undefined)?.target;
+      const targetStr = Array.isArray(target) ? target.join(",") : (target ?? "");
+      // CreditLedger.idemKey 冲突 = 并发 webhook，另一条已 win 并入账成功
+      if (targetStr.includes("idem_key")) return { kind: "ALREADY_PAID" as const };
+      // TopupOrder.transactionId 冲突 = 微信支付订单号已被另一单 outTradeNo 用过；异常告警
+      if (targetStr.includes("transaction_id")) return { kind: "DUPLICATE_TRANSACTION_ID" as const };
+    }
+    // 非 UNIQUE 冲突的程序/DB 错 → 冒到 route handler 返 500（微信会重发）
+    throw e;
   }
-  if (verify.tradeState === "REFUND") {
-    // MVP 不开退款，收到此事件即异常 —— 写 error 不动账，告警
-    return { kind: "UNEXPECTED_REFUND" };
-  }
-  if (verify.tradeState !== "SUCCESS") {
-    return { kind: "UNKNOWN_TRADE_STATE" };
-  }
-
-  // === SUCCESS 路径：业务终态最后落 ===
-  // 1. wallet.update += credits
-  await tx.wallet.update({
-    where: { userId: order.userId },
-    data: { balance: { increment: order.credits } },
-  });
-  // 2. 读新余额
-  const w = await tx.wallet.findUniqueOrThrow({
-    where: { userId: order.userId }, select: { id: true, balance: true },
-  });
-  // 3. ledger.insert（idemKey UNIQUE 顶重发）—— 这一步如冲突，整个事务回滚，可重发
-  await tx.creditLedger.create({
-    data: {
-      walletId: w.id,
-      kind: "TOPUP",
-      delta: order.credits,
-      balanceAfter: w.balance,
-      idemKey: `topup:${outTradeNo}`,
-      refTable: "topup_orders",
-      refId: order.id,
-      createdByUserId: null,  // system-driven
-    },
-  });
-  // 4. 业务终态最后落
-  await tx.topupOrder.update({
-    where: { outTradeNo },
-    data: {
-      status: "PAID",
-      transactionId: verify.transactionId,
-      paidAt: new Date(verify.successTime),
-    },
-  });
-  return { kind: "PAID" };
-});
+}
 ```
+
+**为什么 transaction 外 catch**：Prisma transaction 内部抛错时 transaction 自动 rollback，事务内的 try/catch 无法阻止 abort 状态。把 catch 放在 `prisma.$transaction(...)` 调用**外**才能在 rollback 之后转返码。
+
+**route handler 处理**：`{ kind: "ALREADY_PAID" }` / `{ kind: "PAID" }` 都是成功处理（return 200，不让微信重发）；`{ kind: "DUPLICATE_TRANSACTION_ID" }` 是异常告警 + return 200（不可恢复，重发也不会改善）；其它非 PAID/ALREADY_PAID 的 kind 都 return 200 + 写 event.error。
 
 #### 4.1.2 TopupStatus 状态机（完整版）
 
@@ -437,10 +474,40 @@ await prisma.$transaction(async (tx) => {
 | ANY → (no change) | NOTPAY / USERPAYING 中间态 | **只**写 WechatPayEvent.error；TopupOrder 不动 |
 | ANY → (no change) | AMOUNT_MISMATCH / APP_OR_MCH_MISMATCH | **只**写 WechatPayEvent.error；TopupOrder 不动 + 告警日志 |
 | ANY → (no change) | UNEXPECTED_REFUND / UNKNOWN_TRADE_STATE | **只**写 WechatPayEvent.error；TopupOrder 不动 + 告警日志 |
+| PAID → (no change) | 并发 webhook 撞 `CreditLedger.idemKey` UNIQUE → 事务 rollback → 外层 catch → `ALREADY_PAID` | 已 PAID 一次的订单第二次重发：不写 ledger、不重复加 balance；event.handled=true |
+| ANY → (no change) | 同 transactionId 已被另一单用过 → P2002 → `DUPLICATE_TRANSACTION_ID` | **只**写 WechatPayEvent.error；TopupOrder 不动 + 严重告警（数据/配置异常） |
 
 #### 4.1.3 Mock Adapter 与真路径对齐
 
+**关键设计约束（避免 mock notify vs update PENDING 竞态）**：
+
+`unifiedOrder` **绝不**自动触发 mock notify。原因：
+
+```
+1. tx.create(CREATED)
+2. adapter.unifiedOrder()    ←  若此处 sync 自动 fire mock notify，webhook handler
+   ├─ (sync mode 旧设计) fire → /api/wechat-pay/notify
+   │  └─ applyWechatPayNotify 看到 status=CREATED → 入账 → status=PAID
+   └─ return prepayId
+3. tx.update(PENDING + prepayId)   ←  此时把已 PAID 状态覆盖回 PENDING（数据腐蚀）
+```
+
+修法：`unifiedOrder` 只返 prepayId，不触发 webhook。Adapter 接口加 `signalOrderReady(outTradeNo, amountCents)` 生命周期钩子，由 `topupCreate` 在 **status=PENDING 成功 persist 之后**显式调用。Mock 实现 fire 本地 webhook；Real 实现 no-op（真支付 webhook 由微信发，业务侧无需触发）。
+
 ```ts
+// packages/integrations/src/wechat-pay/types.ts
+export interface WechatPayAdapter {
+  unifiedOrder(req: UnifiedOrderRequest): Promise<UnifiedOrderResult>;
+  verifyNotify(headers: NotifyHeaders, rawBody: string): Promise<VerifyResult>;
+  /**
+   * 在 TopupOrder.status 已 update 到 PENDING 之后调用。
+   * Mock 实现：按 notifyMode 触发本地 webhook（sync 同步 fire / async-delayed 排程 fire / manual 不动）。
+   * Real 实现：no-op（真 webhook 由微信发）。
+   * 不应抛错破坏 topupCreate 主流程——fire 失败应 swallow + log（webhook 重发机制兜底）。
+   */
+  signalOrderReady(outTradeNo: string, amountCents: number): Promise<void>;
+}
+
 // packages/integrations/src/wechat-pay/mock.ts
 export type NotifyMode = "sync" | "async-delayed" | "manual";
 
@@ -455,16 +522,27 @@ export class MockWechatPayAdapter implements WechatPayAdapter {
   }) {}
 
   async unifiedOrder(req: UnifiedOrderRequest): Promise<UnifiedOrderResult> {
+    // ⚠️ 不在此处 fire notify —— 由 topupCreate 在 update PENDING 后调 signalOrderReady
     const prepayId = `mock_prepay_${randomBytes(8).toString("hex")}`;
-    // 异步 / 同步 / 手动 三种触发模式
-    if (this.opts.notifyMode === "sync") {
-      await this.fireMockNotify(req.outTradeNo, req.amountCents);
-    } else if (this.opts.notifyMode === "async-delayed") {
-      const delay = this.opts.delayMs ?? 50;
-      setTimeout(() => this.fireMockNotify(req.outTradeNo, req.amountCents), delay);
-    }
-    // "manual": 测试代码自己调 adapter.fireMockNotify(...)
     return { prepayId, qrCode: `mock://${prepayId}`, h5Url: `mock://${prepayId}` };
+  }
+
+  async signalOrderReady(outTradeNo: string, amountCents: number): Promise<void> {
+    try {
+      if (this.opts.notifyMode === "sync") {
+        await this.fireMockNotify(outTradeNo, amountCents);
+      } else if (this.opts.notifyMode === "async-delayed") {
+        const delay = this.opts.delayMs ?? 50;
+        setTimeout(() => {
+          this.fireMockNotify(outTradeNo, amountCents).catch(() => {
+            /* swallow: mock 模式下错过 notify 不应阻塞业务；测试可用 manual 模式精确控制 */
+          });
+        }, delay);
+      }
+      // "manual" mode: no-op；测试代码自己调 adapter.fireMockNotify(outTradeNo, amountCents)
+    } catch {
+      /* swallow */
+    }
   }
 
   async fireMockNotify(outTradeNo: string, amountCents: number): Promise<void> {
@@ -640,6 +718,10 @@ logger.warn({
 
 ### 5.1 tRPC `wallet` 路由（apps/web/server/routers/wallet.ts）
 
+**`toTRPCError` helper 控制流约定**：helper 签名 `function toTRPCError(...): never { throw new TRPCError({...}) }`（Plan 2 既有定义，签名为 `: never`）。但**所有 Plan 3 新增 call site 必须显式写 `throw toTRPCError(...)`**——避免实现者重构时不慎丢失 `: never` 类型推断导致错误路径继续执行。`return toTRPCError(...)` 等写法也禁止；统一 `throw` 关键字明确控制流。
+
+**未成年月度上限算法**（修正后）：未支付订单（CREATED/PENDING）按 `createdAt` 占用**创建月**额度；已支付订单（PAID）按 `paidAt` 计入**实际付款月**。这样跨月边界（5/31 创建、6/1 付款）下额度从 5 月转移到 6 月，符合用户对"充值月"的直觉。需要两条 aggregate 并相加：
+
 ```ts
 export const walletRouter = router({
 
@@ -647,18 +729,13 @@ export const walletRouter = router({
     const wallet = await ensureWallet(ctx.db, ctx.auth.userId);
     let monthly: { topupYuan: number; remainingYuan: number; limitYuan: number } | null = null;
     if (ctx.auth.isMinor) {
-      const start = startOfMonthInShanghai(new Date());
-      const sum = await ctx.db.topupOrder.aggregate({
-        where: {
-          userId: ctx.auth.userId,
-          status: { in: ["CREATED", "PENDING", "PAID"] },  // §6 修正：含未付
-          createdAt: { gte: start },
-        },
-        _sum: { amountCents: true },
-      });
-      const used = (sum._sum.amountCents ?? 0) / 100;
+      const used = await sumMonthlyTopupCents(ctx.db, ctx.auth.userId);
       const limit = env.MINOR_MONTHLY_LIMIT_YUAN;
-      monthly = { topupYuan: used, limitYuan: limit, remainingYuan: Math.max(0, limit - used) };
+      monthly = {
+        topupYuan: used / 100,
+        limitYuan: limit,
+        remainingYuan: Math.max(0, limit - used / 100),
+      };
     }
     return { balance: wallet.balance, monthly };
   }),
@@ -672,12 +749,12 @@ export const walletRouter = router({
       const store = ratelimitStore(ctx.redis);
       try {
         const r1 = await takeRule(store, RULE_TOPUP_CREATE_IP, ctx.ip);
-        if (!r1.allowed) toTRPCError("TOPUP_TOO_FREQUENT", "TOO_MANY_REQUESTS", { retryAfterMs: r1.retryAfterMs });
+        if (!r1.allowed) throw toTRPCError("TOPUP_TOO_FREQUENT", "TOO_MANY_REQUESTS", { retryAfterMs: r1.retryAfterMs });
         const r2 = await takeRule(store, RULE_TOPUP_CREATE_USER, ctx.auth.userId);
-        if (!r2.allowed) toTRPCError("TOPUP_TOO_FREQUENT", "TOO_MANY_REQUESTS", { retryAfterMs: r2.retryAfterMs });
+        if (!r2.allowed) throw toTRPCError("TOPUP_TOO_FREQUENT", "TOO_MANY_REQUESTS", { retryAfterMs: r2.retryAfterMs });
       } catch (e) {
         if (e instanceof RateLimitBackendDownError) {
-          toTRPCError("TOPUP_RATE_LIMIT_UNAVAILABLE", "INTERNAL_SERVER_ERROR");
+          throw toTRPCError("TOPUP_RATE_LIMIT_UNAVAILABLE", "INTERNAL_SERVER_ERROR");
         }
         throw e;
       }
@@ -685,21 +762,12 @@ export const walletRouter = router({
       // 2. ensureWallet
       const wallet = await ensureWallet(ctx.db, ctx.auth.userId);
 
-      // 3. isMinor 月度上限校验
+      // 3. isMinor 月度上限校验（未付按 createdAt + 已付按 paidAt）
       if (ctx.auth.isMinor) {
-        const start = startOfMonthInShanghai(new Date());
-        const sum = await ctx.db.topupOrder.aggregate({
-          where: {
-            userId: ctx.auth.userId,
-            status: { in: ["CREATED", "PENDING", "PAID"] },
-            createdAt: { gte: start },
-          },
-          _sum: { amountCents: true },
-        });
-        const used = sum._sum.amountCents ?? 0;
+        const used = await sumMonthlyTopupCents(ctx.db, ctx.auth.userId);
         const limit = env.MINOR_MONTHLY_LIMIT_YUAN * 100;
         if (used + input.amountCents > limit) {
-          toTRPCError("MINOR_MONTHLY_LIMIT_REACHED", "PRECONDITION_FAILED", {
+          throw toTRPCError("MINOR_MONTHLY_LIMIT_REACHED", "PRECONDITION_FAILED", {
             monthlyYuan: used / 100, limitYuan: limit / 100, attemptYuan: input.amountCents / 100,
           });
         }
@@ -719,22 +787,35 @@ export const walletRouter = router({
         },
       });
 
-      // 6. adapter.unifiedOrder
+      // 6. adapter.unifiedOrder（仅返 prepayId，不触发 webhook —— 详 §4.1.3 竞态分析）
       const adapter = getWechatPayAdapter();
+      let prepayId: string, qrCode: string | undefined, h5Url: string | undefined;
       try {
-        const { prepayId, qrCode, h5Url } = await adapter.unifiedOrder({
-          outTradeNo, amountCents: input.amountCents, description: `智教 Credit 充值 ${input.amountCents / 100} 元`,
+        const r = await adapter.unifiedOrder({
+          outTradeNo, amountCents: input.amountCents,
+          description: `智教 Credit 充值 ${input.amountCents / 100} 元`,
         });
-        await ctx.db.topupOrder.update({
-          where: { id: order.id },
-          data: { status: "PENDING", prepayId },
-        });
-        return { orderId: order.id, outTradeNo, prepayId, qrCode, h5Url, expiresAt: expiredAt, credits };
+        prepayId = r.prepayId;
+        qrCode = r.qrCode;
+        h5Url = r.h5Url;
       } catch (e) {
         await ctx.db.topupOrder.update({ where: { id: order.id }, data: { status: "FAILED" } });
         logger.error({ event: "topup_unified_order_failed", orderId: order.id, error: String(e) }, "unifiedOrder threw");
-        toTRPCError("TOPUP_ADAPTER_ERROR", "INTERNAL_SERVER_ERROR");
+        throw toTRPCError("TOPUP_ADAPTER_ERROR", "INTERNAL_SERVER_ERROR");
       }
+
+      // 7. update CREATED → PENDING + prepayId
+      //    必须在 signalOrderReady 之前完成，否则 mock notify 可能与此 update 竞态
+      await ctx.db.topupOrder.update({
+        where: { id: order.id },
+        data: { status: "PENDING", prepayId },
+      });
+
+      // 8. signal adapter that PENDING is persisted（Mock fires local webhook；Real no-op）
+      //    swallow 错误（即使 notify 失败也不阻塞 topupCreate；微信重发机制兜底）
+      await adapter.signalOrderReady(outTradeNo, input.amountCents);
+
+      return { orderId: order.id, outTradeNo, prepayId, qrCode, h5Url, expiresAt: expiredAt, credits };
     }),
 
   topupStatus: authedProcedure
@@ -792,6 +873,41 @@ export const walletRouter = router({
 });
 ```
 
+**`sumMonthlyTopupCents` helper**（apps/web/server/wallet-helpers.ts 或 packages/billing/src/monthly-limit.ts；推荐放 billing 包以便 unit-test）：
+
+```ts
+/**
+ * 上海自然月内的"占用月度额度"统计。
+ * - 未支付订单（CREATED/PENDING）按 createdAt 占创建月额度
+ * - 已支付订单（PAID）按 paidAt 计入实际付款月（防 5/31 创建、6/1 支付的边界偏差）
+ * - EXPIRED / FAILED 不算
+ *
+ * 返 cents 整数，方便与 amountCents 直接比较。
+ */
+export async function sumMonthlyTopupCents(prisma: PrismaClient, userId: string): Promise<number> {
+  const monthStart = startOfMonthInShanghai(new Date());
+  const [unpaidAgg, paidAgg] = await Promise.all([
+    prisma.topupOrder.aggregate({
+      where: {
+        userId,
+        status: { in: ["CREATED", "PENDING"] },
+        createdAt: { gte: monthStart },
+      },
+      _sum: { amountCents: true },
+    }),
+    prisma.topupOrder.aggregate({
+      where: {
+        userId,
+        status: "PAID",
+        paidAt: { gte: monthStart },
+      },
+      _sum: { amountCents: true },
+    }),
+  ]);
+  return (unpaidAgg._sum.amountCents ?? 0) + (paidAgg._sum.amountCents ?? 0);
+}
+```
+
 **故意不存在的 procedure**：
 - ❌ `wallet.topupConfirm` —— 客户端无任何"标 PAID"能力，唯一真理是 webhook
 - ❌ `wallet.topupCancel` —— MVP 让订单走 EXPIRED 自然超时
@@ -803,8 +919,10 @@ export const walletRouter = router({
 - 先无条件写 `WechatPayEvent`（verifyStatus=PENDING）作为审计日志
 - 再调 `adapter.verifyNotify(headers, body)` 验签
 - 验签失败 → update event.verifyStatus + return 200
-- 验签 OK → `applyWechatPayNotify(...)` 走 §4.1.1 transaction
-- 任何路径都 return 200，除非程序 bug / DB 不可达（return 500 让微信重发）
+- 验签 OK → `applyWechatPayNotify(...)` 走 §4.1.1 transaction（内部已 catch P2002 → ALREADY_PAID/DUPLICATE_TRANSACTION_ID）
+- **正常处理结果（PAID / ALREADY_PAID / FAILED / 三联失败 / 中间态 / 未知 trade_state / UNEXPECTED_REFUND / DUPLICATE_TRANSACTION_ID）一律 return 200**（不让微信重发；不可恢复的写 event.error 留审计）
+- **仅程序 bug / DB 完全不可达（applyWechatPayNotify 重抛非 P2002 异常）才 return 500**——这是给微信重发机制的真正信号
+- 异常告警通过结构化日志打 `event.error` 字段；MVP 不接外部告警（运维 plan 接入）
 
 ### 5.3 `chargedProcedure` 中间件（apps/web/server/trpc.ts）
 
@@ -901,8 +1019,9 @@ applyWechatPayNotify(prisma, verify, expectedAppId, expectedMchId)
   : Promise<{ kind: "PAID" | "FAILED" | "ALREADY_PAID" | "ORDER_NOT_FOUND"
               | "AMOUNT_MISMATCH" | "APP_OR_MCH_MISMATCH"
               | "INTERMEDIATE_STATE_NOTPAY" | "INTERMEDIATE_STATE_USERPAYING"
-              | "UNEXPECTED_REFUND" | "UNKNOWN_TRADE_STATE" }>
-  // 按 §4.1.1 完整实现
+              | "UNEXPECTED_REFUND" | "UNKNOWN_TRADE_STATE"
+              | "DUPLICATE_TRANSACTION_ID" }>
+  // 按 §4.1.1 完整实现；transaction 外 catch P2002（idem_key→ALREADY_PAID, transaction_id→DUPLICATE_TRANSACTION_ID）
 
 expireStaleOrders(prisma, now): Promise<{ expired: number }>
 adminAdjust(prisma, { targetUserId, delta, reasonCode, reasonDetail, opsUserId })
@@ -999,10 +1118,10 @@ export const RULE_TOPUP_CREATE_USER: RateLimitRule = {
 |---|---|
 | 上限值 | `env.MINOR_MONTHLY_LIMIT_YUAN`，默认 200 元 |
 | 时区 | `Asia/Shanghai` 自然月（用户在国内）|
-| 查源 | `TopupOrder { userId, status in (CREATED, PENDING, PAID), createdAt >= 上海月初 }` 的 `SUM(amountCents)` |
+| 查源 | 两条 aggregate 之和（详 §5.1 `sumMonthlyTopupCents`）：① `status in (CREATED, PENDING) AND createdAt ≥ 上海月初` ② `status=PAID AND paidAt ≥ 上海月初`。EXPIRED/FAILED 不算 |
+| 跨月边界处理 | 5/31 创建 + 6/1 支付 → CREATED/PENDING 在 5 月占额度；支付完成切换到 6 月（按 paidAt）。这是"创建月预占用 + 实际付款月落账"的精确语义 |
 | 校验时机 | `wallet.topupCreate` 入口；仅 `ctx.auth.isMinor === true` |
 | 行为 | `used + input.amountCents > limit` → `PRECONDITION_FAILED, MINOR_MONTHLY_LIMIT_REACHED, { monthlyYuan, limitYuan, attemptYuan }` |
-| 跨月 | 不主动提醒；月初 createdAt 落到上月范围外，自动 reset |
 | UX | `wallet.balance` query 同时返 `monthly.{ topupYuan, remainingYuan, limitYuan }`，前端在创单页提示用户 |
 | 边界（接受的小 race）| 两 IP 并发"几乎同瞬间"创单可能小幅超额（被 `RULE_TOPUP_CREATE_IP cap=5` 限 + DB read 等级压窄）；不上 advisory lock |
 
@@ -1074,10 +1193,14 @@ Plan 3 第一次有"需要正经结构化日志"的需求（不补偿告警 / we
 
 - **充值幂等**：UNIQUE(idemKey=`topup:${outTradeNo}`) 顶重复 webhook
 - **扣点幂等**：UNIQUE(idemKey=`debit:...:${clientRequestId}`) 顶 client 重试
-- **充值并发**：两 webhook 同时到，只一条入账（事务 + UNIQUE）
+- **充值并发 → ALREADY_PAID**：`Promise.all([fireMockNotify, fireMockNotify])` 同 outTradeNo 两条 webhook 同时进入 `applyWechatPayNotify`，第二条 P2002 → 外层 catch → 返 `ALREADY_PAID`；DB 真理断言 `wallet.balance` 只 +credits 一次、`creditLedger` TOPUP entry 恰好 1 条、route 返 200（**不**返 500）
 - **扣点并发**：两 charged action 同时（同 / 不同 clientRequestId）按余额够不够并发安全
-- **月度上限并发**：CREATED+PENDING+PAID 算合计；两 IP 并发瞬间小 race 可接受
-- **fail-close 限频在 Redis down 时**：模拟 Redis 不可用，断言 `topupCreate` 返 `TOPUP_RATE_LIMIT_UNAVAILABLE`（不继续下单）
+- **跨月边界**：5/31 23:55 创建 + 6/1 00:10 付款 → 5 月 query 看不到此单计数（已切到 paidAt=6/1）；6 月 query 算进 paidAt=6/1 那条
+- **未付订单占额度**：CREATED/PENDING 订单按 createdAt 占当月额度；EXPIRED/FAILED 即时释放（不再算）
+- **月度上限并发**：两 IP 同瞬间创单可能小幅超额（被 RULE_TOPUP_CREATE_IP cap=5 限）；测试断言此 race 可见但被限频压窄
+- **fail-close 限频在 Redis down 时**：模拟 Redis 不可用（端口关 / mock store 抛 `RateLimitBackendDownError`），断言 `topupCreate` 返 `TOPUP_RATE_LIMIT_UNAVAILABLE`（不继续下单、TopupOrder 表无新行）
+- **mock unifiedOrder 不自动 fire notify**（防 §4.1.3 竞态）：构造一个只有 `unifiedOrder` 没调 `signalOrderReady` 的 path，断言 `/api/wechat-pay/notify` 完全没被调（mock notify URL 上挂一个 spy fetch 监控）
+- **signalOrderReady 在 PENDING 之后**：在 mock notifyMode="sync" 下，跑 happy-path 后断言 TopupOrder.status 最终是 PAID（不是 PENDING）—— 间接证明 update PENDING 发生在 mock notify 之前
 - **EXPIRED → PAID grace**：sweeper 标 EXPIRED 后慢到的 webhook 仍入账
 - **不补偿白名单**：`ComplianceRejectedError` 抛时不补偿 + metadata 标记 + 结构化日志
 - **未知错补偿**：默认抛错时补偿（fail-open）
