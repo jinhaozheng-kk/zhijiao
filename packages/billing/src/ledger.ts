@@ -138,9 +138,30 @@ export async function compensate(
  * fail-open compensation whitelist: explicit non-compensable errors return false.
  * ComplianceRejectedError: user received service output (even if it was a rejection) — don't refund.
  */
+// Compensation whitelist: errors that the user is considered to have
+// "received service for" — refunding them would reward retries that
+// exercise the same filter (e.g. probing the compliance scanner for free)
+// and obscure the cost of running the upstream that produced the refusal.
+//
+// Two recognition paths because tRPC routers conventionally catch domain
+// errors and re-throw as TRPCError with a structured `cause: { reason }`:
+//   1. Direct instance: error.name === "ComplianceRejectedError".
+//      Hits when chargeForAction's caller throws the original error and
+//      the middleware sees it un-wrapped (covered by billing unit tests).
+//   2. Wrapped cause: error.cause.reason === "COMPLIANCE_REJECTED".
+//      Hits when a tRPC router catches the domain error and re-throws
+//      a TRPCError with our standard `{ reason }` cause-object envelope
+//      (covered by charged-procedure-compensation integration tests).
+//
+// The reason string contract ("COMPLIANCE_REJECTED") is the same one the
+// errorFormatter surfaces to clients via shape.data.reason, so the whole
+// system speaks one vocabulary.
 export function shouldCompensate(e: unknown): boolean {
   const name = (e as { name?: string } | null)?.name ?? "";
   if (name === "ComplianceRejectedError") return false;
+  const causeReason = (e as { cause?: { reason?: string } | null } | null)
+    ?.cause?.reason;
+  if (causeReason === "COMPLIANCE_REJECTED") return false;
   return true;
 }
 

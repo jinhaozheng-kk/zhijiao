@@ -131,54 +131,73 @@ export const chargedProcedure = (kind: ActionKind) =>
       });
     }
 
-    try {
-      return await next();
-    } catch (e) {
-      if (shouldCompensate(e)) {
-        await compensate(ctx.db, {
-          originalLedgerId: debit.ledgerId,
+    // tRPC v11 middleware: next() RESOLVES with a MiddlewareResult — even
+    // when the downstream procedure throws. result.ok === false carries
+    // the error. A try/catch around next() would never fire and silently
+    // skip compensation. We must inspect result.ok explicitly.
+    const result = await next();
+    if (result.ok) return result;
+
+    const e = result.error;
+    if (shouldCompensate(e)) {
+      await compensate(ctx.db, {
+        originalLedgerId: debit.ledgerId,
+        walletId: wallet.id,
+        cost,
+        kind,
+        reason: errorReason(e),
+      });
+    } else {
+      // Annotate the existing debit so audit can distinguish
+      // "no compensation because whitelist" from a buggy missing comp.
+      //
+      // errorClass prefers the upstream (pre-tRPC-wrap) error class name
+      // when discoverable, since that's the audit-meaningful identity.
+      // Routers that catch a domain error and re-throw TRPCError set
+      // `cause.original = <upstreamError>` (see routers/tutor.ts) so we
+      // can recover the class through the wrap. We also accept a bare
+      // Error as cause for routers that pass the original directly.
+      const causeObj = (e as { cause?: unknown } | null)?.cause;
+      const originalFromCauseObj =
+        causeObj && typeof causeObj === "object" && "original" in causeObj
+          ? (causeObj as { original?: unknown }).original
+          : undefined;
+      const originalClass =
+        originalFromCauseObj instanceof Error
+          ? originalFromCauseObj.constructor.name
+          : causeObj instanceof Error
+            ? causeObj.constructor.name
+            : (e as { constructor?: { name?: string } } | null)?.constructor
+                ?.name ?? "Unknown";
+      const existing = await ctx.db.creditLedger.findUnique({
+        where: { id: debit.ledgerId },
+        select: { metadata: true },
+      });
+      const prior =
+        (existing?.metadata as Record<string, unknown> | null) ?? {};
+      await ctx.db.creditLedger.update({
+        where: { id: debit.ledgerId },
+        data: {
+          metadata: {
+            ...prior,
+            compensationStatus: "not_compensated_whitelisted",
+            errorClass: originalClass,
+          },
+        },
+      });
+      logger.warn(
+        {
+          event: "charged_action_not_compensated",
+          ledgerId: debit.ledgerId,
           walletId: wallet.id,
+          userId: ctx.auth.userId,
+          actionKind: kind,
           cost,
-          kind,
-          reason: errorReason(e),
-        });
-      } else {
-        // Annotate the existing debit so audit can distinguish
-        // "no compensation because whitelist" from a buggy missing comp.
-        const existing = await ctx.db.creditLedger.findUnique({
-          where: { id: debit.ledgerId },
-          select: { metadata: true },
-        });
-        const prior =
-          (existing?.metadata as Record<string, unknown> | null) ?? {};
-        await ctx.db.creditLedger.update({
-          where: { id: debit.ledgerId },
-          data: {
-            metadata: {
-              ...prior,
-              compensationStatus: "not_compensated_whitelisted",
-              errorClass:
-                (e as { constructor?: { name?: string } } | null)
-                  ?.constructor?.name ?? "Unknown",
-            },
-          },
-        });
-        logger.warn(
-          {
-            event: "charged_action_not_compensated",
-            ledgerId: debit.ledgerId,
-            walletId: wallet.id,
-            userId: ctx.auth.userId,
-            actionKind: kind,
-            cost,
-            errorClass:
-              (e as { constructor?: { name?: string } } | null)?.constructor
-                ?.name ?? "Unknown",
-            requestId: ctx.requestId,
-          },
-          "Action failed but whitelisted as non-compensable",
-        );
-      }
-      throw e;
+          errorClass: originalClass,
+          requestId: ctx.requestId,
+        },
+        "Action failed but whitelisted as non-compensable",
+      );
     }
+    return result;
   });

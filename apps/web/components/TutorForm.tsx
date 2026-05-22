@@ -9,11 +9,32 @@ export function TutorForm() {
   const [grade, setGrade] = useState<"G5"|"G6"|"G7"|"G8"|"G9"|"G10"|"G11"|"G12">("G8");
   const [data, setData] = useState<TutoringOutput | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  // Plan 3 Task 12: chargedProcedure idempotency key. We mint a fresh
+  // UUID per "submit" click and stash it so a transient retry (e.g.
+  // ask.mutate triggered twice by a double-click) reuses the same key —
+  // the second call hits ACTION_IDEMPOTENCY_HIT and the user is not
+  // double-charged. We rotate the key on every successful response and
+  // also after a hard error so the next attempt is a new request.
+  const [pendingReqId, setPendingReqId] = useState<string | null>(null);
 
   const ask = trpc.tutor.ask.useMutation({
-    onSuccess: (d) => { setData(d); setErr(null); },
-    onError: (e) => { setErr(e.message); setData(null); },
+    onSuccess: (d) => {
+      setData(d);
+      setErr(null);
+      setPendingReqId(null);
+    },
+    onError: (e) => {
+      setErr(e.message);
+      setData(null);
+      setPendingReqId(null);
+    },
   });
+
+  function submit() {
+    const clientRequestId = pendingReqId ?? crypto.randomUUID();
+    if (!pendingReqId) setPendingReqId(clientRequestId);
+    ask.mutate({ questionStem, studentGrade: grade, clientRequestId });
+  }
 
   return (
     <div className="space-y-4">
@@ -23,7 +44,7 @@ export function TutorForm() {
       <textarea value={questionStem} onChange={(e) => setQ(e.target.value)} className="w-full border rounded p-2 min-h-32" placeholder="粘贴或输入题目" data-testid="tutor-input" />
       <button
         disabled={ask.isPending || questionStem.trim().length === 0}
-        onClick={() => ask.mutate({ questionStem, studentGrade: grade })}
+        onClick={submit}
         className="rounded bg-slate-900 px-4 py-2 text-white disabled:opacity-50"
         data-testid="tutor-submit"
       >
