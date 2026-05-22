@@ -1,11 +1,15 @@
 import "server-only";
-import { creditPlaceholder, router } from "../trpc.js";
+// Plan 3 Task 9 transition: creditPlaceholder is removed; chargedProcedure is
+// wired into tutor.ask in Task 12 (which also extends the input schema with
+// clientRequestId). Using authedProcedure here keeps the procedure typed
+// without charging credit so Task 9 stays a small, reviewable diff.
+import { authedProcedure, router } from "../trpc.js";
 import { TutoringInputSchema, ComplianceRejectedError } from "@zhijiao/ai";
 import { TRPCError } from "@trpc/server";
 import { getAiRouter } from "@/lib/ai-client";
 
 export const tutorRouter = router({
-  ask: creditPlaceholder("TUTOR_ASK")
+  ask: authedProcedure
     .input(TutoringInputSchema)
     .mutation(async ({ ctx, input }) => {
       try {
