@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 
-test("新用户：登录 → 注册 → 进 tutor 问一道题", async ({ page, request }) => {
+test("新用户：登录 → 注册 → 落到学生首页", async ({ page, request }) => {
   // 用一个本测试专用的新号码，避免和 seed 冲突
   const phone = `1380000${String(Math.floor(Math.random() * 9000) + 1000)}`;
 
@@ -21,9 +21,9 @@ test("新用户：登录 → 注册 → 进 tutor 问一道题", async ({ page, 
   await page.getByTestId("grade-picker").selectOption("G8");
   await page.getByTestId("register-submit").click();
 
+  // After register the user lands on / (student home). Asking the tutor
+  // here was historically the smoke check, but Plan 3's chargedProcedure
+  // requires a positive balance and brand-new users start at 0 credits —
+  // verifying the recharge flow is now tutor-with-credit.spec.ts.
   await page.waitForURL((u) => u.pathname === "/");
-  await page.goto("/tutor");
-  await page.getByTestId("tutor-input").fill("计算 12 + 7");
-  await page.getByTestId("tutor-submit").click();
-  await expect(page.getByTestId("tutor-output")).toBeVisible({ timeout: 15_000 });
 });

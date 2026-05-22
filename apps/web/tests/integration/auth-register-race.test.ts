@@ -15,7 +15,7 @@ function makeCtx(cookies: Record<string, string> = {}) {
   return {
     db: prisma, redis,
     auth: null, authError: "NO_SESSION" as const,
-    ip: "1.1.1.1", ua: "v", resHeaders, cookies,
+    ip: "1.1.1.1", ua: "v", requestId: "test-req-race", resHeaders, cookies,
   };
 }
 

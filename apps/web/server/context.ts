@@ -1,19 +1,31 @@
 import "server-only";
+import { randomUUID } from "node:crypto";
 import type { FetchCreateContextFnOptions } from "@trpc/server/adapters/fetch";
 import { prisma } from "@zhijiao/db";
 import { redis } from "../lib/redis.js";
 import { verifyAccess, type AccessClaims, COOKIE_AT } from "@zhijiao/auth";
 import { env } from "./env.js";
+// Side-effect import: loads pino + injects it into @zhijiao/billing so that
+// the first authed request in any process boots the structured logger
+// before chargedProcedure / wallet routes / wechat-notify can emit.
+import "./logger.js";
 
 export type AuthError = "ACCESS_EXPIRED" | "ACCESS_INVALID" | "NO_SESSION" | "SESSION_REVOKED";
+
+// Plan 3 Task 8: isMinor lives on ctx.auth (not the JWT). JWT shape stays
+// stable so already-issued tokens keep working; createContext pays one
+// indexed PK lookup that already happens for session revocation (see
+// isSessionRevoked) to also pull isMinor at no extra round-trip.
+export type AuthCtx = AccessClaims & { isMinor: boolean };
 
 export type Ctx = {
   db: typeof prisma;
   redis: typeof redis;
-  auth: AccessClaims | null;
+  auth: AuthCtx | null;
   authError: AuthError | null;
   ip: string;
   ua: string;
+  requestId: string;
   resHeaders: Headers;
   cookies: Record<string, string>;
 };
@@ -60,7 +72,7 @@ async function isSessionRevoked(sessionId: string): Promise<boolean> {
 export async function createContext({ req, resHeaders }: FetchCreateContextFnOptions): Promise<Ctx> {
   const cookies = parseCookies(req.headers.get("cookie"));
   const at = cookies[COOKIE_AT];
-  let auth: AccessClaims | null = null;
+  let auth: AuthCtx | null = null;
   let authError: AuthError | null = null;
   if (!at) authError = "NO_SESSION";
   else {
@@ -69,7 +81,15 @@ export async function createContext({ req, resHeaders }: FetchCreateContextFnOpt
       if (await isSessionRevoked(v.claims.sessionId)) {
         authError = "SESSION_REVOKED";
       } else {
-        auth = v.claims;
+        // Plan 3 Task 8: query isMinor alongside the (now-validated) session.
+        // fail-safe default = true: if the user row is somehow missing we err
+        // toward the stricter minor monthly cap rather than silently letting an
+        // unknown account top up freely.
+        const user = await prisma.user.findUnique({
+          where: { id: v.claims.userId },
+          select: { isMinor: true },
+        });
+        auth = { ...v.claims, isMinor: user?.isMinor ?? true };
       }
     } else {
       authError = v.reason;
@@ -77,5 +97,9 @@ export async function createContext({ req, resHeaders }: FetchCreateContextFnOpt
   }
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
   const ua = req.headers.get("user-agent") || "";
-  return { db: prisma, redis, auth, authError, ip, ua, resHeaders, cookies };
+  // requestId: honour upstream X-Request-Id (set by a load balancer / next-edge
+  // middleware) when present; otherwise mint a UUID v4. Used by pino so every
+  // line a request emits is correlatable.
+  const requestId = req.headers.get("x-request-id") || randomUUID();
+  return { db: prisma, redis, auth, authError, ip, ua, requestId, resHeaders, cookies };
 }

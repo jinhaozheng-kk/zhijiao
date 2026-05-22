@@ -18,6 +18,7 @@ const RELEVANT_KEYS = [
   "AI_USE_MOCK",
   "SMS_USE_MOCK",
   "WECHAT_OAUTH_USE_MOCK",
+  "WECHAT_PAY_USE_MOCK",
   "DASHSCOPE_API_KEY",
   "DASHSCOPE_BASE_URL",
   "ALIYUN_SMS_ACCESS_KEY_ID",
@@ -26,6 +27,17 @@ const RELEVANT_KEYS = [
   "ALIYUN_SMS_TEMPLATE_CODE",
   "WECHAT_H5_APPID",
   "WECHAT_H5_SECRET",
+  "WECHAT_PAY_APPID",
+  "WECHAT_PAY_MCHID",
+  "WECHAT_PAY_API_V3_KEY",
+  "WECHAT_PAY_PRIVATE_KEY",
+  "WECHAT_PAY_CERT_SERIAL",
+  "WECHAT_PAY_PUB_KEY_FILE",
+  "WECHAT_PAY_NOTIFY_HOST",
+  "MOCK_WECHAT_PAY_SECRET",
+  "CREDIT_PER_YUAN",
+  "MINOR_MONTHLY_LIMIT_YUAN",
+  "LOG_LEVEL",
   "E2E_TEST_HOOKS",
 ] as const;
 
@@ -38,6 +50,10 @@ const VALID_BASE = {
   AI_USE_MOCK: "true",
   SMS_USE_MOCK: "true",
   WECHAT_OAUTH_USE_MOCK: "true",
+  WECHAT_PAY_USE_MOCK: "true",
+  MOCK_WECHAT_PAY_SECRET: "test-mock-pay-secret-32bytes-padding",
+  WECHAT_PAY_APPID: "wxpay-test-app",
+  WECHAT_PAY_MCHID: "1900000000",
 };
 
 let snapshot: Record<string, string | undefined> = {};
@@ -78,6 +94,7 @@ describe("server/env.ts (fail-fast validator)", () => {
     expect(mod.env.AI_USE_MOCK).toBe("true");
     expect(mod.env.SMS_USE_MOCK).toBe("true");
     expect(mod.env.WECHAT_OAUTH_USE_MOCK).toBe("true");
+    expect(mod.env.WECHAT_PAY_USE_MOCK).toBe("true");
   });
 
   it("missing ACCESS_JWT_SECRET → throws at import", async () => {
@@ -158,5 +175,77 @@ describe("server/env.ts (fail-fast validator)", () => {
     const mod = await importEnv();
     expect(mod.env.WECHAT_OAUTH_USE_MOCK).toBe("false");
     expect(mod.env.WECHAT_H5_APPID).toBe("wxlive");
+  });
+
+  it("WECHAT_PAY_USE_MOCK=true + missing MOCK_WECHAT_PAY_SECRET throws", async () => {
+    applyBase();
+    delete process.env.MOCK_WECHAT_PAY_SECRET;
+    await expect(importEnv()).rejects.toThrow(/MOCK_WECHAT_PAY_SECRET/i);
+  });
+
+  it("WECHAT_PAY_USE_MOCK=true + short MOCK_WECHAT_PAY_SECRET throws", async () => {
+    applyBase();
+    process.env.MOCK_WECHAT_PAY_SECRET = "too-short";
+    await expect(importEnv()).rejects.toThrow(/MOCK_WECHAT_PAY_SECRET.*16/i);
+  });
+
+  it("WECHAT_PAY_USE_MOCK=true + missing WECHAT_PAY_APPID throws", async () => {
+    applyBase();
+    delete process.env.WECHAT_PAY_APPID;
+    await expect(importEnv()).rejects.toThrow(/WECHAT_PAY_APPID/i);
+  });
+
+  it("WECHAT_PAY_USE_MOCK=true + missing WECHAT_PAY_MCHID throws", async () => {
+    applyBase();
+    delete process.env.WECHAT_PAY_MCHID;
+    await expect(importEnv()).rejects.toThrow(/WECHAT_PAY_MCHID/i);
+  });
+
+  it("WECHAT_PAY_USE_MOCK=false + missing real WECHAT_PAY_* throws", async () => {
+    applyBase();
+    process.env.WECHAT_PAY_USE_MOCK = "false";
+    process.env.WECHAT_PAY_APPID = "wxpay-live";
+    process.env.WECHAT_PAY_MCHID = "1900000000";
+    // Remaining real-mode credentials stay unset.
+    await expect(importEnv()).rejects.toThrow(/Real WeChat Pay requires/i);
+  });
+
+  it("WECHAT_PAY_USE_MOCK=false + complete real WECHAT_PAY_* passes", async () => {
+    applyBase();
+    process.env.WECHAT_PAY_USE_MOCK = "false";
+    process.env.WECHAT_PAY_APPID = "wxpay-live";
+    process.env.WECHAT_PAY_MCHID = "1900000000";
+    process.env.WECHAT_PAY_API_V3_KEY = "api-v3-key-32bytes-placeholder";
+    process.env.WECHAT_PAY_PRIVATE_KEY = "-----BEGIN PRIVATE KEY-----test-----END PRIVATE KEY-----";
+    process.env.WECHAT_PAY_CERT_SERIAL = "cert-serial";
+    process.env.WECHAT_PAY_PUB_KEY_FILE = "./certs/wechat-pay/platform.pem";
+    process.env.WECHAT_PAY_NOTIFY_HOST = "https://zhijiao.example.com";
+
+    const mod = await importEnv();
+    expect(mod.env.WECHAT_PAY_USE_MOCK).toBe("false");
+    expect(mod.env.WECHAT_PAY_APPID).toBe("wxpay-live");
+    expect(mod.env.WECHAT_PAY_NOTIFY_HOST).toBe("https://zhijiao.example.com");
+  });
+
+  it("credit pricing env defaults are numeric", async () => {
+    applyBase();
+    const mod = await importEnv();
+    expect(mod.env.CREDIT_PER_YUAN).toBe(10);
+    expect(mod.env.MINOR_MONTHLY_LIMIT_YUAN).toBe(200);
+  });
+
+  it("credit pricing env values are coerced to positive integers", async () => {
+    applyBase();
+    process.env.CREDIT_PER_YUAN = "25";
+    process.env.MINOR_MONTHLY_LIMIT_YUAN = "300";
+    const mod = await importEnv();
+    expect(mod.env.CREDIT_PER_YUAN).toBe(25);
+    expect(mod.env.MINOR_MONTHLY_LIMIT_YUAN).toBe(300);
+  });
+
+  it("LOG_LEVEL rejects unknown values", async () => {
+    applyBase();
+    process.env.LOG_LEVEL = "verbose";
+    await expect(importEnv()).rejects.toThrow(/LOG_LEVEL/i);
   });
 });

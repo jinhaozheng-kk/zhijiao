@@ -18,7 +18,7 @@ function makeCtx() {
   return {
     db: prisma, redis,
     auth: null, authError: "NO_SESSION" as const,
-    ip: "1.2.3.4", ua: "vitest", resHeaders, cookies: {},
+    ip: "1.2.3.4", ua: "vitest", requestId: "test-req-otp", resHeaders, cookies: {},
   };
 }
 

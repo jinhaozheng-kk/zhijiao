@@ -17,6 +17,7 @@ const dbs = [
   "zhijiao_test_db",
   "zhijiao_test_integrations",
   "zhijiao_test_web",
+  "zhijiao_test_billing",
 ];
 
 function rootDsn(): string {

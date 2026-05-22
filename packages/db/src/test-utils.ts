@@ -21,8 +21,17 @@ export const testPrisma = new PrismaClient({
 export const prisma = testPrisma;
 
 // 截断所有表（保留 schema），按依赖反向顺序
+// Plan 3 Task 10 additions: wechat_pay_events, topup_orders, credit_ledger,
+// wallets. All have FKs to users (Restrict on Wallet → User; no FK on
+// TopupOrder.userId by design). With CASCADE on TRUNCATE the order is
+// largely cosmetic, but listing them ahead of users keeps the intent
+// readable.
 export async function resetDb() {
   const tables = [
+    "wechat_pay_events",
+    "topup_orders",
+    "credit_ledger",
+    "wallets",
     "model_calls",
     "prompt_templates",
     "question_kp_links",

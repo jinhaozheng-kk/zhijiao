@@ -59,6 +59,7 @@ model User {
   roles       UserRole[]
   identities  AuthIdentity[]
   sessions    Session[]
+  wallet      Wallet?
 
   @@map("users")
 }
@@ -282,4 +283,107 @@ model ModelCall {
   @@index([taskKind, createdAt])
   @@index([userId, createdAt])
   @@map("model_calls")
+}
+
+// === Credit / Billing ===
+
+enum LedgerKind {
+  TOPUP
+  DEBIT
+  COMPENSATION
+  ADJUST_ADD
+  ADJUST_SUB
+}
+
+enum TopupStatus {
+  CREATED
+  PENDING
+  PAID
+  FAILED
+  EXPIRED
+}
+
+enum WechatPayEventVerify {
+  PENDING
+  OK
+  SIG_INVALID
+  CERT_NOT_FOUND
+  PARSE_FAILED
+}
+
+model Wallet {
+  id        String   @id @default(cuid())
+  userId    String   @unique @map("user_id")
+  balance   Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  user      User           @relation(fields: [userId], references: [id], onDelete: Restrict)
+  ledger    CreditLedger[]
+
+  @@map("wallets")
+}
+
+model CreditLedger {
+  id              String      @id @default(cuid())
+  walletId        String      @map("wallet_id")
+  kind            LedgerKind
+  delta           Int
+  balanceAfter    Int         @map("balance_after")
+  idemKey         String      @unique @map("idem_key")
+  refTable        String?     @map("ref_table")
+  refId           String?     @map("ref_id")
+  actionKind      String?     @map("action_kind")
+  metadata        Json?
+  createdAt       DateTime    @default(now()) @map("created_at")
+  createdByUserId String?     @map("created_by_user_id")
+
+  wallet          Wallet      @relation(fields: [walletId], references: [id], onDelete: Restrict)
+
+  @@index([walletId, createdAt(sort: Desc)])
+  @@index([refTable, refId])
+  @@map("credit_ledger")
+}
+
+model TopupOrder {
+  id            String       @id @default(cuid())
+  userId        String       @map("user_id")
+  amountCents   Int          @map("amount_cents")
+  credits       Int
+  status        TopupStatus  @default(CREATED)
+  outTradeNo    String       @unique @map("out_trade_no")
+  prepayId      String?      @map("prepay_id")
+  transactionId String?      @unique @map("transaction_id")
+  paidAt        DateTime?    @map("paid_at")
+  expiredAt     DateTime     @map("expired_at")
+  ipCreated     String?      @map("ip_created")
+  userAgent     String?      @map("user_agent")
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt      @map("updated_at")
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([status, expiredAt])
+  @@index([userId, status, createdAt])
+  @@index([userId, paidAt])
+  @@map("topup_orders")
+}
+
+model WechatPayEvent {
+  id            String                @id @default(cuid())
+  outTradeNo    String                @map("out_trade_no")
+  transactionId String?               @map("transaction_id")
+  rawBody       String                @db.Text @map("raw_body")
+  signature     String?
+  timestamp     String?
+  nonce         String?
+  serial        String?
+  verifyStatus  WechatPayEventVerify  @default(PENDING) @map("verify_status")
+  handled       Boolean               @default(false)
+  processedAt   DateTime?             @map("processed_at")
+  error         String?
+  createdAt     DateTime              @default(now()) @map("created_at")
+
+  @@index([outTradeNo])
+  @@index([handled, createdAt])
+  @@map("wechat_pay_events")
 }

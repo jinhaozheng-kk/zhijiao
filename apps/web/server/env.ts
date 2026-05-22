@@ -22,6 +22,7 @@ const Env = z
     AI_USE_MOCK: z.enum(["true", "false"]).default("false"),
     SMS_USE_MOCK: z.enum(["true", "false"]).default("false"),
     WECHAT_OAUTH_USE_MOCK: z.enum(["true", "false"]).default("false"),
+    WECHAT_PAY_USE_MOCK: z.enum(["true", "false"]).default("false"),
 
     // Real-mode credentials (checked by .refine below — optional at schema level
     // because they're only required when the corresponding USE_MOCK="false").
@@ -33,6 +34,25 @@ const Env = z
     ALIYUN_SMS_TEMPLATE_CODE: z.string().optional(),
     WECHAT_H5_APPID: z.string().optional(),
     WECHAT_H5_SECRET: z.string().optional(),
+    WECHAT_PAY_APPID: z.string().optional(),
+    WECHAT_PAY_MCHID: z.string().optional(),
+    WECHAT_PAY_API_V3_KEY: z.string().optional(),
+    WECHAT_PAY_PRIVATE_KEY: z.string().optional(),
+    WECHAT_PAY_CERT_SERIAL: z.string().optional(),
+    WECHAT_PAY_PUB_KEY_FILE: z.string().optional(),
+    WECHAT_PAY_NOTIFY_HOST: z.string().url().optional(),
+    MOCK_WECHAT_PAY_SECRET: z
+      .string()
+      .min(16, "MOCK_WECHAT_PAY_SECRET must be >= 16 bytes")
+      .optional(),
+
+    // Plan 3 business constants. Coerce from env strings for direct use in
+    // wallet/top-up code without repeated parseInt call sites.
+    CREDIT_PER_YUAN: z.coerce.number().int().min(1).default(10),
+    MINOR_MONTHLY_LIMIT_YUAN: z.coerce.number().int().min(1).default(200),
+
+    // Logger level is consumed by Task 8's server logger.
+    LOG_LEVEL: z.enum(["trace", "debug", "info", "warn", "error", "fatal"]).optional(),
 
     // E2E hooks: only "1" unlocks /api/__test__/* style endpoints.
     E2E_TEST_HOOKS: z.enum(["0", "1"]).default("0"),
@@ -55,6 +75,36 @@ const Env = z
       e.WECHAT_OAUTH_USE_MOCK === "true" ||
       (!!e.WECHAT_H5_APPID && !!e.WECHAT_H5_SECRET),
     { message: "Real WeChat OAuth requires WECHAT_H5_APPID + WECHAT_H5_SECRET" },
+  )
+  .refine(
+    (e) =>
+      e.WECHAT_PAY_USE_MOCK === "true" ||
+      (!!e.WECHAT_PAY_APPID &&
+        !!e.WECHAT_PAY_MCHID &&
+        !!e.WECHAT_PAY_API_V3_KEY &&
+        !!e.WECHAT_PAY_PRIVATE_KEY &&
+        !!e.WECHAT_PAY_CERT_SERIAL &&
+        !!e.WECHAT_PAY_PUB_KEY_FILE &&
+        !!e.WECHAT_PAY_NOTIFY_HOST),
+    {
+      message:
+        "Real WeChat Pay requires WECHAT_PAY_APPID + WECHAT_PAY_MCHID + WECHAT_PAY_API_V3_KEY + WECHAT_PAY_PRIVATE_KEY + WECHAT_PAY_CERT_SERIAL + WECHAT_PAY_PUB_KEY_FILE + WECHAT_PAY_NOTIFY_HOST",
+    },
+  )
+  .refine(
+    (e) =>
+      e.WECHAT_PAY_USE_MOCK !== "true" ||
+      (!!e.MOCK_WECHAT_PAY_SECRET &&
+        !!e.WECHAT_PAY_APPID &&
+        !!e.WECHAT_PAY_MCHID),
+    {
+      // appId + mchId feed the three-way verify check in
+      // applyWechatPayNotify even in mock mode (MockWechatPayAdapter signs the
+      // payload with these); leaving them optional would let a misconfigured
+      // mock match unset placeholders.
+      message:
+        "WECHAT_PAY_USE_MOCK=true requires MOCK_WECHAT_PAY_SECRET (>= 16 bytes) + WECHAT_PAY_APPID + WECHAT_PAY_MCHID",
+    },
   );
 
 // `next build` performs page-data collection which side-effect-imports every
@@ -79,6 +129,12 @@ const parsed = isBuildPhase
       AI_USE_MOCK: "true",
       SMS_USE_MOCK: "true",
       WECHAT_OAUTH_USE_MOCK: "true",
+      WECHAT_PAY_USE_MOCK: "true",
+      MOCK_WECHAT_PAY_SECRET: "build-phase-placeholder-mock-secret-16+",
+      WECHAT_PAY_APPID: "build-phase-placeholder-appid",
+      WECHAT_PAY_MCHID: "build-phase-placeholder-mchid",
+      CREDIT_PER_YUAN: "10",
+      MINOR_MONTHLY_LIMIT_YUAN: "200",
       E2E_TEST_HOOKS: "0",
     })
   : Env.safeParse(process.env);
