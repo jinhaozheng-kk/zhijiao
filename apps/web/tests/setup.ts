@@ -31,6 +31,12 @@ process.env.OTP_PEPPER ??= "test-only-otp-pepper-min16-x";
 process.env.AI_USE_MOCK ??= "true";
 process.env.SMS_USE_MOCK ??= "true";
 process.env.WECHAT_OAUTH_USE_MOCK ??= "true";
+process.env.WECHAT_PAY_USE_MOCK ??= "true";
+process.env.MOCK_WECHAT_PAY_SECRET ??= "test-mock-pay-secret-32bytes-padding";
+process.env.WECHAT_PAY_APPID ??= "wxpay-test-app";
+process.env.WECHAT_PAY_MCHID ??= "1900000000";
+process.env.CREDIT_PER_YUAN ??= "10";
+process.env.MINOR_MONTHLY_LIMIT_YUAN ??= "200";
 // WECHAT_H5_APPID is used by MockWechatH5Adapter when WECHAT_OAUTH_USE_MOCK=true;
 // integration tests assert on this value via the route handler.
 process.env.WECHAT_H5_APPID ??= "wx-mock-app";

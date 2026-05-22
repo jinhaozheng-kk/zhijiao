@@ -86,6 +86,12 @@ export default async function globalSetup(): Promise<void> {
       E2E_TEST_HOOKS: "1",
       SMS_USE_MOCK: "true",
       WECHAT_OAUTH_USE_MOCK: "true",
+      WECHAT_PAY_USE_MOCK: "true",
+      MOCK_WECHAT_PAY_SECRET: "e2e-mock-pay-secret-32bytes-padding",
+      WECHAT_PAY_APPID: "wxpay-e2e-app",
+      WECHAT_PAY_MCHID: "1900000000",
+      CREDIT_PER_YUAN: "10",
+      MINOR_MONTHLY_LIMIT_YUAN: "200",
       ACCESS_JWT_SECRET: "e2e-test-secret-at-least-32-bytes-long",
       // OTP_PEPPER must be >= 16 bytes (env validator min(16)). Previous value
       // "e2e-pepper" (10 bytes) would now fail boot.
