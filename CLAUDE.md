@@ -83,6 +83,22 @@
 - **Plan 1**（仓库脚手架 + Identity/Curriculum/Question Bank/AI Audit schemas + TUTOR_TURN 端到端）—— 见 `docs/superpowers/plans/2026-05-18-foundation-and-tutor-turn.md`
 - **Plan 2**（真鉴权：手机号 OTP + 微信 H5 OAuth 骨架 + Session/JWT + tRPC）—— 见 `docs/superpowers/plans/2026-05-19-real-auth.md`，spec 在 `docs/superpowers/specs/2026-05-19-real-auth-design.md`
 - **Plan 2 Hardening**（env validator + 原子化 refresh/OTP + 会话吊销即时生效 + bind 身份重校验 + register/refresh 限频接入 + race tests + 跨 package 测试 DB 隔离 + 仓库卫生）—— 见 `docs/superpowers/plans/2026-05-20-plan2-hardening.md`，spec 在 `docs/superpowers/specs/2026-05-20-plan2-hardening-design.md`
+- **Plan 3**（Credit 计费 + 微信支付 V3 沙箱：Mock 主路径 + Real V3 骨架 + chargedProcedure + 未成年月度上限 + OPS 调账 + pino 结构化日志）—— 见 `docs/superpowers/plans/2026-05-21-credit-and-wechat-pay-sandbox.md`，spec 在 `docs/superpowers/specs/2026-05-21-credit-and-wechat-pay-sandbox-design.md`
+
+**计费现状**：
+- `packages/billing` 新建：ensureWallet / chargeForAction（predicate-on-update + idemKey 防重，原子化）/ compensate（写 COMPENSATION ledger + refId 指回 DEBIT）/ applyWechatPayNotify（P2002 idemKey 重读 → ALREADY_PAID；P2002 transactionId 重读 → DUPLICATE_TRANSACTION_ID；spec §4.1 状态机；FAILED→PAID 拒绝走 TERMINAL_STATE_CONFLICT）/ expireStaleOrders / adminAdjust（OPS 调账；负 delta 也走 predicate-on-update 防透支 → InsufficientBalanceForAdjustError）/ sumMonthlyTopupCents（Asia/Shanghai 自然月 + CREATED+PENDING by createdAt + PAID by paidAt）
+- `chargedProcedure(kind)` 替换 `creditPlaceholder`；input 强制 `clientRequestId: uuid`；idemKey = `debit:<kind>:<userId>:<clientRequestId>`；fail-open 补偿（默认补，`ComplianceRejectedError`/`cause.reason === "COMPLIANCE_REJECTED"` 白名单不补，debit row 写 `metadata.compensationStatus = "not_compensated_whitelisted"`）。**tRPC v11 注意**：`next()` 返回 `MiddlewareResult`，不会 throw —— 必须 `if (!result.ok) ...`，try/catch 不会跑
+- `wallet.topupCreate`：`RULE_TOPUP_CREATE_{IP,USER}` **fail-CLOSE**（Redis 挂 → INTERNAL_SERVER_ERROR / `TOPUP_RATE_LIMIT_UNAVAILABLE`，不让无限连发）→ ensureWallet → 未成年 200元/自然月 → CREATED → `adapter.unifiedOrder` → PENDING → `adapter.signalOrderReady`（no-reject 契约）。`outTradeNo` = `zj_<userPrefix8>_<12 url-safe>`
+- `/api/wechat-pay/notify`：先无条件 `WechatPayEvent`（PENDING）作审计 → `adapter.verifyNotify` → `applyWechatPayNotify` → 200。仅 `applyWechatPayNotify` 重抛非 P2002 时 500，spec §4.3
+- `WechatPayAdapter`：Mock 三模 (`sync` / `async-delayed` / `manual`) HMAC-SHA256 + Real V3 骨架（throw 直到 ICP 备案 + 商户号 + APIv3 + 证书到位激活，独立 plan）。Adapter 接口 `signalOrderReady(outTradeNo, amountCents)` 由 `topupCreate` 在 `status=PENDING` 落地后显式调用；`unifiedOrder` 严禁触发 mock notify
+- env 校验扩 9 字段 + 2 refine（mock 模式也强制 `WECHAT_PAY_APPID/MCHID` 因 webhook 三联校验；real 模式强制 6 个真接 credentials）
+- 自建 pino 8 logger 在 `apps/web/server/logger.ts`（server-only；redact cookie/auth/rawBody/signature），通过 `setBillingLogger(...)` 注入到 `@zhijiao/billing` 包；Ctx 加 `requestId`（沿用 X-Request-Id 或生成 UUID v4） + `auth.isMinor`（从 DB 查，不进 JWC 避免 token 失效）
+- 测试 fixture 用户每个有 100 credits 起始余额（`packages/db/prisma/seed/1_test_users.ts`，idemKey `topup:seed:<userId>`，幂等）
+
+**Plan 3 *未*完成的事 —— prod ship 前必须做**：
+- PII 治理 plan：用户注销 / 去标识化 / `WechatPayEvent.rawBody` 保留期 / `TopupOrder` 孤儿订单清理策略
+- ICP 备案 + 微信商户号申请 + APIv3 密钥 + 商户证书 / `WECHAT_PAY_USE_MOCK=false` 配套 6 个 real env
+- Real adapter 激活：实现 `unifiedOrder` 走 V3 prepay API + `verifyNotify` 走 RSA-SHA256 + PlatformCertProvider 真接（独立 plan）
 
 **鉴权现状**：
 - 自建 JWT（jose HS256）+ Prisma `Session` 表（含 rotate + reuse detection）+ Redis（限频 / OTP nonce / register payload / wx state）
@@ -97,7 +113,7 @@
 pnpm setup              # 一键起本地依赖（首次；含 test:setup）
 pnpm dev                # 启动所有 app（含 apps/web 在 :3000）
 pnpm test               # 全量 unit + integration
-pnpm test:setup         # 建/迁 5 个 per-package test DB（zhijiao_test_{ai,auth,db,integrations,web}）。首次跑测前必做；之后幂等
+pnpm test:setup         # 建/迁 6 个 per-package test DB（zhijiao_test_{ai,auth,billing,db,integrations,web}）。首次跑测前必做；之后幂等
 pnpm --filter @zhijiao/web test:e2e   # E2E；global-setup 会在启动前 seed zhijiao_test_web
 pnpm typecheck          # TS 全量检查
 pnpm db:migrate         # apply 新 migration（Windows 上可能需要 docker-exec 绕过，见 README）
@@ -107,6 +123,7 @@ pnpm db:studio          # Prisma Studio 浏览数据
 # 单条测试：
 pnpm --filter @zhijiao/ai test -- tests/router.test.ts
 pnpm --filter @zhijiao/auth test -- tests/session.test.ts
+pnpm --filter @zhijiao/billing test -- tests/wechat-notify.test.ts
 pnpm --filter @zhijiao/web  test -- tests/integration/auth-register-race.test.ts
 ```
 
@@ -120,8 +137,13 @@ pnpm --filter @zhijiao/web  test -- tests/integration/auth-register-race.test.ts
 6. 路由契约：grep `apps/web/app/**/route.ts` 与 `packages/integrations/src/**/build.ts` 里写的 callback URL，统一到 `/wechat/callback`
 7. revoke 即时生效：手动 logout 后把旧 `__Host-zj_at` 重新塞回，调一个 authed tRPC endpoint（例 `auth.me`），期望 401 `SESSION_REVOKED`。**不要测 `/tutor`** —— 它不在 middleware 保护范围；要测 middleware 走 `/profile`
 8. PowerShell 调用约定：本机 execution policy 拦 `.ps1`，所有命令一律 `pnpm.cmd`（不是 `pnpm`），否则报 "running scripts is disabled"
+9. **mock 不漏到 prod**（Plan 3）：临时把 `apps/web/server/wechat-pay-adapter.ts` 改成 `useMock=false` 并删 real fields，跑 `pnpm.cmd --filter @zhijiao/web dev`，期望 env validator throw `/Real WeChat Pay requires/`
+10. **idemKey 命名唯一**（Plan 3）：`grep -n "idemKey:" packages/billing/src apps/web/server`，每处必须为 `topup:` / `debit:` / `comp:` / `adjust:` / `topup:bootstrap:`（test fixture）之一前缀
+11. **`adapter.unifiedOrder` 不 fire notify**（Plan 3）：`grep -n "fireMockNotify" packages/integrations/src/wechat-pay/mock.ts` 应只在 `signalOrderReady` 和 `fireMockNotify` 自身定义里出现，**不在 `unifiedOrder` 里**
+12. **OPS 调账不能裸 SQL**（Plan 3）：`grep -E "UPDATE wallets|UPDATE \"wallets\""` 在 TS 业务代码应 0 命中（只允许出现在 spec/plan/README 说明文档）
 
 **下一步候选 Plan**：
-- Plan 3: Credit 计费体系 + 微信支付沙箱（替换 `creditPlaceholder` 占位中间件）
-- Plan 4: 举一反三 + 错因分析（VariantGroup + ErrorBookEntry + 三阶变式生成）
+- Plan 4: 举一反三 + 错因分析（VariantGroup + ErrorBookEntry + 三阶变式生成）—— 复用 chargedProcedure 处理 `VARIANT_GROUP_GEN` / `ERROR_ANALYSIS` 计费
 - Plan 5: 真接阿里云 SMS + 微信公众号（ICP 备案通过后；**且 Plan 2 Hardening 必须先 ship**；替换 `RealSmsAdapter` / `RealWechatH5Adapter` 的 stub 实现）
+- Plan 6: PII 治理（用户注销 / 去标识化 / `WechatPayEvent.rawBody` 保留期 / `TopupOrder` 孤儿订单清理）—— **Plan 3 prod ship prereq**
+- Plan 7: 真接微信支付 V3 API（需 ICP 备案 + 商户号 + APIv3 + 商户证书；激活 `RealWechatPayAdapter.unifiedOrder` + `verifyNotify`）—— **Plan 3 prod ship prereq**
