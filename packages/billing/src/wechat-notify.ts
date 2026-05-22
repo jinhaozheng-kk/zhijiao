@@ -24,7 +24,8 @@ export type ApplyNotifyResult =
   | { kind: "INTERMEDIATE_STATE_USERPAYING" }
   | { kind: "UNEXPECTED_REFUND" }
   | { kind: "UNKNOWN_TRADE_STATE" }
-  | { kind: "DUPLICATE_TRANSACTION_ID" };
+  | { kind: "DUPLICATE_TRANSACTION_ID" }
+  | { kind: "TERMINAL_STATE_CONFLICT" };
 
 export async function applyWechatPayNotify(
   prisma: PrismaClient,
@@ -54,6 +55,24 @@ export async function applyWechatPayNotify(
           return { kind: "DUPLICATE_TRANSACTION_ID" as const };
         }
         return { kind: "ALREADY_PAID" as const };
+      }
+
+      // Spec state table: PENDING/EXPIRED -> PAID is allowed; FAILED is terminal.
+      // A SUCCESS arriving after we already marked the order FAILED (from a prior
+      // CLOSED/PAYERROR/REVOKED notify) is an anomaly — either we misclassified
+      // an earlier webhook or WeChat is replaying out of order. Refuse to credit
+      // and log; the route handler can still ACK 200 so WeChat stops retrying.
+      if (order.status === "FAILED" && verify.tradeState === "SUCCESS") {
+        getBillingLogger().error(
+          {
+            event: "wechat_pay_terminal_state_conflict",
+            outTradeNo: verify.outTradeNo,
+            incomingTransactionId: verify.transactionId,
+            storedTransactionId: order.transactionId,
+          },
+          "Received SUCCESS for order already in terminal FAILED state",
+        );
+        return { kind: "TERMINAL_STATE_CONFLICT" as const };
       }
 
       if (verify.tradeState === "NOTPAY") {

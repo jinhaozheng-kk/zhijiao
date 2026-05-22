@@ -7,6 +7,15 @@ export type AdjustReasonCode =
   | "FRAUD_CLAWBACK"
   | "OTHER";
 
+export class InsufficientBalanceForAdjustError extends Error {
+  constructor(public balance: number, public requested: number) {
+    super(
+      `cannot adjust by -${requested}: current balance ${balance} would go negative`,
+    );
+    this.name = "InsufficientBalanceForAdjustError";
+  }
+}
+
 export interface AdminAdjustArgs {
   targetUserId: string;
   delta: number;
@@ -27,10 +36,26 @@ export async function adminAdjust(
       where: { userId: args.targetUserId },
       select: { id: true, balance: true },
     });
-    await tx.wallet.update({
-      where: { id: w.id },
-      data: { balance: { increment: args.delta } },
-    });
+    if (args.delta < 0) {
+      // Predicate-on-update: only deduct if balance covers it. Mirrors
+      // chargeForAction's pattern so OPS clawback can never push balance < 0.
+      const claimed = await tx.wallet.updateMany({
+        where: { id: w.id, balance: { gte: -args.delta } },
+        data: { balance: { increment: args.delta } },
+      });
+      if (claimed.count !== 1) {
+        const fresh = await tx.wallet.findUniqueOrThrow({
+          where: { id: w.id },
+          select: { balance: true },
+        });
+        throw new InsufficientBalanceForAdjustError(fresh.balance, -args.delta);
+      }
+    } else {
+      await tx.wallet.update({
+        where: { id: w.id },
+        data: { balance: { increment: args.delta } },
+      });
+    }
     const after = await tx.wallet.findUniqueOrThrow({
       where: { id: w.id },
       select: { balance: true },

@@ -92,10 +92,18 @@ const Env = z
     },
   )
   .refine(
-    (e) => e.WECHAT_PAY_USE_MOCK !== "true" || !!e.MOCK_WECHAT_PAY_SECRET,
+    (e) =>
+      e.WECHAT_PAY_USE_MOCK !== "true" ||
+      (!!e.MOCK_WECHAT_PAY_SECRET &&
+        !!e.WECHAT_PAY_APPID &&
+        !!e.WECHAT_PAY_MCHID),
     {
+      // appId + mchId feed the three-way verify check in
+      // applyWechatPayNotify even in mock mode (MockWechatPayAdapter signs the
+      // payload with these); leaving them optional would let a misconfigured
+      // mock match unset placeholders.
       message:
-        "WECHAT_PAY_USE_MOCK=true requires MOCK_WECHAT_PAY_SECRET (min 16 bytes)",
+        "WECHAT_PAY_USE_MOCK=true requires MOCK_WECHAT_PAY_SECRET (>= 16 bytes) + WECHAT_PAY_APPID + WECHAT_PAY_MCHID",
     },
   );
 
@@ -123,6 +131,8 @@ const parsed = isBuildPhase
       WECHAT_OAUTH_USE_MOCK: "true",
       WECHAT_PAY_USE_MOCK: "true",
       MOCK_WECHAT_PAY_SECRET: "build-phase-placeholder-mock-secret-16+",
+      WECHAT_PAY_APPID: "build-phase-placeholder-appid",
+      WECHAT_PAY_MCHID: "build-phase-placeholder-mchid",
       CREDIT_PER_YUAN: "10",
       MINOR_MONTHLY_LIMIT_YUAN: "200",
       E2E_TEST_HOOKS: "0",

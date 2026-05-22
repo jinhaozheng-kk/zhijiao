@@ -8,7 +8,7 @@ const MCH = "1900000001";
 
 async function seedOrder(
   userId: string,
-  status: "CREATED" | "PENDING" | "PAID" | "EXPIRED",
+  status: "CREATED" | "PENDING" | "PAID" | "EXPIRED" | "FAILED",
   opts?: { transactionId?: string; amountCents?: number },
 ) {
   const out = `zj_${userId.slice(0, 8)}_${Math.random().toString(36).slice(2, 14)}`;
@@ -225,6 +225,32 @@ describe("applyWechatPayNotify", () => {
       where: { idemKey: `topup:${o.outTradeNo}` },
     });
     expect(topupEntries).toHaveLength(1);
+  });
+
+  it("FAILED order + SUCCESS notify → TERMINAL_STATE_CONFLICT; no credit, no PAID transition", async () => {
+    const u = await prismaTest.user.create({ data: { isMinor: false } });
+    await ensureWallet(prismaTest, u.id);
+    const o = await seedOrder(u.id, "FAILED", {
+      transactionId: "tx_prior_failed",
+    });
+    const r = await applyWechatPayNotify(
+      prismaTest,
+      verifyOk({ outTradeNo: o.outTradeNo, transactionId: "tx_later_success" }),
+      APP,
+      MCH,
+    );
+    expect(r.kind).toBe("TERMINAL_STATE_CONFLICT");
+    const reloaded = await prismaTest.topupOrder.findUnique({
+      where: { outTradeNo: o.outTradeNo },
+    });
+    expect(reloaded?.status).toBe("FAILED");
+    expect(reloaded?.transactionId).toBe("tx_prior_failed");
+    const w = await prismaTest.wallet.findUnique({ where: { userId: u.id } });
+    expect(w?.balance).toBe(0);
+    const topupEntries = await prismaTest.creditLedger.findMany({
+      where: { idemKey: `topup:${o.outTradeNo}` },
+    });
+    expect(topupEntries).toHaveLength(0);
   });
 
   it("EXPIRED → PAID grace: late webhook still credits", async () => {

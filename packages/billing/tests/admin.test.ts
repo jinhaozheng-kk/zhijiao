@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { adminAdjust } from "../src/admin";
+import { adminAdjust, InsufficientBalanceForAdjustError } from "../src/admin";
 import { ensureWallet } from "../src/wallet";
 import { prismaTest, resetBillingTables } from "../src/test-utils";
 
@@ -33,7 +33,7 @@ describe("adminAdjust", () => {
     );
   });
 
-  it("negative delta writes ADJUST_SUB; respects predicate-on-update for non-negative end balance", async () => {
+  it("negative delta within balance writes ADJUST_SUB", async () => {
     const target = await prismaTest.user.create({ data: { isMinor: false } });
     const ops = await prismaTest.user.create({ data: { isMinor: false } });
     const w = await ensureWallet(prismaTest, target.id);
@@ -54,6 +54,34 @@ describe("adminAdjust", () => {
     });
     expect(entry?.kind).toBe("ADJUST_SUB");
     expect(entry?.delta).toBe(-30);
+  });
+
+  it("negative delta exceeding balance throws InsufficientBalanceForAdjustError; balance + ledger unchanged", async () => {
+    const target = await prismaTest.user.create({ data: { isMinor: false } });
+    const ops = await prismaTest.user.create({ data: { isMinor: false } });
+    const w = await ensureWallet(prismaTest, target.id);
+    await prismaTest.wallet.update({
+      where: { id: w.id },
+      data: { balance: 100 },
+    });
+    await expect(
+      adminAdjust(prismaTest, {
+        targetUserId: target.id,
+        delta: -130,
+        reasonCode: "FRAUD_CLAWBACK",
+        reasonDetail: "attempted overdraft clawback",
+        opsUserId: ops.id,
+      }),
+    ).rejects.toBeInstanceOf(InsufficientBalanceForAdjustError);
+    const after = await prismaTest.wallet.findUnique({
+      where: { id: w.id },
+      select: { balance: true },
+    });
+    expect(after?.balance).toBe(100);
+    const ledgerCount = await prismaTest.creditLedger.count({
+      where: { walletId: w.id },
+    });
+    expect(ledgerCount).toBe(0);
   });
 
   it("rejects delta=0 (validated at procedure layer; helper still throws for safety)", async () => {

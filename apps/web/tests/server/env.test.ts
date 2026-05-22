@@ -52,6 +52,8 @@ const VALID_BASE = {
   WECHAT_OAUTH_USE_MOCK: "true",
   WECHAT_PAY_USE_MOCK: "true",
   MOCK_WECHAT_PAY_SECRET: "test-mock-pay-secret-32bytes-padding",
+  WECHAT_PAY_APPID: "wxpay-test-app",
+  WECHAT_PAY_MCHID: "1900000000",
 };
 
 let snapshot: Record<string, string | undefined> = {};
@@ -185,6 +187,18 @@ describe("server/env.ts (fail-fast validator)", () => {
     applyBase();
     process.env.MOCK_WECHAT_PAY_SECRET = "too-short";
     await expect(importEnv()).rejects.toThrow(/MOCK_WECHAT_PAY_SECRET.*16/i);
+  });
+
+  it("WECHAT_PAY_USE_MOCK=true + missing WECHAT_PAY_APPID throws", async () => {
+    applyBase();
+    delete process.env.WECHAT_PAY_APPID;
+    await expect(importEnv()).rejects.toThrow(/WECHAT_PAY_APPID/i);
+  });
+
+  it("WECHAT_PAY_USE_MOCK=true + missing WECHAT_PAY_MCHID throws", async () => {
+    applyBase();
+    delete process.env.WECHAT_PAY_MCHID;
+    await expect(importEnv()).rejects.toThrow(/WECHAT_PAY_MCHID/i);
   });
 
   it("WECHAT_PAY_USE_MOCK=false + missing real WECHAT_PAY_* throws", async () => {
