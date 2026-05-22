@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { trpc } from "@/lib/trpc-client";
 import type { TutoringOutput } from "@zhijiao/ai";
@@ -9,6 +10,10 @@ export function TutorForm() {
   const [grade, setGrade] = useState<"G5"|"G6"|"G7"|"G8"|"G9"|"G10"|"G11"|"G12">("G8");
   const [data, setData] = useState<TutoringOutput | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  // Distinguish INSUFFICIENT_BALANCE from other failures so the CTA can
+  // deep-link straight to /wallet rather than asking the user to figure out
+  // the recharge path themselves.
+  const [insufficientBalance, setInsufficientBalance] = useState(false);
   // Plan 3 Task 12: chargedProcedure idempotency key. We mint a fresh
   // UUID per "submit" click and stash it so a transient retry (e.g.
   // ask.mutate triggered twice by a double-click) reuses the same key —
@@ -21,9 +26,12 @@ export function TutorForm() {
     onSuccess: (d) => {
       setData(d);
       setErr(null);
+      setInsufficientBalance(false);
       setPendingReqId(null);
     },
     onError: (e) => {
+      const reason = (e.data as { reason?: string } | undefined)?.reason;
+      setInsufficientBalance(reason === "INSUFFICIENT_BALANCE");
       setErr(e.message);
       setData(null);
       setPendingReqId(null);
@@ -50,7 +58,23 @@ export function TutorForm() {
       >
         {ask.isPending ? "讲解中..." : "讲一讲"}
       </button>
-      {err && <p data-testid="tutor-error" className="text-red-600">{err}</p>}
+      {err && (
+        <p data-testid="tutor-error" className="text-red-600">
+          {err}
+          {insufficientBalance && (
+            <>
+              {" "}
+              <Link
+                href="/wallet"
+                className="underline text-emerald-700"
+                data-testid="tutor-error-recharge-link"
+              >
+                去充值
+              </Link>
+            </>
+          )}
+        </p>
+      )}
       {data && (
         <div data-testid="tutor-output" className="space-y-2">
           <h2 className="font-bold">{data.restatement}</h2>
