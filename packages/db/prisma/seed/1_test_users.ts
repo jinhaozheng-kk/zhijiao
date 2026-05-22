@@ -55,6 +55,35 @@ export async function seedTestUsers(prisma: PrismaClient) {
         update: {},
       });
     }
+
+    // Plan 3 Task 14: seed a 100-credit wallet for every test user so
+    // chargedProcedure flows (tutor.ask costs 1 credit, etc.) work in
+    // E2E without first running a top-up. Idempotent: only seeds when
+    // the wallet doesn't already have an audit-trail entry to anchor
+    // its balance. Re-running db:seed in an already-credited DB is a
+    // no-op for the wallet/ledger.
+    const wallet = await prisma.wallet.upsert({
+      where: { userId: u.id },
+      create: { userId: u.id, balance: 100 },
+      update: {},
+    });
+    const seedIdemKey = `topup:seed:${u.id}`;
+    const existing = await prisma.creditLedger.findUnique({
+      where: { idemKey: seedIdemKey },
+    });
+    if (!existing) {
+      await prisma.creditLedger.create({
+        data: {
+          walletId: wallet.id,
+          kind: "TOPUP",
+          delta: 100,
+          balanceAfter: 100,
+          idemKey: seedIdemKey,
+          actionKind: null,
+          metadata: { reason: "DEV/E2E test fixture" },
+        },
+      });
+    }
   }
 
   console.log(`✓ Test users seeded: ${users.length}`);
