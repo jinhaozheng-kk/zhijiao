@@ -18,6 +18,7 @@ function makeCtx(ip: string) {
     authError: "NO_SESSION" as const,
     ip,
     ua: "v",
+    requestId: "test-req-ratelimit",
     resHeaders,
     cookies: {},
   };
