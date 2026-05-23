@@ -58,6 +58,14 @@ certs/
 .claude/worktrees/
 .claire/
 
+# planning-with-files working memory (skill: superpowers? / planning-with-files).
+# Source-of-truth specs/plans live in docs/superpowers/. These are session
+# scratch — task_plan / findings / progress per running task.
+.planning/
+task_plan.md
+findings.md
+progress.md
+
 # Baseline / final-regression harness runtime artifacts (regenerated each run; PR-attached, not tracked)
 baseline-runs.txt
 final-runs.txt
