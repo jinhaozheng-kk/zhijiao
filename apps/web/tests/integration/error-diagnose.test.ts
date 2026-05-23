@@ -12,13 +12,21 @@ import {
 // Mock the AI client so each test can swap the diagnoseError behaviour without
 // hitting a real model adapter. The default mock is the happy path; tests that
 // need adverse cases override via the module-mock's stored ref.
-const aiMockRef = {
-  diagnoseError: vi.fn(async (_input: unknown) => ({
-    rootCause: "CALCULATION_SLIP" as const,
-    reasoning: "Mock diagnosis: 学生移项符号搞反。",
-    suggestedKnowledgePoints: ["一元一次方程", "移项"],
-    modelCallId: "mock-call-id",
-  })),
+//
+// Typed as `(input: unknown) => Promise<unknown>` so reassignments to a
+// throwing mock (Promise<never>) and to mocks returning different shapes
+// both typecheck. Production code paths only inspect the awaited result
+// shape at runtime via the AI router's zod schemas.
+type DiagnoseFn = (input: unknown) => Promise<unknown>;
+const aiMockRef: { diagnoseError: DiagnoseFn } = {
+  diagnoseError: vi.fn<Parameters<DiagnoseFn>, ReturnType<DiagnoseFn>>(
+    async (_input) => ({
+      rootCause: "CALCULATION_SLIP" as const,
+      reasoning: "Mock diagnosis: 学生移项符号搞反。",
+      suggestedKnowledgePoints: ["一元一次方程", "移项"],
+      modelCallId: "mock-call-id",
+    }),
+  ),
 };
 
 vi.mock("@/lib/ai-client", () => ({
@@ -105,7 +113,7 @@ describe("error.diagnose", () => {
       rootCauseReasoning: "Original reasoning before re-diagnose.",
     });
 
-    aiMockRef.diagnoseError = vi.fn(async () => ({
+    aiMockRef.diagnoseError = vi.fn(async (_input: unknown) => ({
       rootCause: "READING_ERROR" as const,
       reasoning: "Updated mock reasoning.",
       suggestedKnowledgePoints: [],
@@ -224,7 +232,7 @@ describe("error.diagnose", () => {
     const { questionId } = await seedTestSubjectAndQuestion();
     const u = await seedUserWithBalance(5);
 
-    aiMockRef.diagnoseError = vi.fn(async () => {
+    aiMockRef.diagnoseError = vi.fn(async (_input: unknown) => {
       throw new ComplianceRejectedError(["押中"], "ERROR_ANALYSIS");
     });
 
@@ -265,7 +273,7 @@ describe("error.diagnose", () => {
     const { questionId } = await seedTestSubjectAndQuestion();
     const u = await seedUserWithBalance(5);
 
-    aiMockRef.diagnoseError = vi.fn(async () => {
+    aiMockRef.diagnoseError = vi.fn(async (_input: unknown) => {
       throw new Error("network down");
     });
 
