@@ -4,13 +4,25 @@ import { ModelCallStatus } from "@prisma/client";
 import { findForbidden } from "@zhijiao/domain";
 import type { ModelAdapter } from "./adapters/types.js";
 import { TASK_MODEL_MAP, type TaskKind } from "./tasks.js";
-import { TutoringInputSchema, TutoringOutputSchema, type TutoringOutput } from "./schemas.js";
+import {
+  TutoringInputSchema,
+  TutoringOutputSchema,
+  type TutoringOutput,
+  ErrorAnalysisInputSchema,
+  ErrorAnalysisOutputSchema,
+  type ErrorAnalysisOutput,
+  VariantGenerationInputSchema,
+  VariantGenerationOutputSchema,
+  type VariantGenerationOutput,
+} from "./schemas.js";
 import { loadPrompt, ensurePromptInDb } from "./registry.js";
 import { writeAudit } from "./audit.js";
 
 export class ComplianceRejectedError extends Error {
-  constructor(public hits: readonly string[]) {
-    super(`TUTOR_TURN rejected by compliance filter: ${hits.join(", ")}`);
+  // taskKind preserved for debug/log; original sites only passed hits, so it defaults
+  // to "AI" for back-compat. Plan 4 callers pass the actual task kind.
+  constructor(public hits: readonly string[], taskKind: string = "AI") {
+    super(`${taskKind} output rejected by compliance filter: ${hits.join(", ")}`);
     this.name = "ComplianceRejectedError";
   }
 }
@@ -23,6 +35,20 @@ function scanTutoringOutputForForbidden(out: TutoringOutput): string[] {
     ...out.steps,
     ...out.pitfalls,
   ].join("\n");
+  return findForbidden(corpus);
+}
+
+function scanErrorAnalysisOutputForForbidden(out: ErrorAnalysisOutput): string[] {
+  const corpus = [out.reasoning, ...out.suggestedKnowledgePoints].join("\n");
+  return findForbidden(corpus);
+}
+
+function scanVariantGenerationOutputForForbidden(
+  out: VariantGenerationOutput,
+): string[] {
+  const corpus = out.items
+    .flatMap((it) => [it.stemMd, it.solutionMd, ...it.knowledgePointHints])
+    .join("\n");
   return findForbidden(corpus);
 }
 
@@ -141,6 +167,249 @@ export class AiRouter {
     });
     throw new Error(
       `TUTOR_TURN failed after ${parseAttempts} attempts: ${
+        lastError instanceof Error ? lastError.message : String(lastError)
+      }`,
+    );
+  }
+
+  // Plan 4: error.diagnose backing call.
+  // Returns the validated ErrorAnalysisOutput plus the audit ModelCall.id so
+  // the caller can persist `lastDiagnoseCallId` on the ErrorBookEntry row.
+  async diagnoseError(
+    input: unknown,
+  ): Promise<ErrorAnalysisOutput & { modelCallId: string }> {
+    const parsed = ErrorAnalysisInputSchema.parse(input);
+    const taskKind: TaskKind = "ERROR_ANALYSIS";
+    const prompt = await loadPrompt(
+      "error-analysis",
+      this.opts.promptVersion ?? "v1",
+    );
+    const promptTemplateId = await ensurePromptInDb(this.opts.prisma, prompt);
+
+    const userContent = prompt.interpolate({
+      stemMd: parsed.stemMd,
+      correctAnswerMd: parsed.correctAnswerMd ?? "（未提供）",
+      actualAnswerMd: parsed.actualAnswerMd ?? "（未提供）",
+      studentGrade: parsed.studentGrade ?? "G8",
+    });
+
+    const model = this.opts.modelOverride ?? TASK_MODEL_MAP[taskKind];
+    const request = {
+      model,
+      messages: [
+        {
+          role: "system" as const,
+          content: "你是严谨、面向中国 K12 的错因分析助手。",
+        },
+        { role: "user" as const, content: userContent },
+      ],
+      responseFormat: "json_object" as const,
+      temperature: 0.2,
+    };
+
+    const start = Date.now();
+    let response = null as Awaited<
+      ReturnType<typeof this.opts.adapter.call>
+    > | null;
+    let parseAttempts = 0;
+    let lastError: unknown = null;
+
+    while (parseAttempts < 3) {
+      try {
+        response = await this.opts.adapter.call(request);
+        const json = JSON.parse(response.content);
+        const validated = ErrorAnalysisOutputSchema.parse(json);
+
+        const hits = scanErrorAnalysisOutputForForbidden(validated);
+        if (hits.length > 0) {
+          await writeAudit(this.opts.prisma, {
+            taskKind,
+            promptTemplateId,
+            request,
+            response,
+            latencyMs: Date.now() - start,
+            status: ModelCallStatus.COMPLIANCE_REJECTED,
+            errorMessage: `forbidden phrases: ${hits.join(", ")}`,
+            userId: this.opts.userId ?? null,
+          });
+          throw new ComplianceRejectedError(hits, taskKind);
+        }
+
+        const modelCallId = await writeAudit(this.opts.prisma, {
+          taskKind,
+          promptTemplateId,
+          request,
+          response,
+          latencyMs: Date.now() - start,
+          status: ModelCallStatus.SUCCESS,
+          errorMessage: null,
+          userId: this.opts.userId ?? null,
+        });
+        return { ...validated, modelCallId };
+      } catch (e) {
+        if (e instanceof ComplianceRejectedError) throw e;
+
+        lastError = e;
+        parseAttempts++;
+        if (e instanceof z.ZodError || e instanceof SyntaxError) {
+          request.messages.push({
+            role: "user",
+            content: "上次输出不是符合 schema 的 JSON，请重新只输出 JSON。",
+          });
+          continue;
+        }
+        await writeAudit(this.opts.prisma, {
+          taskKind,
+          promptTemplateId,
+          request,
+          response,
+          latencyMs: Date.now() - start,
+          status: ModelCallStatus.ADAPTER_ERROR,
+          errorMessage: e instanceof Error ? e.message : String(e),
+          userId: this.opts.userId ?? null,
+        });
+        throw e;
+      }
+    }
+
+    await writeAudit(this.opts.prisma, {
+      taskKind,
+      promptTemplateId,
+      request,
+      response,
+      latencyMs: Date.now() - start,
+      status: ModelCallStatus.PARSE_FAILED,
+      errorMessage:
+        lastError instanceof Error ? lastError.message : String(lastError),
+      userId: this.opts.userId ?? null,
+    });
+    throw new Error(
+      `ERROR_ANALYSIS failed after ${parseAttempts} attempts: ${
+        lastError instanceof Error ? lastError.message : String(lastError)
+      }`,
+    );
+  }
+
+  // Plan 4: variant.generateForEntry backing call.
+  // Returns the validated VariantGenerationOutput plus the audit ModelCall.id
+  // so the caller can persist `modelCallId` on the VariantGroup row.
+  async generateVariants(
+    input: unknown,
+  ): Promise<VariantGenerationOutput & { modelCallId: string }> {
+    const parsed = VariantGenerationInputSchema.parse(input);
+    const taskKind: TaskKind = "VARIANT_GROUP_GEN";
+    const prompt = await loadPrompt(
+      "variant-generation",
+      this.opts.promptVersion ?? "v1",
+    );
+    const promptTemplateId = await ensurePromptInDb(this.opts.prisma, prompt);
+
+    // anchorKps 序列化为可注入 prompt 的 Markdown 列表
+    const anchorKpsRendered = parsed.anchorKps
+      .map((k) => `- ${k.name}（difficulty=${k.difficulty}）`)
+      .join("\n");
+
+    const userContent = prompt.interpolate({
+      anchorStemMd: parsed.anchorStemMd,
+      anchorRootCause: parsed.anchorRootCause,
+      anchorKps: anchorKpsRendered,
+      studentGrade: parsed.studentGrade ?? "G8",
+    });
+
+    const model = this.opts.modelOverride ?? TASK_MODEL_MAP[taskKind];
+    const request = {
+      model,
+      messages: [
+        {
+          role: "system" as const,
+          content:
+            "你是严谨、面向中国 K12 的举一反三变式生成助手。",
+        },
+        { role: "user" as const, content: userContent },
+      ],
+      responseFormat: "json_object" as const,
+      temperature: 0.5, // 变式需要一定多样性
+    };
+
+    const start = Date.now();
+    let response = null as Awaited<
+      ReturnType<typeof this.opts.adapter.call>
+    > | null;
+    let parseAttempts = 0;
+    let lastError: unknown = null;
+
+    while (parseAttempts < 3) {
+      try {
+        response = await this.opts.adapter.call(request);
+        const json = JSON.parse(response.content);
+        const validated = VariantGenerationOutputSchema.parse(json);
+
+        const hits = scanVariantGenerationOutputForForbidden(validated);
+        if (hits.length > 0) {
+          await writeAudit(this.opts.prisma, {
+            taskKind,
+            promptTemplateId,
+            request,
+            response,
+            latencyMs: Date.now() - start,
+            status: ModelCallStatus.COMPLIANCE_REJECTED,
+            errorMessage: `forbidden phrases: ${hits.join(", ")}`,
+            userId: this.opts.userId ?? null,
+          });
+          throw new ComplianceRejectedError(hits, taskKind);
+        }
+
+        const modelCallId = await writeAudit(this.opts.prisma, {
+          taskKind,
+          promptTemplateId,
+          request,
+          response,
+          latencyMs: Date.now() - start,
+          status: ModelCallStatus.SUCCESS,
+          errorMessage: null,
+          userId: this.opts.userId ?? null,
+        });
+        return { ...validated, modelCallId };
+      } catch (e) {
+        if (e instanceof ComplianceRejectedError) throw e;
+
+        lastError = e;
+        parseAttempts++;
+        if (e instanceof z.ZodError || e instanceof SyntaxError) {
+          request.messages.push({
+            role: "user",
+            content:
+              "上次输出不是符合 schema 的 JSON（必须 3 道，level L1/L2/L3 各一），请重新只输出 JSON。",
+          });
+          continue;
+        }
+        await writeAudit(this.opts.prisma, {
+          taskKind,
+          promptTemplateId,
+          request,
+          response,
+          latencyMs: Date.now() - start,
+          status: ModelCallStatus.ADAPTER_ERROR,
+          errorMessage: e instanceof Error ? e.message : String(e),
+          userId: this.opts.userId ?? null,
+        });
+        throw e;
+      }
+    }
+
+    await writeAudit(this.opts.prisma, {
+      taskKind,
+      promptTemplateId,
+      request,
+      response,
+      latencyMs: Date.now() - start,
+      status: ModelCallStatus.PARSE_FAILED,
+      errorMessage:
+        lastError instanceof Error ? lastError.message : String(lastError),
+      userId: this.opts.userId ?? null,
+    });
+    throw new Error(
+      `VARIANT_GROUP_GEN failed after ${parseAttempts} attempts: ${
         lastError instanceof Error ? lastError.message : String(lastError)
       }`,
     );
