@@ -56,10 +56,11 @@ model User {
   createdAt   DateTime    @default(now()) @map("created_at")
   updatedAt   DateTime    @updatedAt      @map("updated_at")
 
-  roles       UserRole[]
-  identities  AuthIdentity[]
-  sessions    Session[]
-  wallet      Wallet?
+  roles             UserRole[]
+  identities        AuthIdentity[]
+  sessions          Session[]
+  wallet            Wallet?
+  errorBookEntries  ErrorBookEntry[]   // Plan 4
 
   @@map("users")
 }
@@ -206,9 +207,10 @@ model Question {
   createdAt      DateTime         @default(now()) @map("created_at")
   updatedAt      DateTime         @updatedAt @map("updated_at")
 
-  subject        Subject          @relation(fields: [subjectId], references: [id])
-  answer         QuestionAnswer?
-  knowledgePoints QuestionKPLink[]
+  subject          Subject          @relation(fields: [subjectId], references: [id])
+  answer           QuestionAnswer?
+  knowledgePoints  QuestionKPLink[]
+  errorBookEntries ErrorBookEntry[]  // Plan 4
 
   @@map("questions")
 }
@@ -386,4 +388,94 @@ model WechatPayEvent {
   @@index([outTradeNo])
   @@index([handled, createdAt])
   @@map("wechat_pay_events")
+}
+
+// === Error Book / Variants (Plan 4) ===
+
+enum ErrorRootCause {
+  CONCEPT_CONFUSION     // 概念混淆
+  READING_ERROR         // 读题失误
+  FORMULA_MISUSE        // 公式误用
+  CALCULATION_SLIP      // 计算疏漏
+  TRANSFER_GAP          // 迁移不足
+  OTHER                 // 兜底：AI 无法分类时；产品上需后续 reclassify
+}
+
+enum ErrorBookStatus {
+  ACTIVE     // 默认错题本视图；进复习队列；error.list 默认只返此态
+  ARCHIVED   // 用户主动归档：从默认错题本"移走"；仅归档页（status="ARCHIVED"）可见
+  DELETED    // 终态；所有 student-facing 入口视为不存在；DB 行保留作审计
+}
+
+enum VariantLevel {
+  L1   // 同结构同知识点；改数字 / 改具体值
+  L2   // 改条件 / 改题型表象但同知识点
+  L3   // 跨题型与现实情境融合；要求知识点迁移
+}
+
+model ErrorBookEntry {
+  id                  String           @id @default(cuid())
+  userId              String           @map("user_id")
+  questionId          String           @map("question_id")
+  status              ErrorBookStatus  @default(ACTIVE)
+
+  rootCause           ErrorRootCause
+  rootCauseReasoning  String           @db.Text @map("root_cause_reasoning")
+  actualAnswerMd      String?          @db.Text @map("actual_answer_md")
+
+  reviewCount         Int              @default(0) @map("review_count")
+  nextReviewAt        DateTime?        @map("next_review_at")
+  lastReviewedAt      DateTime?        @map("last_reviewed_at")
+
+  diagnoseLedgerId    String?          @map("diagnose_ledger_id")
+  lastDiagnoseCallId  String?          @map("last_diagnose_call_id")
+
+  createdAt           DateTime         @default(now()) @map("created_at")
+  updatedAt           DateTime         @updatedAt      @map("updated_at")
+
+  // 安全默认：不 CASCADE（与 Wallet/CreditLedger 同款）；用户注销 / 题库下线由独立 plan 接管
+  user                User             @relation(fields: [userId], references: [id], onDelete: Restrict)
+  question            Question         @relation(fields: [questionId], references: [id], onDelete: Restrict)
+  variantGroups       VariantGroup[]
+
+  // ❌ 故意不加 @@unique([userId, questionId])
+  //    DELETED entry 允许与新 ACTIVE entry 共存；partial unique index 在 migration 里加（步骤 1.7）
+  @@index([userId, status, nextReviewAt])
+  @@index([userId, status, createdAt(sort: Desc)])
+  @@index([questionId])
+  @@map("error_book_entries")
+}
+
+model VariantGroup {
+  id              String         @id @default(cuid())
+  entryId         String         @map("entry_id")
+  userId          String         @map("user_id")
+  creditsCost     Int            @map("credits_cost")
+  debitLedgerId   String         @unique @map("debit_ledger_id")
+  modelCallId     String?        @map("model_call_id")
+  createdAt       DateTime       @default(now()) @map("created_at")
+
+  entry           ErrorBookEntry @relation(fields: [entryId], references: [id], onDelete: Restrict)
+  items           VariantItem[]
+
+  @@index([entryId, createdAt(sort: Desc)])
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("variant_groups")
+}
+
+model VariantItem {
+  id                  String        @id @default(cuid())
+  groupId             String        @map("group_id")
+  level               VariantLevel
+  position            Int
+  stemMd              String        @db.Text @map("stem_md")
+  solutionMd          String        @db.Text @map("solution_md")
+  knowledgePointHints String[]      @default([]) @map("knowledge_point_hints")
+  createdAt           DateTime      @default(now()) @map("created_at")
+
+  group               VariantGroup  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, level])
+  @@index([groupId, position])
+  @@map("variant_items")
 }
