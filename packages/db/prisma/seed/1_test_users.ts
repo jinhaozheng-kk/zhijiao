@@ -17,6 +17,7 @@ export async function seedTestUsers(prisma: PrismaClient) {
     { id: "dev-parent-01",  phone: "13800000003", name: "测试家长",   persona: Persona.PARENT,  gradeLevel: null,          isMinor: false, roles: [] },
     { id: "dev-ops-01",     phone: "13800000004", name: "测试运营",   persona: Persona.STUDENT, gradeLevel: null,          isMinor: false, roles: [Role.OPS] },
     { id: "dev-admin-01",   phone: "13800000005", name: "测试管理员", persona: Persona.STUDENT, gradeLevel: null,          isMinor: false, roles: [Role.ADMIN] },
+    { id: "dev-student-02", phone: "13800000006", name: "测试学生 02", persona: Persona.STUDENT, gradeLevel: GradeLevel.G9, isMinor: false, roles: [] },  // Plan 8: 专给 tutor-error-book-link.spec.ts 用
   ];
 
   for (const u of users) {

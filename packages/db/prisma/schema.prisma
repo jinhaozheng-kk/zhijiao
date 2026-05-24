@@ -61,6 +61,7 @@ model User {
   sessions          Session[]
   wallet            Wallet?
   errorBookEntries  ErrorBookEntry[]   // Plan 4
+  createdQuestions  Question[]         @relation("CreatedQuestions")  // Plan 8
 
   @@map("users")
 }
@@ -196,21 +197,30 @@ enum QuestionStatus {
 }
 
 model Question {
-  id             String           @id @default(cuid())
-  subjectId      String           @map("subject_id")
-  stemMd         String           @map("stem_md")
-  stemImageKeys  String[]         @default([]) @map("stem_image_keys")
-  type           QuestionType
-  difficulty     Int              @default(3)
-  status         QuestionStatus   @default(DRAFT)
-  source         String?
-  createdAt      DateTime         @default(now()) @map("created_at")
-  updatedAt      DateTime         @updatedAt @map("updated_at")
+  id                  String           @id @default(cuid())
+  subjectId           String           @map("subject_id")
+  stemMd              String           @map("stem_md")
+  stemImageKeys       String[]         @default([]) @map("stem_image_keys")
+  type                QuestionType
+  difficulty          Int              @default(3)
+  status              QuestionStatus   @default(DRAFT)
+  source              String?
+  // Plan 8: USER_ADHOC 题归属 + 去重 hash. PUBLISHED / SEED 题 nullable.
+  // onDelete: SetNull — 用户注销时归属可抹（与 ErrorBookEntry.questionId @Restrict 业务含义不同；
+  // 后者是审计主链路，前者是归属元数据）。spec §2.3.
+  createdByUserId     String?          @map("created_by_user_id")
+  normalizedStemHash  String?          @map("normalized_stem_hash")
+  createdAt           DateTime         @default(now()) @map("created_at")
+  updatedAt           DateTime         @updatedAt @map("updated_at")
 
   subject          Subject          @relation(fields: [subjectId], references: [id])
+  createdBy        User?            @relation("CreatedQuestions", fields: [createdByUserId], references: [id], onDelete: SetNull)
   answer           QuestionAnswer?
   knowledgePoints  QuestionKPLink[]
   errorBookEntries ErrorBookEntry[]  // Plan 4
+
+  // partial unique idx (created_by_user_id, normalized_stem_hash) WHERE source='USER_ADHOC' AND IS NOT NULL
+  // 由 migration.sql 末尾 raw SQL 追加（Prisma 5 schema 不支持 partial unique）；spec §2.4.
 
   @@map("questions")
 }
