@@ -84,6 +84,7 @@
 - **Plan 2**（真鉴权：手机号 OTP + 微信 H5 OAuth 骨架 + Session/JWT + tRPC）—— 见 `docs/superpowers/plans/2026-05-19-real-auth.md`，spec 在 `docs/superpowers/specs/2026-05-19-real-auth-design.md`
 - **Plan 2 Hardening**（env validator + 原子化 refresh/OTP + 会话吊销即时生效 + bind 身份重校验 + register/refresh 限频接入 + race tests + 跨 package 测试 DB 隔离 + 仓库卫生）—— 见 `docs/superpowers/plans/2026-05-20-plan2-hardening.md`，spec 在 `docs/superpowers/specs/2026-05-20-plan2-hardening-design.md`
 - **Plan 3**（Credit 计费 + 微信支付 V3 沙箱：Mock 主路径 + Real V3 骨架 + chargedProcedure + 未成年月度上限 + OPS 调账 + pino 结构化日志）—— 见 `docs/superpowers/plans/2026-05-21-credit-and-wechat-pay-sandbox.md`，spec 在 `docs/superpowers/specs/2026-05-21-credit-and-wechat-pay-sandbox-design.md`
+- **Plan 4**（举一反三 + 错因分析：ErrorBookEntry + VariantGroup + 三阶变式 + chargeMiddleware 抽取 + E2E 覆盖闭环）—— 见 `docs/superpowers/plans/2026-05-23-variant-and-error-analysis.md`，spec 在 `docs/superpowers/specs/2026-05-23-variant-and-error-analysis-design.md`
 
 **计费现状**：
 - `packages/billing` 新建：ensureWallet / chargeForAction（predicate-on-update + idemKey 防重，原子化）/ compensate（写 COMPENSATION ledger + refId 指回 DEBIT）/ applyWechatPayNotify（P2002 idemKey 重读 → ALREADY_PAID；P2002 transactionId 重读 → DUPLICATE_TRANSACTION_ID；spec §4.1 状态机；FAILED→PAID 拒绝走 TERMINAL_STATE_CONFLICT）/ expireStaleOrders / adminAdjust（OPS 调账；负 delta 也走 predicate-on-update 防透支 → InsufficientBalanceForAdjustError）/ sumMonthlyTopupCents（Asia/Shanghai 自然月 + CREATED+PENDING by createdAt + PAID by paidAt）
@@ -106,6 +107,19 @@
 - 微信 H5 OAuth：完整路由 + adapter 接口；`MockWechatH5Adapter` 默认，真接公众号留下个 plan
 - `Role` 仅 `OPS / ADMIN`；`Persona`（STUDENT/TEACHER/PARENT）是 onboarding 默认入口，不再是权限门槛；`PAPER_GEN / LESSON_PLAN_GEN / PPT_GEN / TUTOR_ASK / ERROR_BOOK_VIEW_OWN` 对所有登录用户开放
 - tRPC v11 全量落地；`apps/web/app/(student)/tutor/actions.ts` 已删除，改走 `tutor.ask` procedure；`DEV_USER_ID` 已下线
+
+**错题本 / 变式现状**（Plan 4）：
+- `ErrorBookEntry` 三态：ACTIVE / ARCHIVED / DELETED。**DELETED 是终态**，UI 不提供任何"恢复 / 回收站"入口；DB 行保留作审计。文案统一用"从错题本移除"，不用"删除"
+- partial unique idx `(user_id, question_id) WHERE status IN ('ACTIVE', 'ARCHIVED')`（raw SQL 在 migration 末尾追加，Prisma 5 schema 不支持），允许 DELETED 与新 ACTIVE 共存 —— 移除后再 diagnose 同题是**新** entry，不是复活
+- `error.list` 默认仅 ACTIVE；归档页须显式 `status: "ARCHIVED"`；zod 枚举**不含 DELETED**（探活也拒）
+- `chargeMiddleware(kind)` 抽出独立 factory；`chargedProcedure(kind) = authedProcedure.use(chargeMiddleware(kind))` 糖语法保留，Plan 3 调用点（`tutor.ask`）零行 diff
+- `validateEntryOwnership` 中间件：entry 不存在 / 跨用户 / 已删 → 合并 `NOT_FOUND / ENTRY_NOT_FOUND`，**绝不**用 FORBIDDEN 区分（避免存在性侧信道）；注入 `ctx.entry`（含 question + answer + KP）省一次 DB round trip
+- `variant.generateForEntry` middleware 链：`authedProcedure → validateEntryOwnership → chargeMiddleware("VARIANT_GROUP_GEN")` —— **entry 校验在扣费之前**，鬼魂 / 跨用户 / 畸形 ID / DELETED 四种失败不写 DEBIT ledger（spec Blocker 1，Task 5 显式 4 测例守门）
+- 间隔复习：5 段固定（1d / 3d / 7d / 14d / 30d cap）；MVP 不上 SM-2 / FSRS。markReviewed 推进；archive(true) 清 nextReviewAt 退出队列；archive(false) 复活时 seed nextReviewAt=now+1d 重新入队
+- AI: `ERROR_ANALYSIS`（1 credit）+ `VARIANT_GROUP_GEN`（3 credits，一次出 L1/L2/L3 三道）。`rootCause` 6 类 enum 强约束 / `level` 三档强约束 / JSON parse 失败走 retry 2 次再 PARSE_FAILED。合规 `ComplianceRejectedError` 走 Plan 3 既有白名单不补偿（debit row metadata `compensationStatus: "not_compensated_whitelisted"`）
+- E2E hook `/api/e2e-hooks/error-book`：仅 `E2E_TEST_HOOKS=1` 开启（env zod 默认 "0"，普通环境 404 disabled），POST `{phone, scenario}` 准备 4 个 deterministic 场景（empty / active / due / future）+ reset 钱包到 balance=100。给 `apps/web/e2e/error-book.spec.ts` 用，不暴露给客户端
+- **ErrorAnalysisCard 未接 TutorForm**：组件本身建好（`apps/web/app/(student)/tutor/error-analysis-card.tsx`，按 entryId 渲染"查看错题详情 →"链接），但当前 `tutor.ask` 收的是自由文本题面、不返回 questionId，没法把卡片挂进答疑流程。punt 到后续"tutor 接题库 / diagnose 卡片接入"plan；本 plan 的 E2E 用 `page.evaluate` 直接打 `error.diagnose` 触发
+- **`next build` prereq**（Task 6 followup `ca69470`）：用 `useSearchParams()` 的 client component 必须用 `<Suspense>` 包裹（否则 Next 14 build 报 missing-suspense-with-csr-bailout）；JSX 文本里的 `"` 必须 `&quot;`（`react/no-unescaped-entities`）。`tsc --noEmit` 查不出这两类问题，必须用 `next build` 验
 
 **常用命令**：
 
@@ -141,9 +155,20 @@ pnpm --filter @zhijiao/web  test -- tests/integration/auth-register-race.test.ts
 10. **idemKey 命名唯一**（Plan 3）：`grep -n "idemKey:" packages/billing/src apps/web/server`，每处必须为 `topup:` / `debit:` / `comp:` / `adjust:` / `topup:bootstrap:`（test fixture）之一前缀
 11. **`adapter.unifiedOrder` 不 fire notify**（Plan 3）：`grep -n "fireMockNotify" packages/integrations/src/wechat-pay/mock.ts` 应只在 `signalOrderReady` 和 `fireMockNotify` 自身定义里出现，**不在 `unifiedOrder` 里**
 12. **OPS 调账不能裸 SQL**（Plan 3）：`grep -E "UPDATE wallets|UPDATE \"wallets\""` 在 TS 业务代码应 0 命中（只允许出现在 spec/plan/README 说明文档）
+13. **chargeMiddleware 抽取后 tutor.ask 零行为变化**（Plan 4 Task 3）：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/charged-procedure-tutor.test.ts` 应全绿，证明 Plan 3 既有计费行为未被 refactor 破坏
+14. **DELETED entry 不可见**（Plan 4 §3.1 / §4.4）：手动 `error.delete` 后调 `error.list / getById / dueForReview / markReviewed / archive`：全部应返 `NOT_FOUND / ENTRY_NOT_FOUND` 或不含此条；`Select-String -Path apps/web/server/routers/error.ts -Pattern "status.*DELETED"` 应只在 `update.data.status = "DELETED"` 处出现，不在 findMany / findUnique where 处出现
+15. **entry 校验在扣费前**（Plan 4 Blocker 1）：`Select-String -Path apps/web/server/routers/variant.ts -Pattern "chargeMiddleware.*VARIANT_GROUP_GEN" -Context 2,5` 应在 `validateEntryOwnership` **之后**；middleware 链顺序 `authedProcedure.use(validateEntryOwnership).use(chargeMiddleware(...))` 反了即 reopen Blocker 1
+16. **partial unique idx 已落 DB**（Plan 4 §3.3）：`docker exec zhijiao-postgres psql -U postgres -d zhijiao -c "\d error_book_entries"` 应见 `error_book_entries_user_question_active_idx`，定义带 `WHERE status = ANY (ARRAY['ACTIVE'::"ErrorBookStatus", 'ARCHIVED'::"ErrorBookStatus"])`
+17. **error.diagnose 返回 entryId**（Plan 4 §5.1.1 / UI Reback A）：`Select-String -Path apps/web/server/routers/error.ts -Pattern "entryId:"` 应在 diagnose 返回类型出现；`apps/web/app/(student)/tutor/error-analysis-card.tsx` 应渲染 `<Link href={"/error-book/" + entryId}>`
+18. **error.dueForReview 三态**（Plan 4 §5.1.4 / UI Reback B）：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/error-due-for-review.test.ts` 覆盖三种 nextReviewAt 形态（空 ACTIVE / 有 future / dueToday 非空）；UI 文案对应"还没有需要复习的题" / "下次复习 +Xd 后" / 列表
+19. **E2E hook 不暴露给普通环境**（Plan 4）：`grep -n "E2E_TEST_HOOKS" apps/web/app/api/e2e-hooks/*/route.ts` 每个 route.ts 应有 `if (process.env.E2E_TEST_HOOKS !== "1") return 404`；env zod 默认 "0"，普通 dev / prod 全 404
+20. **next build 类的隐式失败**（Plan 4 Task 6 followup）：`tsc --noEmit` 查不出 `<Suspense>` 漏包裹 / JSX `"` 未转义。merge 前必须跑 `pnpm.cmd --filter @zhijiao/web exec next build` 至少一次，否则下个 `test:e2e` 跑前 build 时才暴雷
 
-**下一步候选 Plan**：
-- Plan 4: 举一反三 + 错因分析（VariantGroup + ErrorBookEntry + 三阶变式生成）—— 复用 chargedProcedure 处理 `VARIANT_GROUP_GEN` / `ERROR_ANALYSIS` 计费
+**下一步候选 Plan**（Plan 4 已落地）：
 - Plan 5: 真接阿里云 SMS + 微信公众号（ICP 备案通过后；**且 Plan 2 Hardening 必须先 ship**；替换 `RealSmsAdapter` / `RealWechatH5Adapter` 的 stub 实现）
-- Plan 6: PII 治理（用户注销 / 去标识化 / `WechatPayEvent.rawBody` 保留期 / `TopupOrder` 孤儿订单清理）—— **Plan 3 prod ship prereq**
+- Plan 6: PII 治理（用户注销 / 去标识化 / `WechatPayEvent.rawBody` 保留期 / `TopupOrder` 孤儿订单清理 / `ErrorBookEntry` 用户注销时去标识化）—— **Plan 3 prod ship prereq**
 - Plan 7: 真接微信支付 V3 API（需 ICP 备案 + 商户号 + APIv3 + 商户证书；激活 `RealWechatPayAdapter.unifiedOrder` + `verifyNotify`）—— **Plan 3 prod ship prereq**
+- Plan 8: tutor 接题库 / diagnose 卡片接入（让 `tutor.ask` 返 questionId 或新增"做已存在题"流程，把 `ErrorAnalysisCard` 真正挂进答疑闭环；端到端覆盖卡片本身的渲染 + entryId 链接）
+- Plan 9: 知识点 reconciler（把 Plan 4 输出的 `knowledgePointHints` 字符串通过 NLP 映射到 `KnowledgePoint` id 树，支撑学情画像 + 教师分层作业）
+- Plan 10: 教师端"分层作业"基于错题本扩展（教师可看班级错题热度图，按错因 / KP 分类布置分层作业）
+- Plan 11: 学情画像 / 趋势报告（学生掌握度 + 薄弱点 + 趋势画像；家长简版报告）
