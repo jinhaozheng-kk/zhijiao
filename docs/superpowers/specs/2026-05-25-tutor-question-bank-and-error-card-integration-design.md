@@ -127,8 +127,9 @@ export const validateTutorInputCompliance = t.middleware(async ({ next, getRawIn
 });
 ```
 
-- `findForbidden` 复用 Plan 4 `packages/ai/src/safety/forbidden.ts` 既有 helper
+- `findForbidden` 复用 `@zhijiao/domain` 既有合规 helper（`packages/domain/src/compliance.ts` line 23；现有调用点 `packages/ai/src/router.ts`）
 - 抛 `BAD_REQUEST` 在 `chargeMiddleware` 之前 → 不扣费、不写 Question、不调 AI
+- **超长 stem (>4000) 与空 stem 的副作用要点（写进 §7.2 测试断言）**：当前中间件对这两种情况 `return next()`，让下游 zod 处理。但 `chargeMiddleware` 在 zod `.input()` **之前**跑 —— 所以超长输入会经历：通过 compliance middleware → chargeMiddleware **尝试扣费成功** → zod 抛 `BAD_REQUEST` → chargeMiddleware fail-open **补偿**。净余额不变，但 `CreditLedger` 会出现一对 `DEBIT + COMPENSATION` 流水。这与违禁词路径（不扣费、ledger 无 DEBIT row）**不同**。两条路径的测试断言要分清。若希望超长也完全不进扣费链，需要在 middleware 里直接抛 `BAD_REQUEST / INPUT_TOO_LONG`（不是当前设计）。当前保留 `return next()` 是为不复制 zod 的 `max(4000)` 约束、单一真理源
 
 ### §3.3 Mutation body 改造
 
@@ -373,7 +374,10 @@ ask.onSuccess: (d) => {
 - **`tutor-ask-questionid.test.ts`** —— happy：返回含 `questionId`；DB 多一行 `Question(source=USER_ADHOC, createdByUserId=user, status=DRAFT, type=ESSAY, normalizedStemHash≠null)`
 - **`tutor-ask-dedup.test.ts`** —— 同 user 同 stem 调两次：返同 questionId，Question 表只 1 行；不同 user 同 stem：各建一行；同 user 仅空白差异 stem：仍返同 questionId（normalize 生效）
 - **`tutor-ask-input-compliance.test.ts`** —— stem 含违禁词 → `BAD_REQUEST / INPUT_COMPLIANCE_REJECTED`；wallet 余额未减；CreditLedger 无 `kind=DEBIT actionKind=TUTOR_ASK` row；Question 表无新行
-- **`tutor-ask-stem-too-long.test.ts`** —— stem.length > 4000 字符：中间件 `return next()`，zod 抛常规 `BAD_REQUEST`（**不**走 INPUT_COMPLIANCE_REJECTED 路径）。锁 §3.2 边界设计
+- **`tutor-ask-stem-too-long.test.ts`** —— stem.length > 4000 字符：中间件 `return next()`，zod 抛常规 `BAD_REQUEST`（**不**走 INPUT_COMPLIANCE_REJECTED 路径）。锁 §3.2 边界设计。**断言要点**：
+  - error code = `BAD_REQUEST`，cause.reason **不**等于 `INPUT_COMPLIANCE_REJECTED`
+  - 允许 `CreditLedger` 出现 `DEBIT + COMPENSATION` 配对（净余额不变；与违禁词路径不同 —— 见 §3.2 副作用说明）
+  - **不**断言 "无 DEBIT row"（这是违禁词路径的断言，不是 stem-too-long 的）
 - **`tutor-ask-race.test.ts`** —— 同 user 同 stem 两个并发 ask：两次都成功；Question 仍只 1 行（P2002 fall-through 重读赢家）；两次返同一 questionId
 - **`tutor-ask-published-untouched.test.ts`** —— 已存在 PUBLISHED 题 stemMd 与用户输入完全相同：用户提交后建**新** USER_ADHOC 行（partial unique idx WHERE source='USER_ADHOC' 不影响 PUBLISHED）。锁 §6.2 设计代价
 
@@ -410,14 +414,13 @@ PHONE = `13800000006`（Plan 8 新加学生 fixture；avoid tutor.spec=001 / err
 
 ## §8 Plan 任务划分（给 writing-plans 参考）
 
-建议 8 个 task：
+建议 7 个 task（Plan 4 留的空壳目录是本地清理问题，不进 Plan 8 实现任务；如需 worktree 清理在 Task 7 顺手做）：
 
-- **Task 0**：仓库卫生（沿用 Plan 4 工艺，`.gitignore` 已 OK，主要确认无残留 worktree）
 - **Task 1**：Prisma migration —— `Question` 2 字段 + partial unique idx + `User.createdQuestions` 关联 + `packages/db/prisma/seed/1_test_users.ts` 加 dev-student-02
 - **Task 2**：`apps/web/server/lib/question.ts` —— `normalizeStem` / `stemHashHex` / `upsertUserAdhocQuestion` + unit tests
 - **Task 3**：`apps/web/server/trpc.ts` —— `validateTutorInputCompliance` middleware
 - **Task 4**：`apps/web/server/routers/tutor.ts` —— middleware 链改造 + body 改造 + 返 questionId；6 个 integration tests（§7.2）
-- **Task 5**：`apps/web/components/TutorForm.tsx` —— "我的作答" 折叠 + snapshot state + ErrorAnalysisCard mount；手测 dev server
+- **Task 5**：`apps/web/components/TutorForm.tsx` —— "我的作答" 折叠 + snapshot state + ErrorAnalysisCard mount；手测 dev server + `next build`（不只 `tsc --noEmit`，复用 Plan 4 Task 6 followup 经验）
 - **Task 6**：E2E `tutor-error-book-link.spec.ts`（§7.3）
 - **Task 7**：全量回归 + CLAUDE.md 更新 + Merge 验收清单（沿用 Plan 4 Task 8 工艺）
 
