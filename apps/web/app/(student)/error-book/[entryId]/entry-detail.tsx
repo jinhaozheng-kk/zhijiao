@@ -22,7 +22,10 @@ function truncate(s: string, n: number) {
 }
 
 export function EntryDetail({ entryId }: { entryId: string }) {
-  const q = trpc.error.getById.useQuery({ entryId });
+  // retry: false — React Query 默认 retry 3 次 + exponential backoff (~7s);
+  // 错题详情失败的主要场景是 NOT_FOUND (entry 缺失 / 跨用户 / DELETED)，retry
+  // 没意义且让用户白等。网络抖动可由用户重新打开页面恢复。
+  const q = trpc.error.getById.useQuery({ entryId }, { retry: false });
 
   if (q.isLoading) {
     return <p className="mt-6 text-sm text-slate-500">加载中…</p>;
