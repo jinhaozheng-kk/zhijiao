@@ -2,7 +2,7 @@ import "server-only";
 import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
 import { z } from "zod";
-import { hasPermission, type Permission } from "@zhijiao/domain";
+import { findForbidden, hasPermission, type Permission } from "@zhijiao/domain";
 import {
   ensureWallet,
   chargeForAction,
@@ -310,3 +310,31 @@ export const validateEntryOwnership = t.middleware(
     return next({ ctx: { ...ctx, auth: ctx.auth, entry } });
   },
 );
+
+/**
+ * Plan 8 spec §3.2: tutor.ask 输入合规中间件。链顺序：
+ *   authedProcedure.use(validateTutorInputCompliance).use(chargeMiddleware("TUTOR_ASK"))
+ *
+ * 边界处理：
+ *   非 string / 空 string / 超长 (>4000) → return next()，让 zod 后续抛常规 BAD_REQUEST
+ *     （注意 spec §3.2 副作用：超长 stem 因 chargeMiddleware 在 zod 之前，会产生
+ *      DEBIT + COMPENSATION 配对净余额不变；与违禁词路径不同。test 断言要分清两者）
+ *   合法长度 → 扫 findForbidden；命中 → 抛 BAD_REQUEST / INPUT_COMPLIANCE_REJECTED
+ *     （在 chargeMiddleware 之前 → 不扣费、不写 Question、不调 AI）
+ *
+ * 不复制 zod max(4000) 约束（单一真理源）。
+ */
+export const validateTutorInputCompliance = t.middleware(async ({ next, getRawInput }) => {
+  const raw = (await getRawInput()) as { questionStem?: unknown } | undefined;
+  const stem = typeof raw?.questionStem === "string" ? raw.questionStem : "";
+  if (stem.length === 0 || stem.length > 4000) return next();
+  const hits = findForbidden(stem);
+  if (hits.length > 0) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "题目内容未通过安全检查，请修改后再试。",
+      cause: { reason: "INPUT_COMPLIANCE_REJECTED", hits },
+    });
+  }
+  return next();
+});
