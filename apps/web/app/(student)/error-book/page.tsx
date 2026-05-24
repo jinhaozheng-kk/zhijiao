@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { ErrorBookList } from "./error-book-list";
 
 export default function ErrorBookPage() {
@@ -8,7 +9,9 @@ export default function ErrorBookPage() {
         把答错的题留下来，按错因分类、按节奏复习。
       </p>
       <div className="mt-6">
-        <ErrorBookList />
+        <Suspense fallback={<p className="text-sm text-slate-500">加载中...</p>}>
+          <ErrorBookList />
+        </Suspense>
       </div>
     </main>
   );

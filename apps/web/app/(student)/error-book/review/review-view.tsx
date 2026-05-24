@@ -76,7 +76,7 @@ export function ReviewView() {
   return (
     <div className="mt-4" data-testid="review-list">
       <p className="text-sm text-slate-600">
-        {dueToday.length} 题待复习。点开任意一题，重新做一遍后回来标记"已复习"。
+        {dueToday.length} 题待复习。点开任意一题，重新做一遍后回来标记&quot;已复习&quot;。
       </p>
       <ul className="mt-4 divide-y rounded border">
         {dueToday.map((e) => (

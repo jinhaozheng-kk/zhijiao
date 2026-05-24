@@ -107,7 +107,7 @@ export function EntryDetail({ entryId }: { entryId: string }) {
         <h2 className="font-semibold">举一反三（{variantGroups.length} 组）</h2>
         {variantGroups.length === 0 ? (
           <p className="mt-2 text-sm text-slate-500">
-            还没有生成过变式。点上方"生成变式"按钮试试（消耗 3 credits）。
+            还没有生成过变式。点上方&quot;生成变式&quot;按钮试试（消耗 3 credits）。
           </p>
         ) : (
           <ul className="mt-2 space-y-3">
