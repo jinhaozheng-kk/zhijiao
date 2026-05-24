@@ -53,7 +53,7 @@ export const permissionProcedure = (perm: Permission) =>
     return next();
   });
 
-// Plan 3 Task 9: replace creditPlaceholder.
+// Plan 3 Task 9 (extracted into reusable middleware by Plan 4 Task 3).
 //
 // Charges 1 priceOf(kind) credit before next() runs the procedure body.
 // Two pre-conditions before debit:
@@ -64,7 +64,9 @@ export const permissionProcedure = (perm: Permission) =>
 //      effectively impossible.
 //   2. The user has an open wallet (ensureWallet upserts on first use).
 //
-// On successful debit, next() runs. If next() throws:
+// On successful debit, next() runs with ctx.debit = { ledgerId } injected
+// so mutation bodies can persist the DEBIT ledger row id alongside their
+// domain entity (e.g. VariantGroup.debitLedgerId). If next() throws:
 //   - default: refund via compensate(originalLedgerId). The debit ledger
 //     and the COMPENSATION entry are both audit-visible; balance ends up
 //     where it started.
@@ -80,8 +82,26 @@ export const permissionProcedure = (perm: Permission) =>
 // ActionAlreadyChargedError → CONFLICT with reason ACTION_IDEMPOTENCY_HIT.
 // The procedure body does NOT re-run, so the caller can safely retry an
 // in-flight mutation without double-charging or double-side-effects.
-export const chargedProcedure = (kind: ActionKind) =>
-  authedProcedure.use(async ({ ctx, next, getRawInput }) => {
+//
+// Must be chained AFTER authedProcedure (depends on ctx.auth). For pure
+// "auth → charge → body" the convenience wrapper `chargedProcedure(kind)`
+// below already does this. For "auth → validate-entry → charge → body"
+// (Plan 4 variant.generateForEntry), compose explicitly:
+//   authedProcedure.use(validateEntryOwnership).use(chargeMiddleware(kind))
+// so entry validation fails BEFORE the DEBIT row gets written (spec
+// Blocker 1 — entry-not-found / cross-user / DELETED must not charge).
+export const chargeMiddleware = (kind: ActionKind) =>
+  t.middleware(async ({ ctx, next, getRawInput }) => {
+    if (!ctx.auth) {
+      // Defensive: in normal use authedProcedure precedes us and has already
+      // thrown. Repeat the check so TypeScript can narrow ctx.auth below and
+      // so accidental misuse (chargeMiddleware on publicProcedure) fails fast.
+      throw new TRPCError({
+        code: "UNAUTHORIZED",
+        message: "请先登录",
+        cause: { reason: ctx.authError ?? "NO_SESSION" },
+      });
+    }
     const raw = await getRawInput();
     const parsed = z
       .object({ clientRequestId: z.string().uuid() })
@@ -135,7 +155,19 @@ export const chargedProcedure = (kind: ActionKind) =>
     // when the downstream procedure throws. result.ok === false carries
     // the error. A try/catch around next() would never fire and silently
     // skip compensation. We must inspect result.ok explicitly.
-    const result = await next();
+    //
+    // Plan 4 addition: inject ctx.debit so mutation bodies can persist
+    // the DEBIT ledger row id alongside their domain entity (e.g.
+    // VariantGroup.debitLedgerId). Plan 3 callers (tutor.ask) don't read
+    // ctx.debit, so this is backwards-compatible.
+    //
+    // `auth: ctx.auth` is explicit (not just `...ctx`) so the non-null
+    // narrowing from the guard above survives the spread — same idiom as
+    // authedProcedure. Without it, the downstream procedure body sees
+    // ctx.auth as possibly-null and breaks Plan 3 typecheck.
+    const result = await next({
+      ctx: { ...ctx, auth: ctx.auth, debit: { ledgerId: debit.ledgerId } },
+    });
     if (result.ok) return result;
 
     const e = result.error;
@@ -201,3 +233,80 @@ export const chargedProcedure = (kind: ActionKind) =>
     }
     return result;
   });
+
+// Plan 3 sugar form preserved unchanged for existing call sites
+// (tutor.ask, wallet.* etc.). Zero behavior diff vs the inline Plan 3
+// implementation — chargeMiddleware was extracted verbatim.
+export const chargedProcedure = (kind: ActionKind) =>
+  authedProcedure.use(chargeMiddleware(kind));
+
+// Plan 4 Task 3 new middleware.
+// Loads ctx.entry from rawInput.entryId, with three failures collapsed into
+// a single NOT_FOUND / ENTRY_NOT_FOUND so cross-user existence is not
+// observable (spec §5.3 / Blocker 1 + Blocker 2):
+//   a) entryId missing or malformed → BAD_REQUEST / ENTRY_ID_REQUIRED
+//      (separate from the not-found case because zod fires before DB lookup
+//      and the client should learn this is a request-shape bug, not a
+//      missing resource).
+//   b) entry row doesn't exist → NOT_FOUND / ENTRY_NOT_FOUND
+//   c) entry.userId !== ctx.auth.userId (cross-user) → NOT_FOUND / ENTRY_NOT_FOUND
+//      DO NOT return FORBIDDEN here: distinguishing "exists but yours" from
+//      "doesn't exist" leaks the existence of other users' entries.
+//   d) entry.status === DELETED → NOT_FOUND / ENTRY_NOT_FOUND
+//      DELETED is terminal; any student-facing surface must behave as if
+//      the row is not in the database.
+//
+// Must be chained BEFORE chargeMiddleware so that (b/c/d) abort the request
+// before the DEBIT ledger row gets written:
+//   authedProcedure.use(validateEntryOwnership).use(chargeMiddleware(kind))
+//
+// Loads question + answer + knowledgePoints (with the KP rows joined) so
+// variant.generateForEntry's body has everything it needs to call the AI
+// without another DB round trip.
+export const validateEntryOwnership = t.middleware(
+  async ({ ctx, next, getRawInput }) => {
+    if (!ctx.auth) {
+      throw new TRPCError({
+        code: "UNAUTHORIZED",
+        message: "请先登录",
+        cause: { reason: ctx.authError ?? "NO_SESSION" },
+      });
+    }
+    const raw = await getRawInput();
+    const parsed = z
+      .object({ entryId: z.string().cuid() })
+      .safeParse(raw);
+    if (!parsed.success) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "缺少 entryId",
+        cause: { reason: "ENTRY_ID_REQUIRED" },
+      });
+    }
+    const entry = await ctx.db.errorBookEntry.findUnique({
+      where: { id: parsed.data.entryId },
+      include: {
+        question: {
+          include: {
+            answer: true,
+            knowledgePoints: { include: { kp: true } },
+          },
+        },
+      },
+    });
+    if (
+      !entry ||
+      entry.userId !== ctx.auth.userId ||
+      entry.status === "DELETED"
+    ) {
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: "错题不存在",
+        cause: { reason: "ENTRY_NOT_FOUND" },
+      });
+    }
+    // `auth: ctx.auth` explicit so the non-null narrowing survives the
+    // spread (same reason as chargeMiddleware above).
+    return next({ ctx: { ...ctx, auth: ctx.auth, entry } });
+  },
+);

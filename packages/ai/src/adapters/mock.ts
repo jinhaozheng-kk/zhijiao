@@ -1,26 +1,72 @@
 import type { ModelAdapter, AdapterRequest, AdapterResponse } from "./types.js";
 
+// Default JSON outputs per taskKind. Tests that need adverse cases inject
+// `respondWith`; happy-path callers (e.g. router smoke tests) rely on these
+// defaults. Dispatched off the system message prefix to avoid coupling to
+// taskKind plumbing — system prompts are stable contracts in router.ts.
+const DEFAULT_TUTORING = {
+  restatement: "求解一元一次方程。",
+  knowledgePoints: ["一次方程求解"],
+  steps: ["把常数移到等号一边", "两边同除以未知数系数"],
+  pitfalls: ["注意符号"],
+  finalAnswer: "x = 4",
+};
+
+const DEFAULT_ERROR_ANALYSIS = {
+  rootCause: "CONCEPT_CONFUSION",
+  reasoning: "Mock 分析：学生将类似概念混淆所致。",
+  suggestedKnowledgePoints: ["一次方程基本概念"],
+};
+
+const DEFAULT_VARIANT_GENERATION = {
+  items: [
+    {
+      level: "L1",
+      stemMd: "解方程 3x + 7 = 19。",
+      solutionMd: "x = 4。先移项 3x = 12，再两边同除 3。",
+      knowledgePointHints: ["一次方程求解"],
+    },
+    {
+      level: "L2",
+      stemMd: "已知 3x + 7 = 19，求 6x - 1 的值。",
+      solutionMd: "由原方程 x = 4，代入得 6x - 1 = 23。",
+      knowledgePointHints: ["一次方程求解", "代数式求值"],
+    },
+    {
+      level: "L3",
+      stemMd: "小明买了 3 包薯片和 1 瓶 7 元的水共花 19 元，每包薯片多少钱？",
+      solutionMd: "设薯片每包 x 元：3x + 7 = 19，解得 x = 4。",
+      knowledgePointHints: ["一次方程应用题"],
+    },
+  ],
+};
+
+function pickDefault(req: AdapterRequest): unknown {
+  // System prompts are defined verbatim in router.ts; match on Chinese
+  // 助手 suffix keyword to dispatch.
+  const sys =
+    req.messages.find((m) => m.role === "system")?.content ?? "";
+  if (sys.includes("错因分析助手")) return DEFAULT_ERROR_ANALYSIS;
+  if (sys.includes("举一反三变式生成助手")) return DEFAULT_VARIANT_GENERATION;
+  return DEFAULT_TUTORING;
+}
+
 export class MockAdapter implements ModelAdapter {
   name = "mock";
 
   constructor(
     private opts: {
-      // 测试可注入指定响应；否则返回符合 TutoringOutput 的占位 JSON
-      respondWith?: (req: AdapterRequest) => Promise<AdapterResponse> | AdapterResponse;
+      // 测试可注入指定响应；否则按 system message 关键词分发默认 JSON
+      respondWith?: (
+        req: AdapterRequest,
+      ) => Promise<AdapterResponse> | AdapterResponse;
     } = {},
   ) {}
 
   async call(req: AdapterRequest): Promise<AdapterResponse> {
     if (this.opts.respondWith) return this.opts.respondWith(req);
-    const fakeTutoring = {
-      restatement: "求解一元一次方程。",
-      knowledgePoints: ["一次方程求解"],
-      steps: ["把常数移到等号一边", "两边同除以未知数系数"],
-      pitfalls: ["注意符号"],
-      finalAnswer: "x = 4",
-    };
     return {
-      content: JSON.stringify(fakeTutoring),
+      content: JSON.stringify(pickDefault(req)),
       tokensIn: 100,
       tokensOut: 80,
       model: "mock-v1",

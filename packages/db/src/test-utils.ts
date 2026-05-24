@@ -26,8 +26,15 @@ export const prisma = testPrisma;
 // TopupOrder.userId by design). With CASCADE on TRUNCATE the order is
 // largely cosmetic, but listing them ahead of users keeps the intent
 // readable.
+// Plan 4 additions: variant_items, variant_groups, error_book_entries.
+// VariantItem FK → VariantGroup (Cascade); VariantGroup FK → ErrorBookEntry
+// (Restrict); ErrorBookEntry FK → User+Question (Restrict). CASCADE on
+// TRUNCATE handles it but the ordering keeps the dependency chain visible.
 export async function resetDb() {
   const tables = [
+    "variant_items",
+    "variant_groups",
+    "error_book_entries",
     "wechat_pay_events",
     "topup_orders",
     "credit_ledger",
