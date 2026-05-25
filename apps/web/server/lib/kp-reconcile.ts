@@ -278,3 +278,209 @@ async function upsertQuestionKpLink(
     DO UPDATE SET "weight" = GREATEST("question_kp_links"."weight", EXCLUDED."weight")
   `;
 }
+
+// ============ CLI / service 层操作 ============
+
+export class KpAliasConflictError extends Error {
+  constructor(
+    public existing: { id: string; kpId: string; source: string },
+    public requested: { kpId: string; normalizedAlias: string },
+  ) {
+    super(
+      `Alias "${requested.normalizedAlias}" already maps to kp ${existing.kpId} (source=${existing.source}); refused to override`,
+    );
+    this.name = "KpAliasConflictError";
+  }
+}
+
+export interface ApproveMatchArgs {
+  matchId: string;
+  reviewedByUserId: string;
+}
+
+// PENDING_REVIEW → LINKED；采纳 row.kpId 写 QuestionKPLink。
+// weight = max(existing, row.confidence ?? 1.0) — 由 atomic upsert 保证。
+export async function approveMatch(
+  prisma: PrismaClient,
+  args: ApproveMatchArgs,
+) {
+  const match = await prisma.kpReconcileMatch.findUniqueOrThrow({ where: { id: args.matchId } });
+  if (match.status !== "PENDING_REVIEW") {
+    throw new Error(`approveMatch: match ${args.matchId} is ${match.status}, expected PENDING_REVIEW`);
+  }
+  if (!match.kpId) {
+    throw new Error(`approveMatch: match ${args.matchId} has no kpId (cannot approve)`);
+  }
+  return prisma.$transaction(async (tx) => {
+    const updated = await tx.kpReconcileMatch.update({
+      where: { id: args.matchId },
+      data: {
+        status: "LINKED",
+        reviewReason: null,
+        reviewedAt: new Date(),
+        reviewedByUserId: args.reviewedByUserId,
+      },
+    });
+    await upsertQuestionKpLink(tx, match.questionId, match.kpId!, match.confidence ?? 1.0);
+    return updated;
+  });
+}
+
+export interface RejectMatchArgs {
+  matchId: string;
+  reviewedByUserId: string;
+}
+
+// PENDING_REVIEW → REJECTED；保留 kpId 作 audit 但不写 QuestionKPLink。
+export async function rejectMatch(
+  prisma: PrismaClient,
+  args: RejectMatchArgs,
+) {
+  const match = await prisma.kpReconcileMatch.findUniqueOrThrow({ where: { id: args.matchId } });
+  if (match.status !== "PENDING_REVIEW") {
+    throw new Error(`rejectMatch: match ${args.matchId} is ${match.status}, expected PENDING_REVIEW`);
+  }
+  return prisma.kpReconcileMatch.update({
+    where: { id: args.matchId },
+    data: {
+      status: "REJECTED",
+      reviewReason: null,
+      reviewedAt: new Date(),
+      reviewedByUserId: args.reviewedByUserId,
+    },
+  });
+}
+
+export interface RemapMatchArgs {
+  matchId: string;
+  newKpCode: string;
+  reviewedByUserId: string;
+}
+
+// PENDING_REVIEW → LINKED but with newKpCode 指定的 KP (subject-scoped lookup)。
+// matchVia=MANUAL, confidence=1.0 (人工确认 = 满信心)。
+export async function remapMatch(
+  prisma: PrismaClient,
+  args: RemapMatchArgs,
+) {
+  const match = await prisma.kpReconcileMatch.findUniqueOrThrow({
+    where: { id: args.matchId },
+    include: { question: { select: { subjectId: true } } },
+  });
+  if (match.status !== "PENDING_REVIEW") {
+    throw new Error(`remapMatch: match ${args.matchId} is ${match.status}, expected PENDING_REVIEW`);
+  }
+  const targetKp = await prisma.knowledgePoint.findUnique({
+    where: { subjectId_code: { subjectId: match.question.subjectId, code: args.newKpCode } },
+  });
+  if (!targetKp) {
+    throw new Error(`remapMatch: KP code ${args.newKpCode} not found in subject ${match.question.subjectId}`);
+  }
+  return prisma.$transaction(async (tx) => {
+    const updated = await tx.kpReconcileMatch.update({
+      where: { id: args.matchId },
+      data: {
+        kpId: targetKp.id,
+        matchVia: "MANUAL",
+        confidence: 1.0,
+        status: "LINKED",
+        reviewReason: null,
+        reviewedAt: new Date(),
+        reviewedByUserId: args.reviewedByUserId,
+      },
+    });
+    await upsertQuestionKpLink(tx, match.questionId, targetKp.id, 1.0);
+    return updated;
+  });
+}
+
+export interface LearnAliasAndLinkArgs {
+  matchId: string;
+  targetKpCode: string;
+  reviewedByUserId: string;
+}
+
+// PENDING_REVIEW → LINKED + 写 KpAlias(source=CLI_MANUAL)。
+// Plan 9 spec §5.4: alias 冲突防御 —— 已存在 (subjectId, normalizedAlias) 指向不同
+// KP 时抛 KpAliasConflictError，不静默覆盖。
+export async function learnAliasAndLink(
+  prisma: PrismaClient,
+  args: LearnAliasAndLinkArgs,
+) {
+  const match = await prisma.kpReconcileMatch.findUniqueOrThrow({
+    where: { id: args.matchId },
+    include: { question: { select: { subjectId: true } } },
+  });
+  if (match.status !== "PENDING_REVIEW") {
+    throw new Error(`learnAliasAndLink: match ${args.matchId} is ${match.status}, expected PENDING_REVIEW`);
+  }
+  const targetKp = await prisma.knowledgePoint.findUnique({
+    where: { subjectId_code: { subjectId: match.question.subjectId, code: args.targetKpCode } },
+  });
+  if (!targetKp) {
+    throw new Error(`learnAliasAndLink: KP code ${args.targetKpCode} not found in subject ${match.question.subjectId}`);
+  }
+
+  // 冲突检测（spec §5.4）
+  const existingAlias = await prisma.kpAlias.findUnique({
+    where: {
+      subjectId_normalizedAlias: {
+        subjectId: match.question.subjectId,
+        normalizedAlias: match.normalizedHint,
+      },
+    },
+  });
+  if (existingAlias && existingAlias.kpId !== targetKp.id) {
+    throw new KpAliasConflictError(
+      { id: existingAlias.id, kpId: existingAlias.kpId, source: existingAlias.source },
+      { kpId: targetKp.id, normalizedAlias: match.normalizedHint },
+    );
+  }
+
+  return prisma.$transaction(async (tx) => {
+    if (!existingAlias) {
+      await tx.kpAlias.create({
+        data: {
+          subjectId: match.question.subjectId,
+          kpId: targetKp.id,
+          normalizedAlias: match.normalizedHint,
+          source: "CLI_MANUAL",
+          createdByUserId: args.reviewedByUserId,
+        },
+      });
+    }
+    const updated = await tx.kpReconcileMatch.update({
+      where: { id: args.matchId },
+      data: {
+        kpId: targetKp.id,
+        matchVia: "MANUAL",
+        confidence: 1.0,
+        status: "LINKED",
+        reviewReason: null,
+        reviewedAt: new Date(),
+        reviewedByUserId: args.reviewedByUserId,
+      },
+    });
+    await upsertQuestionKpLink(tx, match.questionId, targetKp.id, 1.0);
+    return updated;
+  });
+}
+
+// Plan 9 不暴露给 CLI / router（spec §5.5 / 探针 33）；只 export 给 unit test 验证
+// + 未来开 ad-hoc 批量修错脚本时复用。
+// 删 QuestionKPLink 前先查是否还有其它 LINKED match 在背书；有则不删。
+export async function unlinkIfOrphan(
+  prisma: PrismaClient,
+  args: { questionId: string; kpId: string },
+): Promise<{ removed: boolean }> {
+  const stillLinked = await prisma.kpReconcileMatch.count({
+    where: { questionId: args.questionId, kpId: args.kpId, status: "LINKED" },
+  });
+  if (stillLinked === 0) {
+    await prisma.questionKPLink.deleteMany({
+      where: { questionId: args.questionId, kpId: args.kpId },
+    });
+    return { removed: true };
+  }
+  return { removed: false };
+}
