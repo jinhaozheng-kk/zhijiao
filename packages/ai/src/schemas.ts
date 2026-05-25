@@ -86,3 +86,39 @@ export const VariantGenerationOutputSchema = z.object({
     ),
 });
 export type VariantGenerationOutput = z.infer<typeof VariantGenerationOutputSchema>;
+
+// === KpReconciliation (Plan 9) ===
+
+export const KpReconciliationCandidateSchema = z.object({
+  id: z.string().cuid(),
+  code: z.string(),
+  name: z.string(),
+  description: z.string().nullable(),
+  parentPath: z.string(),
+});
+export type KpReconciliationCandidate = z.infer<typeof KpReconciliationCandidateSchema>;
+
+export const KpReconciliationHintSchema = z.object({
+  matchId: z.string().cuid(),
+  rawHint: z.string().min(1).max(2000),
+  normalizedHint: z.string().min(1).max(2000),
+});
+export type KpReconciliationHint = z.infer<typeof KpReconciliationHintSchema>;
+
+export const KpReconciliationInputSchema = z.object({
+  subjectId: z.string().cuid(),
+  candidates: z.array(KpReconciliationCandidateSchema).min(1),
+  hints: z.array(KpReconciliationHintSchema).min(1).max(50),
+});
+export type KpReconciliationInput = z.infer<typeof KpReconciliationInputSchema>;
+
+// LLM output: 一项对一条 hint（按 matchId 对齐，多/漏在 router 层 retry）
+export const KpReconciliationItemSchema = z.object({
+  matchId: z.string().cuid(),
+  kpId: z.string().cuid().nullable(),          // null = NO_MATCH
+  confidence: z.number().min(0).max(1),         // NO_MATCH 时也要给 0
+});
+export type KpReconciliationItem = z.infer<typeof KpReconciliationItemSchema>;
+
+export const KpReconciliationOutputSchema = z.array(KpReconciliationItemSchema);
+export type KpReconciliationOutput = z.infer<typeof KpReconciliationOutputSchema>;

@@ -39,6 +39,8 @@ const RELEVANT_KEYS = [
   "MINOR_MONTHLY_LIMIT_YUAN",
   "LOG_LEVEL",
   "E2E_TEST_HOOKS",
+  "KP_RECONCILE_AUTO_LINK_THRESHOLD",
+  "KP_RECONCILE_REVIEW_THRESHOLD",
 ] as const;
 
 const VALID_BASE = {
@@ -247,5 +249,22 @@ describe("server/env.ts (fail-fast validator)", () => {
     applyBase();
     process.env.LOG_LEVEL = "verbose";
     await expect(importEnv()).rejects.toThrow(/LOG_LEVEL/i);
+  });
+
+  // Plan 9: KP_RECONCILE thresholds
+  it("KP_RECONCILE thresholds 默认 0.85 / 0.6", async () => {
+    applyBase();
+    delete process.env.KP_RECONCILE_AUTO_LINK_THRESHOLD;
+    delete process.env.KP_RECONCILE_REVIEW_THRESHOLD;
+    const mod = await importEnv();
+    expect(mod.env.KP_RECONCILE_AUTO_LINK_THRESHOLD).toBe(0.85);
+    expect(mod.env.KP_RECONCILE_REVIEW_THRESHOLD).toBe(0.6);
+  });
+
+  it("KP_RECONCILE_REVIEW_THRESHOLD >= AUTO_LINK throws", async () => {
+    applyBase();
+    process.env.KP_RECONCILE_AUTO_LINK_THRESHOLD = "0.7";
+    process.env.KP_RECONCILE_REVIEW_THRESHOLD = "0.8";
+    await expect(importEnv()).rejects.toThrow(/REVIEW_THRESHOLD must be strictly less/);
   });
 });

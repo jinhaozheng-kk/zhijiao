@@ -86,6 +86,7 @@
 - **Plan 3**（Credit 计费 + 微信支付 V3 沙箱：Mock 主路径 + Real V3 骨架 + chargedProcedure + 未成年月度上限 + OPS 调账 + pino 结构化日志）—— 见 `docs/superpowers/plans/2026-05-21-credit-and-wechat-pay-sandbox.md`，spec 在 `docs/superpowers/specs/2026-05-21-credit-and-wechat-pay-sandbox-design.md`
 - **Plan 4**（举一反三 + 错因分析：ErrorBookEntry + VariantGroup + 三阶变式 + chargeMiddleware 抽取 + E2E 覆盖闭环）—— 见 `docs/superpowers/plans/2026-05-23-variant-and-error-analysis.md`，spec 在 `docs/superpowers/specs/2026-05-23-variant-and-error-analysis-design.md`
 - **Plan 8**（答疑题面持久化 + ErrorAnalysisCard 接入答疑闭环：tutor.ask 接受自由输入并 upsert USER_ADHOC Question + 返 questionId + TutorForm 接 ErrorAnalysisCard）—— 见 `docs/superpowers/plans/2026-05-25-tutor-question-bank-and-error-card-integration.md`，spec 在 `docs/superpowers/specs/2026-05-25-tutor-question-bank-and-error-card-integration-design.md`
+- **Plan 9**（知识点 reconciler：hint→KP 结构化映射 + KpReconcileMatch 审计队列 + CLI 异步 LLM/review）—— 见 `docs/superpowers/plans/2026-05-25-kp-reconciler.md`，spec 在 `docs/superpowers/specs/2026-05-25-kp-reconciler-design.md`
 
 **计费现状**：
 - `packages/billing` 新建：ensureWallet / chargeForAction（predicate-on-update + idemKey 防重，原子化）/ compensate（写 COMPENSATION ledger + refId 指回 DEBIT）/ applyWechatPayNotify（P2002 idemKey 重读 → ALREADY_PAID；P2002 transactionId 重读 → DUPLICATE_TRANSACTION_ID；spec §4.1 状态机；FAILED→PAID 拒绝走 TERMINAL_STATE_CONFLICT）/ expireStaleOrders / adminAdjust（OPS 调账；负 delta 也走 predicate-on-update 防透支 → InsufficientBalanceForAdjustError）/ sumMonthlyTopupCents（Asia/Shanghai 自然月 + CREATED+PENDING by createdAt + PAID by paidAt）
@@ -135,6 +136,25 @@
 - **hotfix P1**（review 反馈）：`error.diagnose` 加 `validateQuestionAccess` 中间件，扣费前守门 `USER_ADHOC.createdByUserId === ctx.auth.userId`；跨用户 / 不存在的 questionId 合并 `NOT_FOUND / QUESTION_NOT_FOUND`，不写 DEBIT。链顺序 `authedProcedure → validateQuestionAccess → chargeMiddleware("ERROR_ANALYSIS")`
 - **hotfix P2**（review 反馈）：新增 `error.findEntryForQuestion` 只读 query；`ErrorAnalysisCard` mount 时 seed 已存在的 ACTIVE/ARCHIVED entry 到 result 态，避免对同题重复点 diagnose 二次扣费。DELETED 视同 null（终态语义）
 - **hotfix P2 #1**（review 反馈）：`TutorForm` 给 `<ErrorAnalysisCard key={data.questionId} ... />`，换题强制 remount 重置 state，避免 A 题分析结果残留到 B 题
+
+**知识点结构化现状**（Plan 9）：
+- `QuestionKPLink` 仍是唯一权威映射，新表 `KpAlias`（subject 内 normalizedAlias 唯一）+ `KpReconcileMatch`（hint→kp 审计队列）做支撑
+- `reconcileHintsSync(prisma, { questionId, hints, source, sourceRefType, sourceRefId })` 在 `tutor.ask` / `error.diagnose` / `variant.generateForEntry` 三处 body 接入，**await + try/catch**，失败不破坏主流程
+- 同步只跑 EXACT (KP.name/code) → ALIAS 表 → 命中即 LINKED + upsert QuestionKPLink（weight=max(existing, 1.0)）
+- 关键：`sourceRefType=VARIANT_ITEM` 永不自动写 parent QuestionKPLink（变式题 hint 可能跨原题域），命中 EXACT/ALIAS 也只到 PENDING_REVIEW(reviewReason=VARIANT_TO_PARENT_NEEDS_REVIEW)；判分流条件是 sourceRefType 不是 source
+- 异步 LLM 走 `pnpm.cmd --filter @zhijiao/web kp:reconcile-pending [-- --limit N]`，三档 (≥0.85 / ≥0.6 / <0.6) 分流 LINKED / PENDING_REVIEW(LLM_CONFIDENCE_BAND) / DROPPED；matchId 对齐写回（不靠 rawHint）；LLM 漏返/重复 retry 2 次再 PARSE_FAILED；多返不属于本批 matchId 静默忽略
+- 人工 review 走 `pnpm.cmd --filter @zhijiao/web kp:review`，单键 a/r/m <code>/alias <code>/s/q；service 层 `apps/web/server/lib/kp-reconcile.ts` 的 `approveMatch / rejectMatch / remapMatch / learnAliasAndLink / unlinkIfOrphan` 5 个函数可被未来 `/ops/kp-reconcile` Web 页面复用
+- alias 冲突防御：`learnAliasAndLink` 检测 `(subjectId, normalizedAlias)` 已映射到不同 KP → 抛 `KpAliasConflictError`，不静默覆盖
+- LLM 不计 Credit（系统维护任务），只写 `ModelCall(taskKind="KP_RECONCILE")`；`taskKind` 字面值，不引入 enum
+- KpAlias 初始 seed 8 条 math 别名 (`packages/db/prisma/seed/3_kp_aliases.ts`)；后续靠 CLI `alias <code>` 慢慢沉淀
+- backfill: `pnpm.cmd --filter @zhijiao/web exec tsx scripts/kp-backfill-variant-items.ts` 一次性扫现有 VariantItem.knowledgePointHints，幂等
+
+**Plan 9 未完成的事 —— 等后续 plan**：
+- Web `/ops/kp-reconcile` 页面（等真有 OPS / 教师角色）
+- CLI 暴露 LINKED→REJECTED 反悔入口（只 export `unlinkIfOrphan` helper，文档化清理 SQL）
+- cron 自动跑 `kp:reconcile-pending`（成本不可见，暂手动）
+- KP 树扩充（独立 plan）
+- VariantItem 升格成独立 Question（独立 plan / Plan 12 题库去重时考虑）
 
 **Plan 8 未完成的事 —— prod ship 前需 Plan 6 接力**：
 - USER_ADHOC 题 GC / 注销时去标识化（PII 治理）
@@ -191,12 +211,17 @@ pnpm --filter @zhijiao/web  test -- tests/integration/auth-register-race.test.ts
 27. **TutorForm 的 ErrorAnalysisCard 必须 key={data.questionId}**（Plan 8 hotfix P2 #1）：`Select-String -Path apps/web/components/TutorForm.tsx -Pattern "key=\{data.questionId\}"` 应命中；不然换题后会保留上一题的 rootCause + 详情链接。E2E `tutor-error-book-link.spec.ts` 第 3 测例守门
 28. **`tutor-error-book-link.spec.ts` 必须用 per-run 唯一 stem**（Plan 8 hotfix P3）：`Select-String -Path apps/web/e2e/tutor-error-book-link.spec.ts -Pattern "freshStem|randomUUID"` 应命中。spec 不能用固定题面，否则第二次 `playwright test` 跑同 DB 时 `findEntryForQuestion` 命中已存在 entry → 卡片 mount 在 "已诊断" 态而不是 empty CTA → `error-analysis-card-empty` 期望失败。注：OTP 5/h burst 限频是另一个 pre-existing 问题，本 plan 不修
 29. **Prisma schema 字段合并后先 regenerate client**：凡是 merge 包含 `packages/db/prisma/schema.prisma` 新字段 / enum / relation，主 worktree 先跑 `pnpm.cmd --filter @zhijiao/db db:generate`，再跑 `pnpm.cmd exec turbo typecheck --force`。否则 stale Prisma Client 会在 typecheck 报找不到新字段
+30. **KpAlias subject 隔离 unique idx 落库**（Plan 9 §2.1）：`docker exec zhijiao-postgres psql -U postgres -d zhijiao -c "\d kp_aliases"` 应见 `UNIQUE (subject_id, normalized_alias)`。同 alias 跨 subject 允许，同 subject 内唯一
+31. **三个 sync 调用点都包 try/catch**（Plan 9 §3.4.2 / 红线 #1）：`Select-String -Path apps/web/server/routers/tutor.ts,apps/web/server/routers/error.ts,apps/web/server/routers/variant.ts -Pattern "reconcileHintsSync" -Context 2,5` 每处必须出现在 `try { ... } catch` 块内 + `logger.warn` 兜底
+32. **sourceRefType=VARIANT_ITEM 永不写 QuestionKPLink**（Plan 9 §3.3 / 红线 #2）：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/kp-reconcile-sync-variant.test.ts` 应全绿（含 BACKFILL+VARIANT_ITEM 测例守门 source vs sourceRefType 分流条件）
+33. **LINKED→REJECTED 反悔入口未暴露**（Plan 9 §5.5 / 红线 #10）：`grep -rn "unlinkIfOrphan" apps/web/server/routers apps/web/scripts` 应 0 命中。Plan 9 只 export helper + 文档化清理 SQL；unit test import 它走 helper 不算"用户入口"
+34. **backfill 脚本幂等**（Plan 9 §7.2）：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/kp-reconcile-backfill.test.ts` 应全绿（覆盖第二次跑 alreadySeen 计数 + 行数不变）
 
-**下一步候选 Plan**（Plan 4 + Plan 8 已落地）：
+**下一步候选 Plan**（Plan 4 + Plan 8 + Plan 9 已落地）：
 - Plan 5: 真接阿里云 SMS + 微信公众号（ICP 备案通过后；**且 Plan 2 Hardening 必须先 ship**；替换 `RealSmsAdapter` / `RealWechatH5Adapter` 的 stub 实现）
-- Plan 6: PII 治理（用户注销 / 去标识化 / `WechatPayEvent.rawBody` 保留期 / `TopupOrder` 孤儿订单清理 / `ErrorBookEntry` 用户注销时去标识化 / **`Question.USER_ADHOC` 孤儿清理 + 注销时去标识化** —— Plan 8 prereq）—— **Plan 3 prod ship prereq**
+- Plan 6: PII 治理（用户注销 / 去标识化 / `WechatPayEvent.rawBody` 保留期 / `TopupOrder` 孤儿订单清理 / `ErrorBookEntry` 用户注销时去标识化 / `Question.USER_ADHOC` 孤儿清理 + 注销时去标识化 / `KpReconcileMatch.reviewedByUserId` 注销时 SetNull —— 已实现）—— **Plan 3 prod ship prereq**
 - Plan 7: 真接微信支付 V3 API（需 ICP 备案 + 商户号 + APIv3 + 商户证书；激活 `RealWechatPayAdapter.unifiedOrder` + `verifyNotify`）—— **Plan 3 prod ship prereq**
-- Plan 9: 知识点 reconciler（把 Plan 4 输出的 `knowledgePointHints` 字符串通过 NLP 映射到 `KnowledgePoint` id 树，支撑学情画像 + 教师分层作业；Plan 8 的 USER_ADHOC 题也可落 `QuestionKPLink`）
-- Plan 10: 教师端"分层作业"基于错题本扩展（教师可看班级错题热度图，按错因 / KP 分类布置分层作业）
-- Plan 11: 学情画像 / 趋势报告（学生掌握度 + 薄弱点 + 趋势画像；家长简版报告）
-- Plan 12: 题库去重 / PUBLISHED 复用 / 统计归并（Plan 8 §6.2 punt：当前用户输入与 PUBLISHED 完全相同的 stem 仍建 USER_ADHOC 副本，班级统计断层）
+- Plan 10: 教师端"分层作业"基于错题本扩展（教师可看班级错题热度图，按错因 / KP 分类布置分层作业 —— **Plan 9 接通后**有 KP id 数据可用）
+- Plan 11: 学情画像 / 趋势报告（学生掌握度 + 薄弱点 + 趋势画像；家长简版报告 —— **Plan 9 接通后**有 KP id 数据可用）
+- Plan 12: 题库去重 / PUBLISHED 复用 / 统计归并 + VariantItem 升格为独立 Question（Plan 8 §6.2 + Plan 9 §10.3 punt）
+- Plan 13: KP 树扩充（small / middle / high school math KP curation；当前 seed 仅 4 个 math KP，alias 表长得慢，Plan 9 上线一段时间后 UNMATCHED → DROPPED 比例高）

@@ -1,6 +1,7 @@
 import "server-only";
 import {
   Prisma,
+  type PrismaClient,
   type ErrorBookEntry,
   type Question,
   type QuestionAnswer,
@@ -47,10 +48,17 @@ export function isErrorBookPartialUniqueP2002(e: unknown): boolean {
   if (e.code !== "P2002") return false;
   const meta = e.meta as { target?: string | string[] } | undefined;
   const target = meta?.target;
-  const targetStr = Array.isArray(target) ? target.join(",") : target ?? "";
-  // partial unique index name is fixed by the migration (§3.3); Prisma reports
-  // the index name on partial-unique conflicts.
-  return targetStr.includes("user_question_active");
+  const targetParts = Array.isArray(target) ? target : target ? [target] : [];
+  const targetStr = targetParts.join(",");
+  // Prisma's meta.target for raw SQL partial unique indexes is version/runtime
+  // dependent: sometimes it reports the index name, sometimes just the columns.
+  // Treat both shapes as the same race-path signal; ErrorBookEntry has no schema
+  // @@unique([userId, questionId]), so this field pair can only come from the
+  // active/archived partial unique index.
+  return (
+    targetStr.includes("user_question_active") ||
+    (targetParts.includes("user_id") && targetParts.includes("question_id"))
+  );
 }
 
 export interface UpsertEntryOnDiagnoseArgs {
@@ -74,19 +82,29 @@ export interface UpsertEntryOnDiagnoseArgs {
 //     NEW row that coexists with the DELETED row (allowed by the partial
 //     unique index that only constrains ACTIVE/ARCHIVED).
 //   - concurrent diagnose on the same (userId, questionId) → second writer's
-//     create() throws P2002 on the partial unique index; re-read finds the
-//     winner and we fall through to the update path. Both calls complete
-//     successfully and both get charged 1 credit (both received AI service).
+//     create() throws P2002 on the partial unique index; re-read on the
+//     top-level client finds the winner and we fall through to the update
+//     path. Both calls complete successfully and both get charged 1 credit
+//     (both received AI service).
+//
+// Plan 4 hotfix (surfaced by Plan 9 Task 7): function accepts PrismaClient,
+// NOT TransactionClient. Mirrors the Plan 8 fix for upsertUserAdhocQuestion:
+// when create() throws P2002 *inside* a $transaction callback, Postgres
+// marks the tx aborted (25P02). Subsequent tx.findFirstOrThrow() then fails
+// with PrismaClientUnknownRequestError, swallowing the race detection. The
+// caller now invokes us with the bare client (not via $transaction); each
+// DB call is atomic on its own, and the partial unique index at DB level
+// guarantees the race-time contract.
 export async function upsertEntryOnDiagnose(
-  tx: Prisma.TransactionClient,
+  prisma: PrismaClient,
   args: UpsertEntryOnDiagnoseArgs,
 ): Promise<ErrorBookEntry> {
   const { userId, questionId, ai, debitLedgerId, modelCallId, actualAnswerMd } = args;
-  const existing = await tx.errorBookEntry.findFirst({
+  const existing = await prisma.errorBookEntry.findFirst({
     where: { userId, questionId, status: { in: ["ACTIVE", "ARCHIVED"] } },
   });
   if (existing) {
-    return tx.errorBookEntry.update({
+    return prisma.errorBookEntry.update({
       where: { id: existing.id },
       data: {
         // ARCHIVED → ACTIVE allowed (user explicitly re-engaging the question);
@@ -107,7 +125,7 @@ export async function upsertEntryOnDiagnose(
     });
   }
   try {
-    return await tx.errorBookEntry.create({
+    return await prisma.errorBookEntry.create({
       data: {
         userId,
         questionId,
@@ -123,12 +141,13 @@ export async function upsertEntryOnDiagnose(
   } catch (e) {
     if (isErrorBookPartialUniqueP2002(e)) {
       // Concurrent race: another diagnose for the same (userId, questionId)
-      // created the entry while we were preparing ours. Re-read and apply
-      // our analysis to the winner.
-      const winner = await tx.errorBookEntry.findFirstOrThrow({
+      // created the entry while we were preparing ours. Re-read (on the
+      // top-level client — NOT inside an aborted tx) and apply our analysis
+      // to the winner.
+      const winner = await prisma.errorBookEntry.findFirstOrThrow({
         where: { userId, questionId, status: { in: ["ACTIVE", "ARCHIVED"] } },
       });
-      return tx.errorBookEntry.update({
+      return prisma.errorBookEntry.update({
         where: { id: winner.id },
         data: {
           status: "ACTIVE",

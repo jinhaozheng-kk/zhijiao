@@ -56,6 +56,10 @@ const Env = z
 
     // E2E hooks: only "1" unlocks /api/__test__/* style endpoints.
     E2E_TEST_HOOKS: z.enum(["0", "1"]).default("0"),
+
+    // Plan 9 KP reconciler thresholds (kp:reconcile-pending CLI 用)
+    KP_RECONCILE_AUTO_LINK_THRESHOLD: z.coerce.number().min(0).max(1).default(0.85),
+    KP_RECONCILE_REVIEW_THRESHOLD:    z.coerce.number().min(0).max(1).default(0.6),
   })
   .refine(
     (e) => e.AI_USE_MOCK === "true" || (!!e.DASHSCOPE_API_KEY && !!e.DASHSCOPE_BASE_URL),
@@ -104,6 +108,16 @@ const Env = z
       // mock match unset placeholders.
       message:
         "WECHAT_PAY_USE_MOCK=true requires MOCK_WECHAT_PAY_SECRET (>= 16 bytes) + WECHAT_PAY_APPID + WECHAT_PAY_MCHID",
+    },
+  )
+  .refine(
+    (e) => e.KP_RECONCILE_REVIEW_THRESHOLD < e.KP_RECONCILE_AUTO_LINK_THRESHOLD,
+    {
+      // Plan 9 spec §4.3: review threshold 必须严格小于 auto-link，否则 PENDING_REVIEW
+      // 区间消失，所有 0.6–0.85 的 LLM 结果会被 DROPPED 或直接 LINKED，无人工兜底。
+      path: ["KP_RECONCILE_REVIEW_THRESHOLD"],
+      message:
+        "KP_RECONCILE_REVIEW_THRESHOLD must be strictly less than KP_RECONCILE_AUTO_LINK_THRESHOLD",
     },
   );
 

@@ -41,6 +41,10 @@ const DEFAULT_VARIANT_GENERATION = {
   ],
 };
 
+// Plan 9: kpReconcile 默认 mock —— 返回空数组（router 视作 "漏返" → retry → PARSE_FAILED）。
+// 真实测试场景必须通过 `respondWith` 注入具体返值。
+const DEFAULT_KP_RECONCILIATION: unknown = [];
+
 function pickDefault(req: AdapterRequest): unknown {
   // System prompts are defined verbatim in router.ts; match on Chinese
   // 助手 suffix keyword to dispatch.
@@ -48,6 +52,7 @@ function pickDefault(req: AdapterRequest): unknown {
     req.messages.find((m) => m.role === "system")?.content ?? "";
   if (sys.includes("错因分析助手")) return DEFAULT_ERROR_ANALYSIS;
   if (sys.includes("举一反三变式生成助手")) return DEFAULT_VARIANT_GENERATION;
+  if (sys.includes("知识点结构化的匹配助手")) return DEFAULT_KP_RECONCILIATION;
   return DEFAULT_TUTORING;
 }
 
