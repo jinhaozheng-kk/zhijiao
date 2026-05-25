@@ -1,6 +1,20 @@
-import "server-only";
 import { Prisma, type PrismaClient, type KnowledgePoint } from "@prisma/client";
-import { logger } from "../logger.js";
+
+// Plan 9 Task 5 hotfix (review P1): 不能 `import "server-only"`，也不能直接
+// `import { logger } from "../logger.js"`，因为 Task 8/9/10 的 CLI 脚本（kp:review /
+// kp:reconcile-pending / kp-backfill-variant-items）会通过 tsx 直接 import 本文件。
+// tsx/Node 不像 Next 那样 alias server-only，会直接 throw。
+//
+// Logger 用注入模式（与 @zhijiao/billing 的 setBillingLogger 一致）：
+// apps/web/server/logger.ts 在 module-load 时调 setKpReconcileLogger(...)；
+// CLI 脚本可注入自己的 console-logger 或接受 no-op 默认值。
+interface KpReconcileLogger {
+  warn: (obj: Record<string, unknown>, msg?: string) => void;
+}
+let _logger: KpReconcileLogger = { warn: () => {} };
+export function setKpReconcileLogger(logger: KpReconcileLogger): void {
+  _logger = logger;
+}
 
 // ============ 类型与常量 ============
 
@@ -118,7 +132,7 @@ export async function reconcileHintsSync(
           matchVia = "ALIAS";
         } else {
           // 防御：alias 表里有跨 subject 行（理论上 @@unique 挡住）
-          logger.warn({
+          _logger.warn({
             event: "kp_reconcile_alias_cross_subject",
             questionId: args.questionId,
             aliasKpId,
@@ -176,12 +190,28 @@ export async function reconcileHintsSync(
       }
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
-        // 同 (sourceRefType, sourceRefId, normalizedHint) 已存在 → no-op
-        result.alreadySeen++;
+        // Plan 9 Task 5 hotfix (review P2): 只有 kp_reconcile_matches 的 unique
+        // 才算 alreadySeen。QuestionKPLink 的 unique 由下面 atomic upsert 处理，
+        // 理论上不会冒到这里；但万一未来加了其它 unique 约束，target 判定能避免
+        // 把跨表的 race 误算成本表幂等。
+        const target = (e.meta?.target ?? []) as string[] | string | undefined;
+        const targetStr = Array.isArray(target) ? target.join(",") : String(target ?? "");
+        if (targetStr.includes("normalized_hint")) {
+          // 同 (sourceRefType, sourceRefId, normalizedHint) 已存在 → no-op
+          result.alreadySeen++;
+          continue;
+        }
+        // 非预期 P2002：审计行没成功落库，但调用方的业务流不能被它阻塞
+        _logger.warn({
+          event: "kp_reconcile_sync_unexpected_p2002",
+          questionId: args.questionId,
+          hint: normalized,
+          target: targetStr,
+        });
         continue;
       }
       // 单条 hint 失败不抛 —— 不影响同批其它
-      logger.warn({
+      _logger.warn({
         event: "kp_reconcile_sync_hint_failed",
         questionId: args.questionId,
         hint: normalized,
@@ -231,20 +261,20 @@ async function upsertQuestionKpLink(
   kpId: string,
   newWeight: number,
 ): Promise<void> {
-  // weight = max(existing, newWeight) — spec §3.3
-  const existing = await tx.questionKPLink.findUnique({
-    where: { questionId_kpId: { questionId, kpId } },
-  });
-  if (existing) {
-    if (existing.weight < newWeight) {
-      await tx.questionKPLink.update({
-        where: { questionId_kpId: { questionId, kpId } },
-        data: { weight: newWeight },
-      });
-    }
-  } else {
-    await tx.questionKPLink.create({
-      data: { questionId, kpId, weight: newWeight },
-    });
-  }
+  // Plan 9 Task 5 hotfix (review P2): atomic upsert via raw SQL ON CONFLICT.
+  //
+  // 旧版 findUnique → create / update 在并发场景下会 race：两个不同 source 同时
+  // reconcile 同一 (questionId, kpId)，第二个 create 撞 (question_id, kp_id) unique
+  // 抛 P2002 → 上层事务 rollback → KpReconcileMatch 审计行也丢了，且被外层 catch 误
+  // 算作 alreadySeen。
+  //
+  // 用 INSERT ... ON CONFLICT DO UPDATE SET weight = GREATEST(...) 在 Postgres 层
+  // 一次性完成 race-safe 的 max-weight upsert；不再抛 P2002 给上层。
+  // spec §3.3: weight = max(existing, newWeight)。
+  await tx.$executeRaw`
+    INSERT INTO "question_kp_links" ("question_id", "kp_id", "weight")
+    VALUES (${questionId}, ${kpId}, ${newWeight})
+    ON CONFLICT ("question_id", "kp_id")
+    DO UPDATE SET "weight" = GREATEST("question_kp_links"."weight", EXCLUDED."weight")
+  `;
 }
