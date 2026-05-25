@@ -8,11 +8,30 @@
 // 不进 cron (spec §1 / §10.2) — 手动触发，便于观察 LLM 成本和 prompt 质量。
 
 import { PrismaClient } from "@prisma/client";
-import { AiRouter, MockAdapter } from "@zhijiao/ai";
+import { AiRouter, DashScopeAdapter, MockAdapter, type ModelAdapter } from "@zhijiao/ai";
 import {
   processBatch,
   type KpReconcileThresholds,
 } from "../server/lib/kp-reconcile-pending.js";
+
+// CLI-safe adapter factory. Do NOT import @/lib/ai-client — it's server-only
+// (Next bundler-gated; tsx can't resolve). Mirror the env contract validated
+// by server/env.ts: AI_USE_MOCK="true" → MockAdapter; otherwise require real
+// DashScope credentials (fail-close). The runtime is allowed to override via
+// AI_USE_MOCK because operators may want to dry-run prompt iterations against
+// the mock without touching DashScope.
+function buildCliAdapter(): ModelAdapter {
+  if (process.env.AI_USE_MOCK === "true") return new MockAdapter();
+  if (!process.env.DASHSCOPE_API_KEY || !process.env.DASHSCOPE_BASE_URL) {
+    throw new Error(
+      "Real AI requires DASHSCOPE_API_KEY + DASHSCOPE_BASE_URL. Set AI_USE_MOCK=true to use the mock adapter.",
+    );
+  }
+  return new DashScopeAdapter({
+    apiKey: process.env.DASHSCOPE_API_KEY,
+    baseURL: process.env.DASHSCOPE_BASE_URL,
+  });
+}
 
 // Read thresholds from env with same defaults as server/env.ts superRefine
 // (defaults 0.85 / 0.6; review < auto_link enforced).
@@ -52,10 +71,7 @@ async function main() {
   const thresholds = loadThresholds();
 
   const prisma = new PrismaClient();
-
-  // MVP: 用 MockAdapter；真接 DashScope 等独立 plan (sync 路径已有 ai-client 工厂，
-  // 这里 CLI 暴露的是简单入口，参考 env.AI_USE_MOCK 后续可切换)。
-  const adapter = new MockAdapter();
+  const adapter = buildCliAdapter();
   const router = new AiRouter({ prisma, adapter });
 
   try {
