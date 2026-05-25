@@ -21,33 +21,9 @@ import {
   rejectMatch,
   remapMatch,
   learnAliasAndLink,
+  resolveReviewerUserId,
   KpAliasConflictError,
 } from "../server/lib/kp-reconcile.js";
-
-// Reviewer 用户 id 解析：
-//   1. KP_REVIEW_USER_ID env 显式覆盖（CI / 多人场景）
-//   2. 否则查 DB 第一个 Role=OPS 用户（dev 中是 dev-ops-01）
-//   3. 都没有 → fail-close
-async function resolveReviewerUserId(prisma: PrismaClient): Promise<string> {
-  const fromEnv = process.env.KP_REVIEW_USER_ID;
-  if (fromEnv) {
-    const exists = await prisma.user.findUnique({ where: { id: fromEnv }, select: { id: true } });
-    if (!exists) {
-      throw new Error(`KP_REVIEW_USER_ID=${fromEnv} not found in users table`);
-    }
-    return fromEnv;
-  }
-  const opsRole = await prisma.userRole.findFirst({
-    where: { role: "OPS" },
-    orderBy: { createdAt: "asc" },
-  });
-  if (!opsRole) {
-    throw new Error(
-      "No OPS-role user found. Set KP_REVIEW_USER_ID env or seed an OPS user (pnpm db:seed).",
-    );
-  }
-  return opsRole.userId;
-}
 
 async function loadPending(prisma: PrismaClient) {
   return prisma.kpReconcileMatch.findMany({

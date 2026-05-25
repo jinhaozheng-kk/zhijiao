@@ -466,6 +466,48 @@ export async function learnAliasAndLink(
   });
 }
 
+// Plan 9 Task 9 hotfix (review P2): resolve the reviewer user id for kp:review
+// CLI. Env override must enforce OPS/ADMIN role, not just user existence —
+// otherwise an attacker (or careless operator) setting KP_REVIEW_USER_ID to a
+// regular student/teacher id would silently bypass the "OPS operations go
+// through CLI" audit boundary.
+//
+// Resolution order:
+//   1. KP_REVIEW_USER_ID env override → require user exists AND has OPS or ADMIN role
+//   2. otherwise → first user with OPS role (deterministic by createdAt asc)
+//   3. neither → fail-close with actionable message
+export async function resolveReviewerUserId(prisma: PrismaClient): Promise<string> {
+  const fromEnv = process.env.KP_REVIEW_USER_ID;
+  if (fromEnv) {
+    const user = await prisma.user.findUnique({
+      where: { id: fromEnv },
+      select: { id: true, roles: { select: { role: true } } },
+    });
+    if (!user) {
+      throw new Error(`KP_REVIEW_USER_ID=${fromEnv} not found in users table`);
+    }
+    const hasPrivileged = user.roles.some(
+      (r) => r.role === "OPS" || r.role === "ADMIN",
+    );
+    if (!hasPrivileged) {
+      throw new Error(
+        `KP_REVIEW_USER_ID=${fromEnv} is not authorized: requires OPS or ADMIN role`,
+      );
+    }
+    return user.id;
+  }
+  const opsRole = await prisma.userRole.findFirst({
+    where: { role: "OPS" },
+    orderBy: { createdAt: "asc" },
+  });
+  if (!opsRole) {
+    throw new Error(
+      "No OPS-role user found. Set KP_REVIEW_USER_ID env (must be OPS/ADMIN) or seed an OPS user (pnpm db:seed).",
+    );
+  }
+  return opsRole.userId;
+}
+
 // Plan 9 不暴露给 CLI / router（spec §5.5 / 探针 33）；只 export 给 unit test 验证
 // + 未来开 ad-hoc 批量修错脚本时复用。
 // 删 QuestionKPLink 前先查是否还有其它 LINKED match 在背书；有则不删。
