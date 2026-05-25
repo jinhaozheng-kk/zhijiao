@@ -10,6 +10,8 @@ import {
 import { ComplianceRejectedError } from "@zhijiao/ai";
 import { getAiRouter } from "@/lib/ai-client";
 import { toVariantGroupView } from "../lib/error-book.js";
+import { reconcileHintsSync } from "../lib/kp-reconcile.js";
+import { logger } from "../logger.js";
 
 export const variantRouter = router({
   // spec §4.2 / §5.2 — Blocker 1.
@@ -107,6 +109,30 @@ export const variantRouter = router({
           include: { items: { orderBy: { position: "asc" } } },
         });
       });
+
+      // Plan 9: 每个 VariantItem 的 knowledgePointHints 都过 reconcile。
+      // sourceRefType=VARIANT_ITEM 在 service 层永不自动写 parent QuestionKPLink
+      // （红线 #2）—— 命中 EXACT/ALIAS 也只到 PENDING_REVIEW。
+      // 在 $transaction 之外做，避免 reconcile 失败 rollback 已写好的 VariantGroup/Items。
+      // await + try/catch + logger.warn 兜底（红线 #1）。
+      for (const item of result.items) {
+        try {
+          await reconcileHintsSync(ctx.db, {
+            questionId: ctx.entry.questionId,
+            hints: item.knowledgePointHints,
+            source: "VARIANT_ITEM",
+            sourceRefType: "VARIANT_ITEM",
+            sourceRefId: item.id,
+          });
+        } catch (e) {
+          logger.warn({
+            event: "kp_reconcile_sync_failed",
+            source: "VARIANT_ITEM",
+            variantItemId: item.id,
+            err: String(e),
+          });
+        }
+      }
 
       return { group: toVariantGroupView(result) };
     }),

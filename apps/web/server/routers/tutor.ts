@@ -10,6 +10,8 @@ import { TutoringInputSchema, ComplianceRejectedError } from "@zhijiao/ai";
 import { TRPCError } from "@trpc/server";
 import { getAiRouter } from "@/lib/ai-client";
 import { upsertUserAdhocQuestion } from "../lib/question.js";
+import { reconcileHintsSync } from "../lib/kp-reconcile.js";
+import { logger } from "../logger.js";
 
 // Plan 8: tutor.ask 改用 explicit middleware chain（不用 chargedProcedure 糖语法），
 // 因为要插 validateTutorInputCompliance 在 chargeMiddleware 之前。
@@ -56,6 +58,27 @@ export const tutorRouter = router({
         userId: ctx.auth.userId,
         stemMd: input.questionStem,
       });
+
+      // Plan 9: AI 给的 knowledgePoints 走 reconcile（exact/alias sync 命中即 LINKED
+      // QuestionKPLink；miss 进 UNMATCHED 等异步 LLM）。await + try/catch + 必须**不**
+      // 破坏主流程（红线 #1）—— 用户已付费拿到讲解，KP reconcile 是后台增强。
+      try {
+        await reconcileHintsSync(ctx.db, {
+          questionId: question.id,
+          hints: ai.knowledgePoints,
+          source: "TUTOR_ADHOC",
+          sourceRefType: "QUESTION",
+          sourceRefId: question.id,
+        });
+      } catch (e) {
+        logger.warn({
+          event: "kp_reconcile_sync_failed",
+          source: "TUTOR_ADHOC",
+          questionId: question.id,
+          err: String(e),
+        });
+      }
+
       return { ...ai, questionId: question.id };
     }),
 });

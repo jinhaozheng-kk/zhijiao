@@ -18,6 +18,8 @@ import {
   toVariantGroupView,
   DAY_MS,
 } from "../lib/error-book.js";
+import { reconcileHintsSync } from "../lib/kp-reconcile.js";
+import { logger } from "../logger.js";
 
 export const errorRouter = router({
   // === diagnose ===
@@ -96,6 +98,27 @@ export const errorRouter = router({
         modelCallId: ai.modelCallId,
         actualAnswerMd: input.actualAnswerMd ?? null,
       });
+
+      // Plan 9: AI 给的 suggestedKnowledgePoints 走 reconcile（exact/alias sync 命中
+      // 即 LINKED QuestionKPLink；miss 进 UNMATCHED 等异步 LLM）。await + try/catch +
+      // 必须**不**破坏主流程（红线 #1）—— diagnose 已经成功，KP reconcile 是后台增强。
+      // 注：sourceRefId 是 entry.id 不是 diagnoseLedgerId（spec §6.2 / 红线 #7）。
+      try {
+        await reconcileHintsSync(ctx.db, {
+          questionId: input.questionId,
+          hints: ai.suggestedKnowledgePoints,
+          source: "ERROR_ANALYSIS",
+          sourceRefType: "ERROR_BOOK_ENTRY",
+          sourceRefId: entry.id,
+        });
+      } catch (e) {
+        logger.warn({
+          event: "kp_reconcile_sync_failed",
+          source: "ERROR_ANALYSIS",
+          entryId: entry.id,
+          err: String(e),
+        });
+      }
 
       return {
         entryId: entry.id,
