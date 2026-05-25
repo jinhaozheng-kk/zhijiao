@@ -1,30 +1,33 @@
 import "server-only";
 import { z } from "zod";
-import { chargedProcedure, router } from "../trpc.js";
+import {
+  authedProcedure,
+  chargeMiddleware,
+  validateTutorInputCompliance,
+  router,
+} from "../trpc.js";
 import { TutoringInputSchema, ComplianceRejectedError } from "@zhijiao/ai";
 import { TRPCError } from "@trpc/server";
 import { getAiRouter } from "@/lib/ai-client";
+import { upsertUserAdhocQuestion } from "../lib/question.js";
 
-// Plan 3 Task 12 wires chargedProcedure('TUTOR_ASK') back in (it was
-// stepped down to authedProcedure in Task 9 for diff size). The middleware
-// reads clientRequestId from raw input via getRawInput(), so the schema
-// just has to include it; the downstream procedure body then only uses
-// the AI fields (questionStem / studentGrade) — clientRequestId is purely
-// a billing-side idempotency key.
+// Plan 8: tutor.ask 改用 explicit middleware chain（不用 chargedProcedure 糖语法），
+// 因为要插 validateTutorInputCompliance 在 chargeMiddleware 之前。
+// chargedProcedure factory 保留不动（error/variant 路由仍可用）；Plan 3/4 调用点零行 diff。
 const TutorAskInputSchema = TutoringInputSchema.extend({
   clientRequestId: z.string().uuid(),
 });
 
 export const tutorRouter = router({
-  ask: chargedProcedure("TUTOR_ASK")
+  ask: authedProcedure
+    .use(validateTutorInputCompliance)                       // Plan 8: 扣费前扫违禁词
+    .use(chargeMiddleware("TUTOR_ASK"))                      // 沿用 Plan 4 抽出的 factory
     .input(TutorAskInputSchema)
     .mutation(async ({ ctx, input }) => {
+      const { clientRequestId: _clientRequestId, ...aiInput } = input;
+      let ai;
       try {
-        const r = getAiRouter(ctx.auth.userId);
-        // Strip clientRequestId before handing to the AI layer — it's
-        // metadata for the billing middleware only.
-        const { clientRequestId: _clientRequestId, ...aiInput } = input;
-        return await r.tutor(aiInput);
+        ai = await getAiRouter(ctx.auth.userId).tutor(aiInput);
       } catch (e) {
         if (e instanceof ComplianceRejectedError) {
           throw new TRPCError({
@@ -43,5 +46,16 @@ export const tutorRouter = router({
           cause: { reason: "TUTOR_INTERNAL" },
         });
       }
+      // Plan 8 spec §3.3 / §3.4: AI 成功才落 Question — 否则 AI 失败被 chargeMiddleware
+      // 补偿，但 Question 已建会成孤儿。Order is load-bearing: do not move this above
+      // the AI call.
+      //
+      // 注：helper 直接接 ctx.db (PrismaClient) — 不包 $transaction。原因见 question.ts
+      // 的 doc：tx 内 P2002 catch 后无法在同 tx 重读（Postgres 25P02 tx aborted）。
+      const question = await upsertUserAdhocQuestion(ctx.db, {
+        userId: ctx.auth.userId,
+        stemMd: input.questionStem,
+      });
+      return { ...ai, questionId: question.id };
     }),
 });

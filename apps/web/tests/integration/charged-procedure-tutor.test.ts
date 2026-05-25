@@ -67,6 +67,13 @@ beforeAll(async () => {
 beforeEach(async () => {
   await resetDb();
   await redis.flushdb();
+  // Plan 8: tutor.ask 改造后 body 调 upsertUserAdhocQuestion 需要 math subject 存在。
+  // 不算行为回归 —— Plan 3 套件测的是扣费链路 + ledger，本 plan 加 Question 持久化要求 setup 配套。
+  await prisma.subject.upsert({
+    where: { code: "math" },
+    create: { code: "math", name: "数学" },
+    update: {},
+  });
 });
 afterAll(async () => {
   await redis.quit();

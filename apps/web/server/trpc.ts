@@ -2,7 +2,7 @@ import "server-only";
 import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
 import { z } from "zod";
-import { hasPermission, type Permission } from "@zhijiao/domain";
+import { findForbidden, hasPermission, type Permission } from "@zhijiao/domain";
 import {
   ensureWallet,
   chargeForAction,
@@ -310,3 +310,92 @@ export const validateEntryOwnership = t.middleware(
     return next({ ctx: { ...ctx, auth: ctx.auth, entry } });
   },
 );
+
+// Plan 8 hotfix (P1 from review): error.diagnose 必须在扣费前校验 questionId 归属，
+// 否则用户 A 可拿用户 B 的 USER_ADHOC questionId 调 diagnose，被扣费 + 信息泄露
+// (B 的题面会被读出并写入 A 的错题本)。同 Plan 4 validateEntryOwnership 同款隐私
+// 不变量：USER_ADHOC 跨用户与 questionId 不存在合并为同一 NOT_FOUND，避免存在性侧信道。
+//
+// 链顺序硬约束（与 Plan 4 Blocker 1 同理）：
+//   authedProcedure.use(validateQuestionAccess).use(chargeMiddleware("ERROR_ANALYSIS"))
+// 反了即"拿到不存在 / 跨用户 questionId 也扣费"，写 DEBIT 然后 compensate，
+// 余额虽然没变但 ledger 噪音 + 无意义 AI 调用。
+//
+// 访问规则：
+//   USER_ADHOC: createdByUserId === ctx.auth.userId → 允许；否则 NOT_FOUND
+//   其它 source（含 null / PUBLISHED 等）：允许（题库公共题）
+//   missing questionId / 不存在的 id → BAD_REQUEST / NOT_FOUND
+//
+// 注入 ctx.question (含 answer + knowledgePoints) 省一次 DB round trip，模式跟
+// validateEntryOwnership 一致。
+export const validateQuestionAccess = t.middleware(
+  async ({ ctx, next, getRawInput }) => {
+    if (!ctx.auth) {
+      throw new TRPCError({
+        code: "UNAUTHORIZED",
+        message: "请先登录",
+        cause: { reason: ctx.authError ?? "NO_SESSION" },
+      });
+    }
+    const raw = await getRawInput();
+    const parsed = z
+      .object({ questionId: z.string().cuid() })
+      .safeParse(raw);
+    if (!parsed.success) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "缺少 questionId",
+        cause: { reason: "QUESTION_ID_REQUIRED" },
+      });
+    }
+    const question = await ctx.db.question.findUnique({
+      where: { id: parsed.data.questionId },
+      include: {
+        answer: true,
+        knowledgePoints: { include: { kp: true } },
+      },
+    });
+    if (
+      !question ||
+      (question.source === "USER_ADHOC" &&
+        question.createdByUserId !== ctx.auth.userId)
+    ) {
+      // 合并 missing + cross-user USER_ADHOC 为同一 NOT_FOUND/QUESTION_NOT_FOUND
+      // 关键：必须在 chargeMiddleware 之前抛出，不写 DEBIT
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: "题目不存在",
+        cause: { reason: "QUESTION_NOT_FOUND" },
+      });
+    }
+    return next({ ctx: { ...ctx, auth: ctx.auth, question } });
+  },
+);
+
+/**
+ * Plan 8 spec §3.2: tutor.ask 输入合规中间件。链顺序：
+ *   authedProcedure.use(validateTutorInputCompliance).use(chargeMiddleware("TUTOR_ASK"))
+ *
+ * 边界处理：
+ *   非 string / 空 string / 超长 (>4000) → return next()，让 zod 后续抛常规 BAD_REQUEST
+ *     （注意 spec §3.2 副作用：超长 stem 因 chargeMiddleware 在 zod 之前，会产生
+ *      DEBIT + COMPENSATION 配对净余额不变；与违禁词路径不同。test 断言要分清两者）
+ *   合法长度 → 扫 findForbidden；命中 → 抛 BAD_REQUEST / INPUT_COMPLIANCE_REJECTED
+ *     （在 chargeMiddleware 之前 → 不扣费、不写 Question、不调 AI）
+ *
+ * 不复制 zod max(4000) 约束（单一真理源）。
+ */
+export const validateTutorInputCompliance = t.middleware(async ({ next, getRawInput }) => {
+  const raw = (await getRawInput()) as { questionStem?: unknown } | undefined;
+  const stem = typeof raw?.questionStem === "string" ? raw.questionStem : "";
+  if (stem.length === 0 || stem.length > 4000) return next();
+  const hits = findForbidden(stem);
+  if (hits.length > 0) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "题目内容未通过安全检查，请修改后再试。",
+      cause: { reason: "INPUT_COMPLIANCE_REJECTED", hits },
+    });
+  }
+  return next();
+});

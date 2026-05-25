@@ -85,6 +85,7 @@
 - **Plan 2 Hardening**（env validator + 原子化 refresh/OTP + 会话吊销即时生效 + bind 身份重校验 + register/refresh 限频接入 + race tests + 跨 package 测试 DB 隔离 + 仓库卫生）—— 见 `docs/superpowers/plans/2026-05-20-plan2-hardening.md`，spec 在 `docs/superpowers/specs/2026-05-20-plan2-hardening-design.md`
 - **Plan 3**（Credit 计费 + 微信支付 V3 沙箱：Mock 主路径 + Real V3 骨架 + chargedProcedure + 未成年月度上限 + OPS 调账 + pino 结构化日志）—— 见 `docs/superpowers/plans/2026-05-21-credit-and-wechat-pay-sandbox.md`，spec 在 `docs/superpowers/specs/2026-05-21-credit-and-wechat-pay-sandbox-design.md`
 - **Plan 4**（举一反三 + 错因分析：ErrorBookEntry + VariantGroup + 三阶变式 + chargeMiddleware 抽取 + E2E 覆盖闭环）—— 见 `docs/superpowers/plans/2026-05-23-variant-and-error-analysis.md`，spec 在 `docs/superpowers/specs/2026-05-23-variant-and-error-analysis-design.md`
+- **Plan 8**（答疑题面持久化 + ErrorAnalysisCard 接入答疑闭环：tutor.ask 接受自由输入并 upsert USER_ADHOC Question + 返 questionId + TutorForm 接 ErrorAnalysisCard）—— 见 `docs/superpowers/plans/2026-05-25-tutor-question-bank-and-error-card-integration.md`，spec 在 `docs/superpowers/specs/2026-05-25-tutor-question-bank-and-error-card-integration-design.md`
 
 **计费现状**：
 - `packages/billing` 新建：ensureWallet / chargeForAction（predicate-on-update + idemKey 防重，原子化）/ compensate（写 COMPENSATION ledger + refId 指回 DEBIT）/ applyWechatPayNotify（P2002 idemKey 重读 → ALREADY_PAID；P2002 transactionId 重读 → DUPLICATE_TRANSACTION_ID；spec §4.1 状态机；FAILED→PAID 拒绝走 TERMINAL_STATE_CONFLICT）/ expireStaleOrders / adminAdjust（OPS 调账；负 delta 也走 predicate-on-update 防透支 → InsufficientBalanceForAdjustError）/ sumMonthlyTopupCents（Asia/Shanghai 自然月 + CREATED+PENDING by createdAt + PAID by paidAt）
@@ -118,8 +119,26 @@
 - 间隔复习：5 段固定（1d / 3d / 7d / 14d / 30d cap）；MVP 不上 SM-2 / FSRS。markReviewed 推进；archive(true) 清 nextReviewAt 退出队列；archive(false) 复活时 seed nextReviewAt=now+1d 重新入队
 - AI: `ERROR_ANALYSIS`（1 credit）+ `VARIANT_GROUP_GEN`（3 credits，一次出 L1/L2/L3 三道）。`rootCause` 6 类 enum 强约束 / `level` 三档强约束 / JSON parse 失败走 retry 2 次再 PARSE_FAILED。合规 `ComplianceRejectedError` 走 Plan 3 既有白名单不补偿（debit row metadata `compensationStatus: "not_compensated_whitelisted"`）
 - E2E hook `/api/e2e-hooks/error-book`：仅 `E2E_TEST_HOOKS=1` 开启（env zod 默认 "0"，普通环境 404 disabled），POST `{phone, scenario}` 准备 4 个 deterministic 场景（empty / active / due / future）+ reset 钱包到 balance=100。给 `apps/web/e2e/error-book.spec.ts` 用，不暴露给客户端
-- **ErrorAnalysisCard 未接 TutorForm**：组件本身建好（`apps/web/app/(student)/tutor/error-analysis-card.tsx`，按 entryId 渲染"查看错题详情 →"链接），但当前 `tutor.ask` 收的是自由文本题面、不返回 questionId，没法把卡片挂进答疑流程。punt 到后续"tutor 接题库 / diagnose 卡片接入"plan；本 plan 的 E2E 用 `page.evaluate` 直接打 `error.diagnose` 触发
+- **ErrorAnalysisCard 已接 TutorForm**（Plan 8 落地后状态）：`tutor.ask` 现返 `questionId`，`TutorForm` 在讲解输出之下 mount `ErrorAnalysisCard` 直接传 questionId + actualAnswer 快照。Plan 4 原 punt 项已收口
 - **`next build` prereq**（Task 6 followup `ca69470`）：用 `useSearchParams()` 的 client component 必须用 `<Suspense>` 包裹（否则 Next 14 build 报 missing-suspense-with-csr-bailout）；JSX 文本里的 `"` 必须 `&quot;`（`react/no-unescaped-entities`）。`tsc --noEmit` 查不出这两类问题，必须用 `next build` 验
+
+**答疑题面持久化现状**（Plan 8）：
+- `tutor.ask` middleware 链：`authedProcedure → validateTutorInputCompliance → chargeMiddleware("TUTOR_ASK")`。compliance 在扣费**前**；违禁词命中 → `BAD_REQUEST / INPUT_COMPLIANCE_REJECTED`，不扣费、不写 Question、不调 AI
+- AI 成功才落 USER_ADHOC `Question`（spec §3.3 顺序），避免 AI 失败沉淀孤儿题
+- `Question` 加 `createdByUserId String?` (`onDelete: SetNull` —— 注销时归属可抹；与 `ErrorBookEntry.questionId @Restrict` 业务含义不同) + `normalizedStemHash String?`
+- partial unique idx `(created_by_user_id, normalized_stem_hash) WHERE source='USER_ADHOC' AND IS NOT NULL`，同 user + 同 stem 去重；不同 user 同 stem 各建一行；PUBLISHED 不复用（spec §6.2 显式 punt）
+- `upsertUserAdhocQuestion` 签名接 `PrismaClient`（不是 `TransactionClient`）—— P2002 catch 内重读不能在已 abort 的 tx 内跑（Postgres 25P02 "current transaction is aborted"）；race 安全由 partial unique idx 在 DB 级保证。流程：findFirst → create → P2002 顶层 client 重读赢家 / 未命中原样抛（不依赖 `meta.target` 字面，比 Plan 4 `isErrorBookPartialUniqueP2002` 更抗 Prisma 版本差异）
+- `normalizeStem`: 仅 `trim() + 折叠空白`，**不** lowercase（数学大小写可有义）
+- `TutorForm`: 加可选"我的作答（可选）"折叠 + `diagnoseActualAnswer` 快照绑定本次讲解 + 讲解后 mount ErrorAnalysisCard 传 questionId + 快照
+- 超长 stem (>4000) 走 zod 兜底而非合规分支，会产生 `DEBIT + COMPENSATION` 配对（净余额不变），与违禁词路径不同；test 断言要分清两者
+- E2E `tutor-error-book-link.spec.ts` 用 dev-student-02 (`13800000006`)，避开 tutor.spec=001 / error-book.spec=004 / wallet 既有用户
+- **hotfix P1**（review 反馈）：`error.diagnose` 加 `validateQuestionAccess` 中间件，扣费前守门 `USER_ADHOC.createdByUserId === ctx.auth.userId`；跨用户 / 不存在的 questionId 合并 `NOT_FOUND / QUESTION_NOT_FOUND`，不写 DEBIT。链顺序 `authedProcedure → validateQuestionAccess → chargeMiddleware("ERROR_ANALYSIS")`
+- **hotfix P2**（review 反馈）：新增 `error.findEntryForQuestion` 只读 query；`ErrorAnalysisCard` mount 时 seed 已存在的 ACTIVE/ARCHIVED entry 到 result 态，避免对同题重复点 diagnose 二次扣费。DELETED 视同 null（终态语义）
+- **hotfix P2 #1**（review 反馈）：`TutorForm` 给 `<ErrorAnalysisCard key={data.questionId} ... />`，换题强制 remount 重置 state，避免 A 题分析结果残留到 B 题
+
+**Plan 8 未完成的事 —— prod ship 前需 Plan 6 接力**：
+- USER_ADHOC 题 GC / 注销时去标识化（PII 治理）
+- PII 扫描（手机号 / 身份证 regex）
 
 **常用命令**：
 
@@ -163,12 +182,20 @@ pnpm --filter @zhijiao/web  test -- tests/integration/auth-register-race.test.ts
 18. **error.dueForReview 三态**（Plan 4 §5.1.4 / UI Reback B）：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/error-due-for-review.test.ts` 覆盖三种 nextReviewAt 形态（空 ACTIVE / 有 future / dueToday 非空）；UI 文案对应"还没有需要复习的题" / "下次复习 +Xd 后" / 列表
 19. **E2E hook 不暴露给普通环境**（Plan 4）：`grep -n "E2E_TEST_HOOKS" apps/web/app/api/e2e-hooks/*/route.ts` 每个 route.ts 应有 `if (process.env.E2E_TEST_HOOKS !== "1") return 404`；env zod 默认 "0"，普通 dev / prod 全 404
 20. **next build 类的隐式失败**（Plan 4 Task 6 followup）：`tsc --noEmit` 查不出 `<Suspense>` 漏包裹 / JSX `"` 未转义。merge 前必须跑 `pnpm.cmd --filter @zhijiao/web exec next build` 至少一次，否则下个 `test:e2e` 跑前 build 时才暴雷
+21. **`tutor.ask` 输入扫描在扣费前**（Plan 8）：`Select-String -Path apps/web/server/routers/tutor.ts -Pattern "validateTutorInputCompliance|chargeMiddleware" -Context 0,2`，`validateTutorInputCompliance` 必须出现在 `chargeMiddleware("TUTOR_ASK")` 之前。反了即"违禁词输入也扣费"事故
+22. **USER_ADHOC 去重 partial unique idx 已落 DB**（Plan 8 §2.4）：`docker exec zhijiao-postgres psql -U postgres -d zhijiao -c "\d questions"` 应见 `questions_user_adhoc_dedup_idx`，定义带 `WHERE source = 'USER_ADHOC' AND created_by_user_id IS NOT NULL AND normalized_stem_hash IS NOT NULL`
+23. **ErrorAnalysisCard 从 tutor 页能跳到 `/error-book/[entryId]`**（Plan 8）：`pnpm.cmd --filter @zhijiao/web exec playwright test tutor-error-book-link.spec.ts` 应 2/2 passed
+24. **PUBLISHED 题不被 USER_ADHOC 复用**（Plan 8 §6.2 设计代价）：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/tutor-ask-published-untouched.test.ts` 应全绿。班级题库统计无法覆盖 ad-hoc 副本是已知设计代价
+25. **error.diagnose 在扣费前校验 questionId 归属**（Plan 8 hotfix P1）：`Select-String -Path apps/web/server/routers/error.ts -Pattern "validateQuestionAccess|chargeMiddleware" -Context 0,2`，`validateQuestionAccess` 必须出现在 `chargeMiddleware("ERROR_ANALYSIS")` **之前**。反了即"跨用户拿 USER_ADHOC questionId 也能扣费 + 泄露 stem"；`pnpm.cmd --filter @zhijiao/web test -- tests/integration/error-diagnose-question-access.test.ts` 应全绿（4 测例：owner / cross-user USER_ADHOC / PUBLISHED / missing）
+26. **error.findEntryForQuestion DELETED 视同 null**（Plan 8 hotfix P2）：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/error-find-entry-for-question.test.ts` 应全绿（5 测例：null / ACTIVE / ARCHIVED / DELETED→null / 跨用户→null）。DELETED 是终态，partial unique idx 允许同题新 ACTIVE 与 DELETED 共存，卡片应把 DELETED 后的题视作"还没诊断"，不要漏改成 `notIn: ["DELETED"]` 之外的形态
+27. **TutorForm 的 ErrorAnalysisCard 必须 key={data.questionId}**（Plan 8 hotfix P2 #1）：`Select-String -Path apps/web/components/TutorForm.tsx -Pattern "key=\{data.questionId\}"` 应命中；不然换题后会保留上一题的 rootCause + 详情链接。E2E `tutor-error-book-link.spec.ts` 第 3 测例守门
+28. **`tutor-error-book-link.spec.ts` 必须用 per-run 唯一 stem**（Plan 8 hotfix P3）：`Select-String -Path apps/web/e2e/tutor-error-book-link.spec.ts -Pattern "freshStem|randomUUID"` 应命中。spec 不能用固定题面，否则第二次 `playwright test` 跑同 DB 时 `findEntryForQuestion` 命中已存在 entry → 卡片 mount 在 "已诊断" 态而不是 empty CTA → `error-analysis-card-empty` 期望失败。注：OTP 5/h burst 限频是另一个 pre-existing 问题，本 plan 不修
 
-**下一步候选 Plan**（Plan 4 已落地）：
+**下一步候选 Plan**（Plan 4 + Plan 8 已落地）：
 - Plan 5: 真接阿里云 SMS + 微信公众号（ICP 备案通过后；**且 Plan 2 Hardening 必须先 ship**；替换 `RealSmsAdapter` / `RealWechatH5Adapter` 的 stub 实现）
-- Plan 6: PII 治理（用户注销 / 去标识化 / `WechatPayEvent.rawBody` 保留期 / `TopupOrder` 孤儿订单清理 / `ErrorBookEntry` 用户注销时去标识化）—— **Plan 3 prod ship prereq**
+- Plan 6: PII 治理（用户注销 / 去标识化 / `WechatPayEvent.rawBody` 保留期 / `TopupOrder` 孤儿订单清理 / `ErrorBookEntry` 用户注销时去标识化 / **`Question.USER_ADHOC` 孤儿清理 + 注销时去标识化** —— Plan 8 prereq）—— **Plan 3 prod ship prereq**
 - Plan 7: 真接微信支付 V3 API（需 ICP 备案 + 商户号 + APIv3 + 商户证书；激活 `RealWechatPayAdapter.unifiedOrder` + `verifyNotify`）—— **Plan 3 prod ship prereq**
-- Plan 8: tutor 接题库 / diagnose 卡片接入（让 `tutor.ask` 返 questionId 或新增"做已存在题"流程，把 `ErrorAnalysisCard` 真正挂进答疑闭环；端到端覆盖卡片本身的渲染 + entryId 链接）
-- Plan 9: 知识点 reconciler（把 Plan 4 输出的 `knowledgePointHints` 字符串通过 NLP 映射到 `KnowledgePoint` id 树，支撑学情画像 + 教师分层作业）
+- Plan 9: 知识点 reconciler（把 Plan 4 输出的 `knowledgePointHints` 字符串通过 NLP 映射到 `KnowledgePoint` id 树，支撑学情画像 + 教师分层作业；Plan 8 的 USER_ADHOC 题也可落 `QuestionKPLink`）
 - Plan 10: 教师端"分层作业"基于错题本扩展（教师可看班级错题热度图，按错因 / KP 分类布置分层作业）
 - Plan 11: 学情画像 / 趋势报告（学生掌握度 + 薄弱点 + 趋势画像；家长简版报告）
+- Plan 12: 题库去重 / PUBLISHED 复用 / 统计归并（Plan 8 §6.2 punt：当前用户输入与 PUBLISHED 完全相同的 stem 仍建 USER_ADHOC 副本，班级统计断层）

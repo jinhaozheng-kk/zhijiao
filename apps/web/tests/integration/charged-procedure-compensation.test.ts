@@ -72,6 +72,12 @@ beforeEach(async () => {
   await resetDb();
   await redis.flushdb();
   aiMode = "ok";
+  // Plan 8: tutor.ask body 现调 upsertUserAdhocQuestion，需 math subject。
+  await prisma.subject.upsert({
+    where: { code: "math" },
+    create: { code: "math", name: "数学" },
+    update: {},
+  });
 });
 afterAll(async () => {
   await redis.quit();
