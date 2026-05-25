@@ -48,10 +48,17 @@ export function isErrorBookPartialUniqueP2002(e: unknown): boolean {
   if (e.code !== "P2002") return false;
   const meta = e.meta as { target?: string | string[] } | undefined;
   const target = meta?.target;
-  const targetStr = Array.isArray(target) ? target.join(",") : target ?? "";
-  // partial unique index name is fixed by the migration (§3.3); Prisma reports
-  // the index name on partial-unique conflicts.
-  return targetStr.includes("user_question_active");
+  const targetParts = Array.isArray(target) ? target : target ? [target] : [];
+  const targetStr = targetParts.join(",");
+  // Prisma's meta.target for raw SQL partial unique indexes is version/runtime
+  // dependent: sometimes it reports the index name, sometimes just the columns.
+  // Treat both shapes as the same race-path signal; ErrorBookEntry has no schema
+  // @@unique([userId, questionId]), so this field pair can only come from the
+  // active/archived partial unique index.
+  return (
+    targetStr.includes("user_question_active") ||
+    (targetParts.includes("user_id") && targetParts.includes("question_id"))
+  );
 }
 
 export interface UpsertEntryOnDiagnoseArgs {
