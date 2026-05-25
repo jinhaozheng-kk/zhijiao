@@ -190,6 +190,7 @@ pnpm --filter @zhijiao/web  test -- tests/integration/auth-register-race.test.ts
 26. **error.findEntryForQuestion DELETED 视同 null**（Plan 8 hotfix P2）：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/error-find-entry-for-question.test.ts` 应全绿（5 测例：null / ACTIVE / ARCHIVED / DELETED→null / 跨用户→null）。DELETED 是终态，partial unique idx 允许同题新 ACTIVE 与 DELETED 共存，卡片应把 DELETED 后的题视作"还没诊断"，不要漏改成 `notIn: ["DELETED"]` 之外的形态
 27. **TutorForm 的 ErrorAnalysisCard 必须 key={data.questionId}**（Plan 8 hotfix P2 #1）：`Select-String -Path apps/web/components/TutorForm.tsx -Pattern "key=\{data.questionId\}"` 应命中；不然换题后会保留上一题的 rootCause + 详情链接。E2E `tutor-error-book-link.spec.ts` 第 3 测例守门
 28. **`tutor-error-book-link.spec.ts` 必须用 per-run 唯一 stem**（Plan 8 hotfix P3）：`Select-String -Path apps/web/e2e/tutor-error-book-link.spec.ts -Pattern "freshStem|randomUUID"` 应命中。spec 不能用固定题面，否则第二次 `playwright test` 跑同 DB 时 `findEntryForQuestion` 命中已存在 entry → 卡片 mount 在 "已诊断" 态而不是 empty CTA → `error-analysis-card-empty` 期望失败。注：OTP 5/h burst 限频是另一个 pre-existing 问题，本 plan 不修
+29. **Prisma schema 字段合并后先 regenerate client**：凡是 merge 包含 `packages/db/prisma/schema.prisma` 新字段 / enum / relation，主 worktree 先跑 `pnpm.cmd --filter @zhijiao/db db:generate`，再跑 `pnpm.cmd exec turbo typecheck --force`。否则 stale Prisma Client 会在 typecheck 报找不到新字段
 
 **下一步候选 Plan**（Plan 4 + Plan 8 已落地）：
 - Plan 5: 真接阿里云 SMS + 微信公众号（ICP 备案通过后；**且 Plan 2 Hardening 必须先 ship**；替换 `RealSmsAdapter` / `RealWechatH5Adapter` 的 stub 实现）
