@@ -77,6 +77,20 @@ describe("AiRouter.kpReconcile", () => {
     const mc = await prisma.modelCall.findUniqueOrThrow({ where: { id: r.modelCallId } });
     expect(mc.taskKind).toBe("KP_RECONCILE");
     expect(mc.status).toBe(ModelCallStatus.SUCCESS);
+    const requestJson = mc.requestJson as {
+      inputDigest?: unknown;
+      subjectId?: unknown;
+      hints?: unknown;
+      candidates?: unknown;
+    };
+    expect(typeof requestJson.inputDigest).toBe("string");
+    expect(requestJson.inputDigest).toHaveLength(32);
+    expect(requestJson.subjectId).toBe(subjectId);
+    expect(requestJson.hints).toEqual([
+      expect.objectContaining({ matchId: HINT1, rawHint: "linear equation", normalizedHint: "linear equation" }),
+      expect.objectContaining({ matchId: HINT2 }),
+    ]);
+    expect(Array.isArray(requestJson.candidates)).toBe(true);
   });
 
   it("LLM 多返不在本批 matchId 的项 → 静默忽略，不算异常", async () => {

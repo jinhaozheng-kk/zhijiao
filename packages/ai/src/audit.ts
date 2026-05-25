@@ -2,10 +2,12 @@ import type { PrismaClient } from "@prisma/client";
 import { Prisma, ModelCallStatus } from "@prisma/client";
 import type { AdapterRequest, AdapterResponse } from "./adapters/types.js";
 
+export type AuditRequest = AdapterRequest & Record<string, unknown>;
+
 export interface AuditWriteInput {
   taskKind: string;
   promptTemplateId: string | null;
-  request: AdapterRequest;
+  request: AuditRequest;
   response: AdapterResponse | null;
   latencyMs: number;
   status: ModelCallStatus;

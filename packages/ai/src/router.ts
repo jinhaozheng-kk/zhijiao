@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { PrismaClient } from "@prisma/client";
 import { ModelCallStatus } from "@prisma/client";
@@ -428,6 +429,10 @@ export class AiRouter {
     modelCallId: string;
   }> {
     const parsed = KpReconciliationInputSchema.parse(input);
+    const inputDigest = createHash("sha256")
+      .update(JSON.stringify(parsed))
+      .digest("hex")
+      .slice(0, 32);
     const taskKind: TaskKind = "KP_RECONCILE";
     const prompt = await loadPrompt(
       "kp-reconciliation",
@@ -463,6 +468,14 @@ export class AiRouter {
       ],
       responseFormat: "json_object" as const,
       temperature: 0.0,         // 匹配任务要确定性
+    };
+
+    const auditRequest = {
+      ...request,
+      inputDigest,
+      subjectId: parsed.subjectId,
+      candidates: parsed.candidates,
+      hints: parsed.hints,
     };
 
     const start = Date.now();
@@ -513,7 +526,7 @@ export class AiRouter {
         const modelCallId = await writeAudit(this.opts.prisma, {
           taskKind,
           promptTemplateId,
-          request,
+          request: auditRequest,
           response,
           latencyMs: Date.now() - start,
           status: ModelCallStatus.SUCCESS,
@@ -534,7 +547,7 @@ export class AiRouter {
         await writeAudit(this.opts.prisma, {
           taskKind,
           promptTemplateId,
-          request,
+          request: auditRequest,
           response,
           latencyMs: Date.now() - start,
           status: ModelCallStatus.ADAPTER_ERROR,
@@ -548,7 +561,7 @@ export class AiRouter {
     await writeAudit(this.opts.prisma, {
       taskKind,
       promptTemplateId,
-      request,
+      request: auditRequest,
       response,
       latencyMs: Date.now() - start,
       status: ModelCallStatus.PARSE_FAILED,
