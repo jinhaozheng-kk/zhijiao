@@ -132,6 +132,9 @@
 - `TutorForm`: 加可选"我的作答（可选）"折叠 + `diagnoseActualAnswer` 快照绑定本次讲解 + 讲解后 mount ErrorAnalysisCard 传 questionId + 快照
 - 超长 stem (>4000) 走 zod 兜底而非合规分支，会产生 `DEBIT + COMPENSATION` 配对（净余额不变），与违禁词路径不同；test 断言要分清两者
 - E2E `tutor-error-book-link.spec.ts` 用 dev-student-02 (`13800000006`)，避开 tutor.spec=001 / error-book.spec=004 / wallet 既有用户
+- **hotfix P1**（review 反馈）：`error.diagnose` 加 `validateQuestionAccess` 中间件，扣费前守门 `USER_ADHOC.createdByUserId === ctx.auth.userId`；跨用户 / 不存在的 questionId 合并 `NOT_FOUND / QUESTION_NOT_FOUND`，不写 DEBIT。链顺序 `authedProcedure → validateQuestionAccess → chargeMiddleware("ERROR_ANALYSIS")`
+- **hotfix P2**（review 反馈）：新增 `error.findEntryForQuestion` 只读 query；`ErrorAnalysisCard` mount 时 seed 已存在的 ACTIVE/ARCHIVED entry 到 result 态，避免对同题重复点 diagnose 二次扣费。DELETED 视同 null（终态语义）
+- **hotfix P2 #1**（review 反馈）：`TutorForm` 给 `<ErrorAnalysisCard key={data.questionId} ... />`，换题强制 remount 重置 state，避免 A 题分析结果残留到 B 题
 
 **Plan 8 未完成的事 —— prod ship 前需 Plan 6 接力**：
 - USER_ADHOC 题 GC / 注销时去标识化（PII 治理）
@@ -183,6 +186,9 @@ pnpm --filter @zhijiao/web  test -- tests/integration/auth-register-race.test.ts
 22. **USER_ADHOC 去重 partial unique idx 已落 DB**（Plan 8 §2.4）：`docker exec zhijiao-postgres psql -U postgres -d zhijiao -c "\d questions"` 应见 `questions_user_adhoc_dedup_idx`，定义带 `WHERE source = 'USER_ADHOC' AND created_by_user_id IS NOT NULL AND normalized_stem_hash IS NOT NULL`
 23. **ErrorAnalysisCard 从 tutor 页能跳到 `/error-book/[entryId]`**（Plan 8）：`pnpm.cmd --filter @zhijiao/web exec playwright test tutor-error-book-link.spec.ts` 应 2/2 passed
 24. **PUBLISHED 题不被 USER_ADHOC 复用**（Plan 8 §6.2 设计代价）：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/tutor-ask-published-untouched.test.ts` 应全绿。班级题库统计无法覆盖 ad-hoc 副本是已知设计代价
+25. **error.diagnose 在扣费前校验 questionId 归属**（Plan 8 hotfix P1）：`Select-String -Path apps/web/server/routers/error.ts -Pattern "validateQuestionAccess|chargeMiddleware" -Context 0,2`，`validateQuestionAccess` 必须出现在 `chargeMiddleware("ERROR_ANALYSIS")` **之前**。反了即"跨用户拿 USER_ADHOC questionId 也能扣费 + 泄露 stem"；`pnpm.cmd --filter @zhijiao/web test -- tests/integration/error-diagnose-question-access.test.ts` 应全绿（4 测例：owner / cross-user USER_ADHOC / PUBLISHED / missing）
+26. **error.findEntryForQuestion DELETED 视同 null**（Plan 8 hotfix P2）：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/error-find-entry-for-question.test.ts` 应全绿（5 测例：null / ACTIVE / ARCHIVED / DELETED→null / 跨用户→null）。DELETED 是终态，partial unique idx 允许同题新 ACTIVE 与 DELETED 共存，卡片应把 DELETED 后的题视作"还没诊断"，不要漏改成 `notIn: ["DELETED"]` 之外的形态
+27. **TutorForm 的 ErrorAnalysisCard 必须 key={data.questionId}**（Plan 8 hotfix P2 #1）：`Select-String -Path apps/web/components/TutorForm.tsx -Pattern "key=\{data.questionId\}"` 应命中；不然换题后会保留上一题的 rootCause + 详情链接。E2E `tutor-error-book-link.spec.ts` 第 3 测例守门
 
 **下一步候选 Plan**（Plan 4 + Plan 8 已落地）：
 - Plan 5: 真接阿里云 SMS + 微信公众号（ICP 备案通过后；**且 Plan 2 Hardening 必须先 ship**；替换 `RealSmsAdapter` / `RealWechatH5Adapter` 的 stub 实现）

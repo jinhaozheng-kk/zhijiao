@@ -3,8 +3,9 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import {
   authedProcedure,
-  chargedProcedure,
+  chargeMiddleware,
   validateEntryOwnership,
+  validateQuestionAccess,
   router,
 } from "../trpc.js";
 import { ComplianceRejectedError } from "@zhijiao/ai";
@@ -20,12 +21,21 @@ import {
 
 export const errorRouter = router({
   // === diagnose ===
-  // chargedProcedure("ERROR_ANALYSIS") wraps debit BEFORE this body runs.
-  // On non-compliance failure the middleware compensates; on
-  // ComplianceRejectedError the middleware whitelists (no comp) per Plan 3
-  // contract. Body returns entryId (spec UI feedback A) so the
+  // Plan 8 hotfix (P1 from review): explicit chain so validateQuestionAccess
+  // runs BEFORE chargeMiddleware. Pre-Plan-8 every Question was PUBLISHED so
+  // bare findUniqueOrThrow was fine. Plan 8 introduced USER_ADHOC rows owned
+  // by createdByUserId — without a gate, user A could send user B's
+  // USER_ADHOC questionId, get the stem read out and write an entry against
+  // A. validateQuestionAccess enforces "USER_ADHOC: owner only" before the
+  // DEBIT row is written, and injects ctx.question so we don't re-query.
+  //
+  // On non-compliance failure (body throws) chargeMiddleware compensates;
+  // on ComplianceRejectedError chargeMiddleware whitelists (no comp) per
+  // Plan 3 contract. Body returns entryId (spec UI feedback A) so the
   // ErrorAnalysisCard can deep-link to the error-book detail page.
-  diagnose: chargedProcedure("ERROR_ANALYSIS")
+  diagnose: authedProcedure
+    .use(validateQuestionAccess)
+    .use(chargeMiddleware("ERROR_ANALYSIS"))
     .input(
       z.object({
         questionId: z.string().cuid(),
@@ -34,16 +44,9 @@ export const errorRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      // findUniqueOrThrow: a missing question is BAD_REQUEST level — the
-      // chargeMiddleware will compensate the debit because the thrown error
-      // isn't on the whitelist (spec §6.5).
-      const question = await ctx.db.question.findUniqueOrThrow({
-        where: { id: input.questionId },
-        include: {
-          answer: true,
-          knowledgePoints: { include: { kp: true } },
-        },
-      });
+      // ctx.question injected by validateQuestionAccess; includes answer +
+      // knowledgePoints. Saves a round trip vs. re-querying.
+      const question = ctx.question;
 
       // gradeLevel lives on User, not on the JWT/AccessClaims (kept off the
       // token to avoid invalidating sessions when a student updates grade).
@@ -97,6 +100,43 @@ export const errorRouter = router({
         rootCauseReasoning: entry.rootCauseReasoning,
         suggestedKnowledgePoints: ai.suggestedKnowledgePoints,
         nextActions: ["GENERATE_VARIANTS", "REVIEW_LATER", "ASK_TUTOR"] as const,
+      };
+    }),
+
+  // === findEntryForQuestion ===
+  // Plan 8 hotfix (P2 from review): TutorForm 接 ErrorAnalysisCard 后，同一题反复
+  // 提交会让卡片始终从空 CTA 起步；点 "加入错题本并分析错因" 又走一次 chargedProcedure
+  // = 重复扣费 + AI 调用浪费。提供一个只读 query 让卡片在 mount 时判断：当前用户对此
+  // questionId 是否已有 ACTIVE/ARCHIVED entry。
+  //
+  // 隐私：questionId 本身是允许猜的（不是 entry id），但本 query 只返回 *当前用户*
+  // 的 entry，跨用户无侧信道 —— attacker 拿到 questionId 顶多知道"我自己有没有诊断
+  // 过这道公共题"，对 USER_ADHOC 因为 createdByUserId 守门（validateQuestionAccess
+  // 已经管了 diagnose / variant），这里只看当前用户自己的 entry 即可。
+  //
+  // DELETED 不返回：与 partial unique idx 一致（DELETED 终态、与新 ACTIVE 共存），
+  // 卡片应把 DELETED 后的同题视作"还没诊断"，重新走付费 CTA。
+  findEntryForQuestion: authedProcedure
+    .input(z.object({ questionId: z.string().cuid() }))
+    .query(async ({ ctx, input }) => {
+      const entry = await ctx.db.errorBookEntry.findFirst({
+        where: {
+          userId: ctx.auth.userId,
+          questionId: input.questionId,
+          status: { in: ["ACTIVE", "ARCHIVED"] },
+        },
+        // partial unique idx 保证 (user, question, ACTIVE|ARCHIVED) 至多 1 行；
+        // orderBy 仅为防御（万一 idx 不在测试 DB），不影响生产正确性。
+        orderBy: { createdAt: "desc" },
+      });
+      if (!entry) return { entry: null };
+      return {
+        entry: {
+          id: entry.id,
+          status: entry.status,
+          rootCause: entry.rootCause,
+          rootCauseReasoning: entry.rootCauseReasoning,
+        },
       };
     }),
 

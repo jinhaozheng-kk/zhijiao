@@ -124,7 +124,12 @@ export function TutorForm() {
       )}
 
       {data && (
+        // key={data.questionId} forces a full remount when the student submits
+        // a different question. Without it, switching from question A to B
+        // keeps the previously-rendered A analysis (and its A entry link) on
+        // screen because component state survives a prop change.
         <ErrorAnalysisCard
+          key={data.questionId}
           questionId={data.questionId}
           actualAnswerMd={diagnoseActualAnswer}
         />

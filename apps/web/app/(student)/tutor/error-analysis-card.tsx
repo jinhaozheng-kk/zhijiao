@@ -18,26 +18,38 @@ interface ErrorAnalysisCardProps {
   actualAnswerMd?: string;
 }
 
+interface AnalysisView {
+  entryId: string;
+  rootCause: string;
+  rootCauseReasoning: string;
+  suggestedKnowledgePoints: string[];
+}
+
 // Plan 4 spec §5.1.1 / UI Reback A:
 //   error.diagnose returns `entryId`; this card MUST render a deep link to
 //   /error-book/[entryId] after a successful diagnose so the student can
 //   continue into 错题本 → 举一反三 → 复习 from the analysis surface.
 //
-// Note on wiring: TutorForm currently submits a free-text stem to tutor.ask,
-// which does NOT return a questionId. Mounting this card inside that flow
-// requires either persisting tutor questions back to the question bank or a
-// separate "answer an existing question" flow — both out of Plan 4 scope.
-// This component is the building block; the call site lands in a later plan.
+// Plan 8 wiring: TutorForm now mounts this card with the questionId returned
+// by tutor.ask. TutorForm passes key={data.questionId} so a different
+// questionId fully remounts (state reset) — local state below does not need
+// a useEffect to clear on prop change.
+//
+// Plan 8 hotfix (P2 from review): on mount, query error.findEntryForQuestion
+// to detect an already-existing ACTIVE/ARCHIVED entry for this question.
+// Without this, every page revisit of the same question shows the paid CTA
+// and clicking it would re-charge ERROR_ANALYSIS + re-call AI even though
+// the backend would just dedupe the entry — pure waste.
+//
+// Display priority: post-diagnose result > existing-entry seed > CTA.
+// suggestedKnowledgePoints is NOT persisted on ErrorBookEntry (it's only
+// produced by the AI on diagnose), so when seeded from an existing entry
+// we render `[]` and the "相关知识点" row hides via the .length === 0 guard.
 export function ErrorAnalysisCard({
   questionId,
   actualAnswerMd,
 }: ErrorAnalysisCardProps) {
-  const [analysis, setAnalysis] = useState<{
-    entryId: string;
-    rootCause: string;
-    rootCauseReasoning: string;
-    suggestedKnowledgePoints: string[];
-  } | null>(null);
+  const [postDiagnose, setPostDiagnose] = useState<AnalysisView | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [insufficientBalance, setInsufficientBalance] = useState(false);
   // Same idemKey discipline as TutorForm: stash the cri so a double-click
@@ -45,9 +57,33 @@ export function ErrorAnalysisCard({
   // retry after error rotates to a fresh request.
   const [pendingReqId, setPendingReqId] = useState<string | null>(null);
 
+  // Mount-time read for pre-existing entry. Disable once we have the answer
+  // so the query doesn't refetch on focus / interval and overwrite a fresh
+  // post-diagnose result. (postDiagnose takes priority anyway via the
+  // derived `analysis` below, but disabling avoids stale-flash and chatter.)
+  const existing = trpc.error.findEntryForQuestion.useQuery(
+    { questionId },
+    {
+      enabled: postDiagnose === null,
+      // questionId change remounts the whole component (TutorForm passes
+      // key={questionId}), so no manual invalidation is needed here.
+      refetchOnWindowFocus: false,
+    },
+  );
+
+  const fromExisting: AnalysisView | null = existing.data?.entry
+    ? {
+        entryId: existing.data.entry.id,
+        rootCause: existing.data.entry.rootCause,
+        rootCauseReasoning: existing.data.entry.rootCauseReasoning,
+        suggestedKnowledgePoints: [],
+      }
+    : null;
+  const analysis: AnalysisView | null = postDiagnose ?? fromExisting;
+
   const diagnose = trpc.error.diagnose.useMutation({
     onSuccess: (d) => {
-      setAnalysis({
+      setPostDiagnose({
         entryId: d.entryId,
         rootCause: d.rootCause,
         rootCauseReasoning: d.rootCauseReasoning,
@@ -88,7 +124,7 @@ export function ErrorAnalysisCard({
         <button
           type="button"
           onClick={onDiagnose}
-          disabled={diagnose.isPending}
+          disabled={diagnose.isPending || existing.isLoading}
           className="mt-3 rounded bg-slate-900 px-3 py-2 text-sm text-white disabled:opacity-50"
           data-testid="btn-diagnose"
         >
