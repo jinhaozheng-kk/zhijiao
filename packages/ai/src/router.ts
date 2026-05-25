@@ -14,6 +14,9 @@ import {
   VariantGenerationInputSchema,
   VariantGenerationOutputSchema,
   type VariantGenerationOutput,
+  KpReconciliationInputSchema,
+  KpReconciliationOutputSchema,
+  type KpReconciliationOutput,
 } from "./schemas.js";
 import { loadPrompt, ensurePromptInDb } from "./registry.js";
 import { writeAudit } from "./audit.js";
@@ -410,6 +413,138 @@ export class AiRouter {
     });
     throw new Error(
       `VARIANT_GROUP_GEN failed after ${parseAttempts} attempts: ${
+        lastError instanceof Error ? lastError.message : String(lastError)
+      }`,
+    );
+  }
+
+  // Plan 9: kp:reconcile-pending CLI 调这个；不计 Credit。
+  // 输出按 matchId 对齐写回：LLM 漏返/重复 → retry 2 次再 PARSE_FAILED；
+  // 多返不在本批 matchId → 静默忽略（不算异常，spec §4.2）。
+  async kpReconcile(
+    input: unknown,
+  ): Promise<{
+    items: KpReconciliationOutput;
+    modelCallId: string;
+  }> {
+    const parsed = KpReconciliationInputSchema.parse(input);
+    const taskKind: TaskKind = "KP_RECONCILE";
+    const prompt = await loadPrompt(
+      "kp-reconciliation",
+      this.opts.promptVersion ?? "v1",
+    );
+    const promptTemplateId = await ensurePromptInDb(this.opts.prisma, prompt);
+
+    const candidatesRendered = parsed.candidates
+      .map(
+        (c) =>
+          `- id=${c.id}, code=${c.code}, name=${c.name}, path=${c.parentPath}` +
+          (c.description ? `, desc=${c.description}` : ""),
+      )
+      .join("\n");
+    const hintsRendered = parsed.hints
+      .map((h) => `- matchId=${h.matchId}, hint=${JSON.stringify(h.normalizedHint)}`)
+      .join("\n");
+
+    const userContent = prompt.interpolate({
+      candidates: candidatesRendered,
+      hints: hintsRendered,
+    });
+
+    const model = this.opts.modelOverride ?? TASK_MODEL_MAP[taskKind];
+    const request = {
+      model,
+      messages: [
+        {
+          role: "system" as const,
+          content: "你是严谨、面向中国 K12 知识点结构化的匹配助手。",
+        },
+        { role: "user" as const, content: userContent },
+      ],
+      responseFormat: "json_object" as const,
+      temperature: 0.0,         // 匹配任务要确定性
+    };
+
+    const start = Date.now();
+    let response = null as Awaited<ReturnType<typeof this.opts.adapter.call>> | null;
+    let parseAttempts = 0;
+    let lastError: unknown = null;
+    const inputMatchIds = new Set(parsed.hints.map((h) => h.matchId));
+
+    while (parseAttempts < 3) {
+      try {
+        response = await this.opts.adapter.call(request);
+        const json = JSON.parse(response.content);
+        const validated = KpReconciliationOutputSchema.parse(json);
+
+        // 多返不属于本批 matchId → 静默忽略（spec §4.2 末段）
+        const filtered = validated.filter((it) => inputMatchIds.has(it.matchId));
+
+        // 漏返 / 重复 → 视为输出无效，触发 retry
+        const returnedIds = new Set(filtered.map((it) => it.matchId));
+        const hasAllMatchIds = parsed.hints.every((h) => returnedIds.has(h.matchId));
+        const hasNoDuplicates = filtered.length === returnedIds.size;
+        if (!hasAllMatchIds || !hasNoDuplicates) {
+          lastError = new Error(
+            `LLM output matchId alignment failed (returned=${filtered.length}, expected=${parsed.hints.length})`,
+          );
+          parseAttempts++;
+          request.messages.push({
+            role: "user",
+            content:
+              "上次输出 matchId 未与输入一一对应。请严格输出与输入 hints 数量相同的项，每个 matchId 出现且仅出现一次。",
+          });
+          continue;
+        }
+
+        const modelCallId = await writeAudit(this.opts.prisma, {
+          taskKind,
+          promptTemplateId,
+          request,
+          response,
+          latencyMs: Date.now() - start,
+          status: ModelCallStatus.SUCCESS,
+          errorMessage: null,
+          userId: this.opts.userId ?? null,
+        });
+        return { items: filtered, modelCallId };
+      } catch (e) {
+        lastError = e;
+        parseAttempts++;
+        if (e instanceof z.ZodError || e instanceof SyntaxError) {
+          request.messages.push({
+            role: "user",
+            content: "上次输出不是符合 schema 的 JSON 数组，请重新只输出 JSON。",
+          });
+          continue;
+        }
+        await writeAudit(this.opts.prisma, {
+          taskKind,
+          promptTemplateId,
+          request,
+          response,
+          latencyMs: Date.now() - start,
+          status: ModelCallStatus.ADAPTER_ERROR,
+          errorMessage: e instanceof Error ? e.message : String(e),
+          userId: this.opts.userId ?? null,
+        });
+        throw e;
+      }
+    }
+
+    await writeAudit(this.opts.prisma, {
+      taskKind,
+      promptTemplateId,
+      request,
+      response,
+      latencyMs: Date.now() - start,
+      status: ModelCallStatus.PARSE_FAILED,
+      errorMessage:
+        lastError instanceof Error ? lastError.message : String(lastError),
+      userId: this.opts.userId ?? null,
+    });
+    throw new Error(
+      `KP_RECONCILE failed after ${parseAttempts} attempts: ${
         lastError instanceof Error ? lastError.message : String(lastError)
       }`,
     );
