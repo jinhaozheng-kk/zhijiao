@@ -340,7 +340,7 @@ pnpm.cmd --filter @zhijiao/web kp:reconcile-pending [-- --limit N]
 
 4. 调 `aiRouter.kpReconcile({ subjectId, candidates, hints })` 拿 LLM 输出（详 §4.2）
 
-5. 写 `ModelCall(taskKind="KP_RECONCILE", inputDigest, outputJson, status)`，本批所有 match 的 `modelCallId` 都指向这一条 ModelCall
+5. 写 `ModelCall(taskKind="KP_RECONCILE", requestJson={ inputDigest, ...input }, responseJson, status)`，本批所有 match 的 `modelCallId` 都指向这一条 ModelCall（字段细节见 §4.4）
 
 6. 按 §3.3 表分流（这次 matchVia=LLM）更新 KpReconcileMatch.status，LINKED 时 upsert QuestionKPLink
 
