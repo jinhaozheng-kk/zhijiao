@@ -1,6 +1,7 @@
 import "server-only";
 import {
   Prisma,
+  type PrismaClient,
   type ErrorBookEntry,
   type Question,
   type QuestionAnswer,
@@ -74,19 +75,29 @@ export interface UpsertEntryOnDiagnoseArgs {
 //     NEW row that coexists with the DELETED row (allowed by the partial
 //     unique index that only constrains ACTIVE/ARCHIVED).
 //   - concurrent diagnose on the same (userId, questionId) → second writer's
-//     create() throws P2002 on the partial unique index; re-read finds the
-//     winner and we fall through to the update path. Both calls complete
-//     successfully and both get charged 1 credit (both received AI service).
+//     create() throws P2002 on the partial unique index; re-read on the
+//     top-level client finds the winner and we fall through to the update
+//     path. Both calls complete successfully and both get charged 1 credit
+//     (both received AI service).
+//
+// Plan 4 hotfix (surfaced by Plan 9 Task 7): function accepts PrismaClient,
+// NOT TransactionClient. Mirrors the Plan 8 fix for upsertUserAdhocQuestion:
+// when create() throws P2002 *inside* a $transaction callback, Postgres
+// marks the tx aborted (25P02). Subsequent tx.findFirstOrThrow() then fails
+// with PrismaClientUnknownRequestError, swallowing the race detection. The
+// caller now invokes us with the bare client (not via $transaction); each
+// DB call is atomic on its own, and the partial unique index at DB level
+// guarantees the race-time contract.
 export async function upsertEntryOnDiagnose(
-  tx: Prisma.TransactionClient,
+  prisma: PrismaClient,
   args: UpsertEntryOnDiagnoseArgs,
 ): Promise<ErrorBookEntry> {
   const { userId, questionId, ai, debitLedgerId, modelCallId, actualAnswerMd } = args;
-  const existing = await tx.errorBookEntry.findFirst({
+  const existing = await prisma.errorBookEntry.findFirst({
     where: { userId, questionId, status: { in: ["ACTIVE", "ARCHIVED"] } },
   });
   if (existing) {
-    return tx.errorBookEntry.update({
+    return prisma.errorBookEntry.update({
       where: { id: existing.id },
       data: {
         // ARCHIVED → ACTIVE allowed (user explicitly re-engaging the question);
@@ -107,7 +118,7 @@ export async function upsertEntryOnDiagnose(
     });
   }
   try {
-    return await tx.errorBookEntry.create({
+    return await prisma.errorBookEntry.create({
       data: {
         userId,
         questionId,
@@ -123,12 +134,13 @@ export async function upsertEntryOnDiagnose(
   } catch (e) {
     if (isErrorBookPartialUniqueP2002(e)) {
       // Concurrent race: another diagnose for the same (userId, questionId)
-      // created the entry while we were preparing ours. Re-read and apply
-      // our analysis to the winner.
-      const winner = await tx.errorBookEntry.findFirstOrThrow({
+      // created the entry while we were preparing ours. Re-read (on the
+      // top-level client — NOT inside an aborted tx) and apply our analysis
+      // to the winner.
+      const winner = await prisma.errorBookEntry.findFirstOrThrow({
         where: { userId, questionId, status: { in: ["ACTIVE", "ARCHIVED"] } },
       });
-      return tx.errorBookEntry.update({
+      return prisma.errorBookEntry.update({
         where: { id: winner.id },
         data: {
           status: "ACTIVE",

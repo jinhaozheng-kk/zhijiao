@@ -83,16 +83,19 @@ export const errorRouter = router({
         });
       }
 
-      const entry = await ctx.db.$transaction((tx) =>
-        upsertEntryOnDiagnose(tx, {
-          userId: ctx.auth.userId,
-          questionId: input.questionId,
-          ai,
-          debitLedgerId: ctx.debit.ledgerId,
-          modelCallId: ai.modelCallId,
-          actualAnswerMd: input.actualAnswerMd ?? null,
-        }),
-      );
+      // Plan 4 hotfix: upsertEntryOnDiagnose now takes the bare PrismaClient,
+      // not a TransactionClient — the race-detect re-read after P2002 cannot
+      // run inside an aborted tx (Postgres 25P02). The partial unique idx at
+      // DB level still guarantees at-most-1 ACTIVE/ARCHIVED entry per
+      // (userId, questionId).
+      const entry = await upsertEntryOnDiagnose(ctx.db, {
+        userId: ctx.auth.userId,
+        questionId: input.questionId,
+        ai,
+        debitLedgerId: ctx.debit.ledgerId,
+        modelCallId: ai.modelCallId,
+        actualAnswerMd: input.actualAnswerMd ?? null,
+      });
 
       return {
         entryId: entry.id,
