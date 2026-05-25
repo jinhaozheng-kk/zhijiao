@@ -56,12 +56,14 @@ model User {
   createdAt   DateTime    @default(now()) @map("created_at")
   updatedAt   DateTime    @updatedAt      @map("updated_at")
 
-  roles             UserRole[]
-  identities        AuthIdentity[]
-  sessions          Session[]
-  wallet            Wallet?
-  errorBookEntries  ErrorBookEntry[]   // Plan 4
-  createdQuestions  Question[]         @relation("CreatedQuestions")  // Plan 8
+  roles               UserRole[]
+  identities          AuthIdentity[]
+  sessions            Session[]
+  wallet              Wallet?
+  errorBookEntries    ErrorBookEntry[]   // Plan 4
+  createdQuestions    Question[]         @relation("CreatedQuestions")  // Plan 8
+  createdKpAliases    KpAlias[]          @relation("KpAliasCreator")    // Plan 9
+  reviewedKpMatches   KpReconcileMatch[] @relation("KpReconcileReviewer") // Plan 9
 
   @@map("users")
 }
@@ -155,6 +157,7 @@ model Subject {
 
   knowledgePoints KnowledgePoint[]
   questions       Question[]
+  kpAliases       KpAlias[]            // Plan 9
 
   @@map("subjects")
 }
@@ -169,10 +172,12 @@ model KnowledgePoint {
   parentId    String?          @map("parent_id")
   createdAt   DateTime         @default(now()) @map("created_at")
 
-  subject     Subject          @relation(fields: [subjectId], references: [id])
-  parent      KnowledgePoint?  @relation("KPTree", fields: [parentId], references: [id])
-  children    KnowledgePoint[] @relation("KPTree")
-  questions   QuestionKPLink[]
+  subject          Subject            @relation(fields: [subjectId], references: [id])
+  parent           KnowledgePoint?    @relation("KPTree", fields: [parentId], references: [id])
+  children         KnowledgePoint[]   @relation("KPTree")
+  questions        QuestionKPLink[]
+  aliases          KpAlias[]          // Plan 9
+  reconcileMatches KpReconcileMatch[] // Plan 9
 
   @@unique([subjectId, code])
   @@map("knowledge_points")
@@ -213,11 +218,12 @@ model Question {
   createdAt           DateTime         @default(now()) @map("created_at")
   updatedAt           DateTime         @updatedAt @map("updated_at")
 
-  subject          Subject          @relation(fields: [subjectId], references: [id])
-  createdBy        User?            @relation("CreatedQuestions", fields: [createdByUserId], references: [id], onDelete: SetNull)
-  answer           QuestionAnswer?
-  knowledgePoints  QuestionKPLink[]
-  errorBookEntries ErrorBookEntry[]  // Plan 4
+  subject            Subject            @relation(fields: [subjectId], references: [id])
+  createdBy          User?              @relation("CreatedQuestions", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  answer             QuestionAnswer?
+  knowledgePoints    QuestionKPLink[]
+  errorBookEntries   ErrorBookEntry[]   // Plan 4
+  kpReconcileMatches KpReconcileMatch[] // Plan 9
 
   // partial unique idx (created_by_user_id, normalized_stem_hash) WHERE source='USER_ADHOC' AND IS NOT NULL
   // 由 migration.sql 末尾 raw SQL 追加（Prisma 5 schema 不支持 partial unique）；spec §2.4.
@@ -290,7 +296,8 @@ model ModelCall {
   userId           String?          @map("user_id")
   createdAt        DateTime         @default(now()) @map("created_at")
 
-  promptTemplate   PromptTemplate?  @relation(fields: [promptTemplateId], references: [id])
+  promptTemplate     PromptTemplate?    @relation(fields: [promptTemplateId], references: [id])
+  kpReconcileMatches KpReconcileMatch[] // Plan 9
 
   @@index([taskKind, createdAt])
   @@index([userId, createdAt])
@@ -488,4 +495,92 @@ model VariantItem {
   @@unique([groupId, level])
   @@index([groupId, position])
   @@map("variant_items")
+}
+
+// === Plan 9: Knowledge Point Reconciler ===
+
+enum KpAliasSource {
+  SEED         // pnpm db:seed 灌入
+  CLI_MANUAL   // kp:review 的 alias <kpCode> 学到
+}
+
+enum KpReconcileSource {
+  ERROR_ANALYSIS  // error.diagnose body sync 调用
+  VARIANT_ITEM    // variant.generateForEntry body sync 调用
+  TUTOR_ADHOC     // tutor.ask body sync 调用
+  BACKFILL        // 一次性 backfill 脚本扫历史 VariantItem
+}
+
+enum KpReconcileSourceRefType {
+  ERROR_BOOK_ENTRY  // sourceRefId = ErrorBookEntry.id
+  VARIANT_ITEM      // sourceRefId = VariantItem.id（实时或 backfill）
+  QUESTION          // sourceRefId = Question.id（TUTOR_ADHOC 路径指向 USER_ADHOC 题本身）
+}
+
+enum KpReconcileMatchVia {
+  EXACT    // KP.name / KP.code 直接命中
+  ALIAS    // KpAlias 表命中
+  LLM      // 异步 LLM 兑底
+  MANUAL   // CLI 人工 approve/remap/alias
+}
+
+enum KpReconcileMatchStatus {
+  UNMATCHED       // sync 未命中，等异步 LLM
+  PENDING_REVIEW  // 等人工：LLM 中档置信 / VARIANT_ITEM 待写 parent
+  LINKED          // 已写 QuestionKPLink
+  REJECTED        // 人工拒绝
+  DROPPED         // LLM 低置信 / NO_MATCH
+}
+
+enum KpReconcileReviewReason {
+  LLM_CONFIDENCE_BAND
+  VARIANT_TO_PARENT_NEEDS_REVIEW
+}
+
+model KpAlias {
+  id               String        @id @default(cuid())
+  subjectId        String        @map("subject_id")
+  kpId             String        @map("kp_id")
+  normalizedAlias  String        @map("normalized_alias")
+  source           KpAliasSource
+  createdAt        DateTime      @default(now()) @map("created_at")
+  createdByUserId  String?       @map("created_by_user_id")
+
+  subject          Subject        @relation(fields: [subjectId], references: [id])
+  kp               KnowledgePoint @relation(fields: [kpId], references: [id])
+  createdBy        User?          @relation("KpAliasCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([subjectId, normalizedAlias])
+  @@index([kpId])
+  @@map("kp_aliases")
+}
+
+model KpReconcileMatch {
+  id               String                      @id @default(cuid())
+  questionId       String                      @map("question_id")
+  kpId             String?                     @map("kp_id")
+  rawHint          String                      @db.Text @map("raw_hint")
+  normalizedHint   String                      @map("normalized_hint")
+  source           KpReconcileSource
+  sourceRefType    KpReconcileSourceRefType    @map("source_ref_type")
+  sourceRefId      String                      @map("source_ref_id")
+  matchVia         KpReconcileMatchVia?        @map("match_via")
+  confidence       Float?
+  status           KpReconcileMatchStatus      @default(UNMATCHED)
+  reviewReason     KpReconcileReviewReason?    @map("review_reason")
+  modelCallId      String?                     @map("model_call_id")
+  reviewedAt       DateTime?                   @map("reviewed_at")
+  reviewedByUserId String?                     @map("reviewed_by_user_id")
+  createdAt        DateTime                    @default(now()) @map("created_at")
+  updatedAt        DateTime                    @updatedAt @map("updated_at")
+
+  question         Question                    @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  kp               KnowledgePoint?             @relation(fields: [kpId], references: [id], onDelete: SetNull)
+  reviewedBy       User?                       @relation("KpReconcileReviewer", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+  modelCall        ModelCall?                  @relation(fields: [modelCallId], references: [id], onDelete: SetNull)
+
+  @@unique([sourceRefType, sourceRefId, normalizedHint])
+  @@index([status, createdAt])
+  @@index([questionId])
+  @@map("kp_reconcile_matches")
 }
