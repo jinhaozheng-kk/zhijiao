@@ -40,7 +40,7 @@ export interface ProcessBatchOpts {
 // 单独跑 LLM；matchId 对齐写回；状态机分流（spec §3.3 + §4.3）。
 //
 // 不计 Credit (spec §4.4 / 红线 #9) —— LLM 走 aiRouter.kpReconcile()，
-// 由 router 写 ModelCall(taskKind="KP_RECONCILE")；不进 CreditLedger。
+// 由 router 写 ModelCall(taskKind="KP_RECONCILE")；不写计费账本。
 export async function processBatch(
   prisma: PrismaClient,
   router: AiRouter,
