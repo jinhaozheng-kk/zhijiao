@@ -72,6 +72,20 @@ describe("ensurePromptInDb", () => {
     expect(rows[0]!.body).toBe("hello world");
   });
 
+  it("concurrent first registration of the same prompt converges to one row", async () => {
+    const p = fakePrompt("race body", "registry-race", "v1");
+    const ids = await Promise.all(
+      Array.from({ length: 10 }, () => ensurePromptInDb(prisma, p)),
+    );
+
+    expect(new Set(ids).size).toBe(1);
+    const rows = await prisma.promptTemplate.findMany({
+      where: { name: "registry-race", version: "v1" },
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.id).toBe(ids[0]);
+  });
+
   it("throws PromptVersionConflictError when (name,version) row exists with different fingerprint", async () => {
     const original = fakePrompt("first body");
     await ensurePromptInDb(prisma, original);

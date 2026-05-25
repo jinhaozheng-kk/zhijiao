@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { PrismaClient } from "@prisma/client";
+import { Prisma, type PrismaClient } from "@prisma/client";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROMPTS_DIR = join(__dirname, "prompts");
@@ -86,13 +86,35 @@ export async function ensurePromptInDb(
       prompt.fingerprint,
     );
   }
-  const created = await prisma.promptTemplate.create({
-    data: {
-      name: prompt.name,
-      version: prompt.version,
-      body: prompt.body,
-      fingerprint: prompt.fingerprint,
-    },
-  });
-  return created.id;
+  try {
+    const created = await prisma.promptTemplate.create({
+      data: {
+        name: prompt.name,
+        version: prompt.version,
+        body: prompt.body,
+        fingerprint: prompt.fingerprint,
+      },
+    });
+    return created.id;
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      // First AI calls in E2E can start in parallel. If two workers both miss
+      // findUnique() and race to create the same (name, version), one wins and
+      // the other gets P2002. Re-read the winner and apply the same immutable
+      // fingerprint check as the normal existing-row path.
+      const winner = await prisma.promptTemplate.findUnique({
+        where: { name_version: { name: prompt.name, version: prompt.version } },
+      });
+      if (winner) {
+        if (winner.fingerprint === prompt.fingerprint) return winner.id;
+        throw new PromptVersionConflictError(
+          prompt.name,
+          prompt.version,
+          winner.fingerprint,
+          prompt.fingerprint,
+        );
+      }
+    }
+    throw e;
+  }
 }
