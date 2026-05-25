@@ -136,11 +136,46 @@ enum KpReconcileReviewReason {
 }
 ```
 
-### §2.3 ModelCall.taskKind 不改 enum
+### §2.3 现有模型必须补的反向 relation
+
+Prisma 要求 relation 双向声明。Plan 9 的 KpAlias / KpReconcileMatch 模型上声明了到 Subject / KnowledgePoint / Question / User / ModelCall 的 relation，对应反向字段必须在现有 model 上**补齐**，否则 `prisma validate` 报缺 opposite relation：
+
+```prisma
+model Subject {
+  // ...现有字段...
+  kpAliases          KpAlias[]
+}
+
+model KnowledgePoint {
+  // ...现有字段...
+  aliases            KpAlias[]
+  reconcileMatches   KpReconcileMatch[]
+}
+
+model Question {
+  // ...现有字段（含 Plan 8 createdByUserId / normalizedStemHash）...
+  kpReconcileMatches KpReconcileMatch[]
+}
+
+model User {
+  // ...现有字段...
+  createdKpAliases     KpAlias[]           @relation("KpAliasCreator")
+  reviewedKpMatches    KpReconcileMatch[]  @relation("KpReconcileReviewer")
+}
+
+model ModelCall {
+  // ...现有字段...
+  kpReconcileMatches KpReconcileMatch[]
+}
+```
+
+命名可在实现 plan 微调，但反向字段必须落进 schema，否则 migration 阶段 `prisma migrate dev --create-only` 就会失败。
+
+### §2.4 ModelCall.taskKind 不改 enum
 
 `ModelCall.taskKind` 现是 `String`，不是 enum。Plan 9 只在写入时用字面值 `"KP_RECONCILE"`，**不改** ModelCall schema 引入 enum，避免牵动历史所有 AI task（TUTOR_TURN / ERROR_ANALYSIS / VARIANT_GROUP_GEN）。
 
-### §2.4 Migration 工艺（沿用 Plan 4 / Plan 8 红线）
+### §2.5 Migration 工艺（沿用 Plan 4 / Plan 8 红线）
 
 1. `pnpm.cmd --filter @zhijiao/db exec prisma migrate dev --create-only --name plan9_kp_reconciler`
 2. 检查 `migration.sql`（Plan 9 不需要 partial unique idx，因为 `@@unique([subjectId, normalizedAlias])` 和 `@@unique([sourceRefType, sourceRefId, normalizedHint])` 都是全集 unique，Prisma 5 schema 直接支持，不必手动追加 raw SQL）
@@ -367,19 +402,31 @@ env zod 校验：两值 0..1、auto-link > review。
 
 ### §4.4 ModelCall 落审计
 
-每批一条 ModelCall row：
-```
-ModelCall {
-  taskKind: "KP_RECONCILE",
-  inputDigest: sha256(JSON.stringify(input)).slice(0, 32),
-  inputJson: <full input>,
-  outputJson: <LLM raw output>,
-  status: SUCCESS | PARSE_FAILED | ADAPTER_ERROR | TIMEOUT,
-  modelVersion, latencyMs, tokensIn, tokensOut, ...（沿用现有 ModelCall 字段）
-}
+沿用现有 `ModelCall` schema（`packages/db/prisma/schema.prisma` 既有字段：`taskKind: String / model / requestJson: Json / responseJson: Json? / status: ModelCallStatus / errorMessage / latencyMs / tokensIn / tokensOut / userId?`）。每批一条 ModelCall row，**不增字段**：
+
+```ts
+await prisma.modelCall.create({
+  data: {
+    taskKind: "KP_RECONCILE",               // 字面值，不改 enum (§2.4)
+    model: <model id from aiRouter>,
+    requestJson: {
+      inputDigest: sha256(JSON.stringify(input)).slice(0, 32),   // 放进 requestJson 内字段，不当 DB 列
+      subjectId,
+      candidates: [...],
+      hints: [...],
+    },
+    responseJson: <LLM raw output, 或 null 当 status=ADAPTER_ERROR/TIMEOUT>,
+    status: "SUCCESS" | "PARSE_FAILED" | "ADAPTER_ERROR" | "TIMEOUT",
+    errorMessage: <异常摘要 或 null>,
+    latencyMs,
+    tokensIn,
+    tokensOut,
+    userId: null,   // 系统维护任务，无关联用户
+  },
+});
 ```
 
-本批所有 KpReconcileMatch.modelCallId 指向此 row。**不写 CreditLedger** —— Plan 9 是系统维护，不计用户 credit。
+本批所有 `KpReconcileMatch.modelCallId` 指向此 row。**不写 CreditLedger** —— Plan 9 是系统维护，不计用户 credit。
 
 ---
 
@@ -727,7 +774,7 @@ Plan 9 不暴露 LINKED → REJECTED 入口。如果未来发现某 KP 在批量
 |---|---|---|
 | middleware 显式 chain 顺序（validate 在 charge 前）| Plan 4 §4.2 / Plan 8 §3.1 | N/A（Plan 9 不引入新 middleware；reconcile 在 mutation body 内） |
 | `chargeMiddleware(kind)` factory | Plan 4 Task 3 | N/A（Plan 9 不计费） |
-| `migrate dev --create-only` → raw SQL → `migrate dev` | Plan 4 / Plan 8 Task 1 | 简化：本 plan 不需要 raw SQL partial idx，直接 `migrate dev`（§2.4） |
+| `migrate dev --create-only` → raw SQL → `migrate dev` | Plan 4 / Plan 8 Task 1 | 简化：本 plan 不需要 raw SQL partial idx，直接 `migrate dev`（§2.5） |
 | P2002 catch → 重读 / no-op | Plan 8 `upsertUserAdhocQuestion` | 一致（§3.4.1） |
 | `pnpm.cmd`（PowerShell execution policy）| Plan 4 红线 #15 | 一致 |
 | Vitest `it.todo` / 空 body 防御 | Plan 4 红线 #16 | 一致（每个 task commit 前 grep） |
