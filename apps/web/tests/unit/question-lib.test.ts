@@ -64,9 +64,7 @@ describe("stemHashHex", () => {
 describe("upsertUserAdhocQuestion", () => {
   it("creates a new USER_ADHOC Question row with expected fields", async () => {
     await seedUser("u1");
-    const q = await prisma.$transaction((tx) =>
-      upsertUserAdhocQuestion(tx, { userId: "u1", stemMd: "解方程 2x + 5 = 13" }),
-    );
+    const q = await upsertUserAdhocQuestion(prisma, { userId: "u1", stemMd: "解方程 2x + 5 = 13" });
     expect(q.source).toBe(QUESTION_SOURCE_USER_ADHOC);
     expect(q.createdByUserId).toBe("u1");
     expect(q.status).toBe("DRAFT");
@@ -76,12 +74,8 @@ describe("upsertUserAdhocQuestion", () => {
 
   it("same user + same stem returns same row (dedup via partial unique idx)", async () => {
     await seedUser("u1");
-    const q1 = await prisma.$transaction((tx) =>
-      upsertUserAdhocQuestion(tx, { userId: "u1", stemMd: "解方程 2x + 5 = 13" }),
-    );
-    const q2 = await prisma.$transaction((tx) =>
-      upsertUserAdhocQuestion(tx, { userId: "u1", stemMd: "解方程 2x + 5 = 13" }),
-    );
+    const q1 = await upsertUserAdhocQuestion(prisma, { userId: "u1", stemMd: "解方程 2x + 5 = 13" });
+    const q2 = await upsertUserAdhocQuestion(prisma, { userId: "u1", stemMd: "解方程 2x + 5 = 13" });
     expect(q2.id).toBe(q1.id);
     const count = await prisma.question.count({ where: { createdByUserId: "u1" } });
     expect(count).toBe(1);
@@ -90,34 +84,22 @@ describe("upsertUserAdhocQuestion", () => {
   it("different users with same stem each get their own row", async () => {
     await seedUser("u1");
     await seedUser("u2");
-    const q1 = await prisma.$transaction((tx) =>
-      upsertUserAdhocQuestion(tx, { userId: "u1", stemMd: "解方程 2x + 5 = 13" }),
-    );
-    const q2 = await prisma.$transaction((tx) =>
-      upsertUserAdhocQuestion(tx, { userId: "u2", stemMd: "解方程 2x + 5 = 13" }),
-    );
+    const q1 = await upsertUserAdhocQuestion(prisma, { userId: "u1", stemMd: "解方程 2x + 5 = 13" });
+    const q2 = await upsertUserAdhocQuestion(prisma, { userId: "u2", stemMd: "解方程 2x + 5 = 13" });
     expect(q2.id).not.toBe(q1.id);
   });
 
   it("whitespace-only differences in stem still dedupe (normalize 生效)", async () => {
     await seedUser("u1");
-    const q1 = await prisma.$transaction((tx) =>
-      upsertUserAdhocQuestion(tx, { userId: "u1", stemMd: "  2x + 5 = 13" }),
-    );
-    const q2 = await prisma.$transaction((tx) =>
-      upsertUserAdhocQuestion(tx, { userId: "u1", stemMd: "2x   +   5   =   13" }),
-    );
+    const q1 = await upsertUserAdhocQuestion(prisma, { userId: "u1", stemMd: "  2x + 5 = 13" });
+    const q2 = await upsertUserAdhocQuestion(prisma, { userId: "u1", stemMd: "2x   +   5   =   13" });
     expect(q2.id).toBe(q1.id);
   });
 
   it("case differences in stem do NOT dedupe (normalize 不 lowercase)", async () => {
     await seedUser("u1");
-    const q1 = await prisma.$transaction((tx) =>
-      upsertUserAdhocQuestion(tx, { userId: "u1", stemMd: "sin x" }),
-    );
-    const q2 = await prisma.$transaction((tx) =>
-      upsertUserAdhocQuestion(tx, { userId: "u1", stemMd: "SIN x" }),
-    );
+    const q1 = await upsertUserAdhocQuestion(prisma, { userId: "u1", stemMd: "sin x" });
+    const q2 = await upsertUserAdhocQuestion(prisma, { userId: "u1", stemMd: "SIN x" });
     expect(q2.id).not.toBe(q1.id);
   });
 });
