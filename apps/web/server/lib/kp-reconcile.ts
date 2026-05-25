@@ -70,10 +70,21 @@ async function loadSubjectCandidates(
 
   const kpById = new Map<string, KnowledgePoint>();
   const kpByNormalized = new Map<string, string>();
+  const kpNameCounts = new Map<string, number>();
+  const kpNameByNormalized = new Map<string, string>();
   for (const kp of kps) {
     kpById.set(kp.id, kp);
-    kpByNormalized.set(normalizeKpHint(kp.name), kp.id);
+    const normalizedName = normalizeKpHint(kp.name);
+    kpNameCounts.set(normalizedName, (kpNameCounts.get(normalizedName) ?? 0) + 1);
+    kpNameByNormalized.set(normalizedName, kp.id);
     kpByNormalized.set(normalizeKpHint(kp.code), kp.id);
+  }
+  for (const [normalizedName, count] of kpNameCounts) {
+    // code 在同学科内有唯一约束，可以直接 exact；name 没有唯一约束，
+    // 同名时不能 1.0 自动落库，留给 alias / LLM / 人工确认。
+    if (count === 1 && !kpByNormalized.has(normalizedName)) {
+      kpByNormalized.set(normalizedName, kpNameByNormalized.get(normalizedName)!);
+    }
   }
   const aliasByNormalized = new Map<string, string>();
   for (const a of aliases) {

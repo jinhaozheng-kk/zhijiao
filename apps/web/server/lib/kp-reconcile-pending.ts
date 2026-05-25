@@ -66,7 +66,10 @@ export async function processBatch(
 
   const batches: BatchResult[] = [];
   for (const [subjectId, batchMatches] of bySubject) {
-    const candidates = await prisma.knowledgePoint.findMany({ where: { subjectId } });
+    const [subject, candidates] = await Promise.all([
+      prisma.subject.findUnique({ where: { id: subjectId }, select: { name: true } }),
+      prisma.knowledgePoint.findMany({ where: { subjectId } }),
+    ]);
 
     const batchSummary: BatchResult = {
       subjectId,
@@ -98,8 +101,8 @@ export async function processBatch(
           code: kp.code,
           name: kp.name,
           description: kp.description,
-          // MVP 简化：parentPath 直接给学科名。完整 ancestry 链由独立 plan 完善。
-          parentPath: "数学",
+          // MVP 简化：parentPath 先给学科名。完整 ancestry 链由独立 plan 完善。
+          parentPath: subject?.name ?? subjectId,
         })),
         hints,
       });

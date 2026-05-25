@@ -164,4 +164,35 @@ describe("processBatch (kp-reconcile-pending core)", () => {
     const stillUnmatched = await prisma.kpReconcileMatch.count({ where: { status: "UNMATCHED" } });
     expect(stillUnmatched).toBe(2);
   });
+
+  it("LLM candidates 的 parentPath 使用真实学科名，不硬编码数学", async () => {
+    const subject = await prisma.subject.create({ data: { code: "english", name: "英语" } });
+    const kp = await prisma.knowledgePoint.create({
+      data: { subjectId: subject.id, code: "eng-kp-a", name: "Pronouns", difficulty: 2 },
+    });
+    const q = await prisma.question.create({
+      data: { subjectId: subject.id, stemMd: "x", type: "ESSAY", status: "PUBLISHED" },
+    });
+    await seedUnmatched(q.id, "QUESTION", "pronouns");
+    const adapter = new MockAdapter({
+      respondWith: (req) => {
+        const userMsg = req.messages.find((m) => m.role === "user")?.content ?? "";
+        expect(userMsg).toContain("path=英语");
+        expect(userMsg).not.toContain("path=数学");
+        const matchId = userMsg.match(/matchId=([a-z0-9]+)/)?.[1];
+        expect(matchId).toBeTruthy();
+        return Promise.resolve({
+          content: JSON.stringify([{ matchId, kpId: kp.id, confidence: 0.9 }]),
+          tokensIn: 50,
+          tokensOut: 30,
+          model: "mock-v1",
+        });
+      },
+    });
+    const router = new AiRouter({ prisma, adapter });
+
+    const r = await processBatch(prisma, router, { limit: 50, thresholds: THRESHOLDS });
+
+    expect(r.batches[0]!.linked).toBe(1);
+  });
 });

@@ -99,6 +99,33 @@ describe("reconcileHintsSync — source=TUTOR_ADHOC / sourceRefType=QUESTION", (
     expect(linkCount).toBe(0);
   });
 
+  it("同学科多个 KP 同名时，name exact 不自动 LINKED，转 UNMATCHED 等人工/LLM", async () => {
+    const subject = await prisma.subject.create({ data: { code: "math", name: "数学" } });
+    await prisma.knowledgePoint.create({
+      data: { subjectId: subject.id, code: "kp-function-a", name: "函数", difficulty: 2 },
+    });
+    await prisma.knowledgePoint.create({
+      data: { subjectId: subject.id, code: "kp-function-b", name: "函数", difficulty: 3 },
+    });
+    const qid = await seedQuestion(subject.id);
+
+    const r = await reconcileHintsSync(prisma, {
+      questionId: qid,
+      hints: ["函数"],
+      source: "TUTOR_ADHOC",
+      sourceRefType: "QUESTION",
+      sourceRefId: qid,
+    });
+
+    expect(r.linked).toBe(0);
+    expect(r.queued).toBe(1);
+    const match = await prisma.kpReconcileMatch.findFirstOrThrow({ where: { questionId: qid } });
+    expect(match.status).toBe("UNMATCHED");
+    expect(match.kpId).toBeNull();
+    expect(match.matchVia).toBeNull();
+    expect(await prisma.questionKPLink.count({ where: { questionId: qid } })).toBe(0);
+  });
+
   it("重复同 hint → alreadySeen 计数，DB 行数不变", async () => {
     const { subjectId } = await seedSubjectKpsAndAlias();
     const qid = await seedQuestion(subjectId);
