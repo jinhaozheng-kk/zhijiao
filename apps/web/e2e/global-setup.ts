@@ -58,6 +58,13 @@ function clearStaleState(): void {
   }
 }
 
+async function resetE2eDb(): Promise<void> {
+  process.env.DATABASE_URL = TEST_DB_URL;
+  const { resetDb, prisma } = await import("@zhijiao/db/test-utils");
+  await resetDb();
+  await prisma.$disconnect();
+}
+
 function seedE2eDb(): void {
   execSync(`${PNPM_BIN} --filter @zhijiao/db db:seed`, {
     cwd: WORKSPACE_ROOT,
@@ -68,6 +75,7 @@ function seedE2eDb(): void {
 
 export default async function globalSetup(): Promise<void> {
   clearStaleState();
+  await resetE2eDb();
   seedE2eDb();
 
   // 单串命令，shell: true 走 cmd.exe /c。spawn 返回的是 cmd.exe 的 PID；teardown 用
