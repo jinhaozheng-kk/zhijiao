@@ -484,15 +484,28 @@ export class AiRouter {
         const returnedIds = new Set(filtered.map((it) => it.matchId));
         const hasAllMatchIds = parsed.hints.every((h) => returnedIds.has(h.matchId));
         const hasNoDuplicates = filtered.length === returnedIds.size;
-        if (!hasAllMatchIds || !hasNoDuplicates) {
+        // Plan 9 Task 3 hotfix (review P1): kpId 必须属于本批候选集。LLM 可能 hallucinate
+        // 一个合法 cuid 但不是本 subject 的 KP；schema 只验 cuid 形状不验归属，
+        // 一旦放过会被 Task 8 直接写到 KpReconcileMatch/QuestionKPLink 上，绕过 subject scoping。
+        const candidateKpIds = new Set(parsed.candidates.map((c) => c.id));
+        const allKpIdsValid = filtered.every(
+          (it) => it.kpId === null || candidateKpIds.has(it.kpId),
+        );
+        if (!hasAllMatchIds || !hasNoDuplicates || !allKpIdsValid) {
+          const reason = !allKpIdsValid
+            ? "kpId 不在候选集"
+            : !hasNoDuplicates
+              ? "matchId 重复"
+              : "matchId 漏返";
           lastError = new Error(
-            `LLM output matchId alignment failed (returned=${filtered.length}, expected=${parsed.hints.length})`,
+            `LLM output validation failed (${reason}): returned=${filtered.length}, expected=${parsed.hints.length}`,
           );
           parseAttempts++;
           request.messages.push({
             role: "user",
-            content:
-              "上次输出 matchId 未与输入一一对应。请严格输出与输入 hints 数量相同的项，每个 matchId 出现且仅出现一次。",
+            content: !allKpIdsValid
+              ? "上次输出包含不在候选集中的 kpId。每个 kpId 必须严格来自本批 candidates 列表的 id，或 null。请重新只输出 JSON。"
+              : "上次输出 matchId 未与输入一一对应。请严格输出与输入 hints 数量相同的项，每个 matchId 出现且仅出现一次。",
           });
           continue;
         }

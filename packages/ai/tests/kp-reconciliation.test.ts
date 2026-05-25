@@ -177,4 +177,81 @@ describe("AiRouter.kpReconcile", () => {
     });
     expect(mc?.status).toBe(ModelCallStatus.PARSE_FAILED);
   });
+
+  // Plan 9 Task 3 hotfix (review P1): kpId 必须属于本批候选集。
+  // 守门 LLM 返回合法 cuid 但不是本 subject 的 KP 的 hallucinate 风险 ——
+  // 一旦放过 Task 8 会直接写到 KpReconcileMatch.kpId 绕过 subject scoping。
+  it("LLM 返回合法 cuid 但不在候选集 → retry 3 次 → PARSE_FAILED（不返回 SUCCESS）", async () => {
+    const { subjectId, kp1Id } = await seedSubjectAndKps();
+    // 故意构造一个合法 cuid-shape 但不在 candidates 里的 kpId（也不是 kp2Id 因为 kp2 不在候选集里）
+    const FAKE_KP_ID = "clalienkp00000000000000099";
+    let calls = 0;
+    const adapter = new MockAdapter({
+      respondWith: () => {
+        calls++;
+        return Promise.resolve({
+          content: JSON.stringify([
+            { matchId: HINT1, kpId: FAKE_KP_ID, confidence: 0.99 },
+          ]),
+          tokensIn: 50,
+          tokensOut: 30,
+          model: "mock-v1",
+        });
+      },
+    });
+    const router = new AiRouter({ prisma, adapter });
+
+    await expect(
+      router.kpReconcile({
+        subjectId,
+        candidates: [
+          // 只有 kp1Id 在候选集；kp2Id 也存在于 DB 但不传给本批 reconcile
+          { id: kp1Id, code: "math-g7-linear-eq", name: "一元一次方程", description: null, parentPath: "数学" },
+        ],
+        hints: [{ matchId: HINT1, rawHint: "x", normalizedHint: "x" }],
+      }),
+    ).rejects.toThrow(/KP_RECONCILE failed/);
+
+    expect(calls).toBe(3); // 初次 + 2 retry，每次都返同样的 fake kpId
+
+    // 关键：必须是 PARSE_FAILED，不能是 SUCCESS
+    const mc = await prisma.modelCall.findFirst({
+      where: { taskKind: "KP_RECONCILE" },
+      orderBy: { createdAt: "desc" },
+    });
+    expect(mc?.status).toBe(ModelCallStatus.PARSE_FAILED);
+    expect(mc?.status).not.toBe(ModelCallStatus.SUCCESS);
+    // errorMessage 应含说明
+    expect(mc?.errorMessage).toMatch(/kpId 不在候选集|候选集/);
+  });
+
+  it("LLM 返回 kpId=null（合法 NO_MATCH）→ 不算 hallucinate，正常 SUCCESS", async () => {
+    // 守 hotfix 不要把合法的 null 误伤
+    const { subjectId, kp1Id } = await seedSubjectAndKps();
+    const adapter = new MockAdapter({
+      respondWith: () =>
+        Promise.resolve({
+          content: JSON.stringify([
+            { matchId: HINT1, kpId: null, confidence: 0 },
+          ]),
+          tokensIn: 50,
+          tokensOut: 30,
+          model: "mock-v1",
+        }),
+    });
+    const router = new AiRouter({ prisma, adapter });
+
+    const r = await router.kpReconcile({
+      subjectId,
+      candidates: [
+        { id: kp1Id, code: "math-g7-linear-eq", name: "一元一次方程", description: null, parentPath: "数学" },
+      ],
+      hints: [{ matchId: HINT1, rawHint: "未知概念", normalizedHint: "未知概念" }],
+    });
+
+    expect(r.items).toHaveLength(1);
+    expect(r.items[0]).toEqual({ matchId: HINT1, kpId: null, confidence: 0 });
+    const mc = await prisma.modelCall.findUniqueOrThrow({ where: { id: r.modelCallId } });
+    expect(mc.status).toBe(ModelCallStatus.SUCCESS);
+  });
 });
