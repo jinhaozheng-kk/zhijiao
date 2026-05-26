@@ -94,12 +94,17 @@ async function loadSubjectCandidates(
 }
 
 // ============ reconcileHintsSync ============
+//
+// VariantItem reconciliation is two-stage: promoted variants link matched KPs to
+// VariantItem.questionId, while legacy/null-questionId variants stay queued on
+// the parent question for review and never write a parent QuestionKPLink.
 
 // Plan 9 spec §3.1 + §3.3:
 // - 三个 router body 调用：tutor.ask / error.diagnose / variant.generateForEntry
-// - 决定写不写 parent QuestionKPLink 的条件是 sourceRefType=VARIANT_ITEM（不是 source，
+// - sourceRefType=VARIANT_ITEM 先解析 VariantItem.questionId（不是只看 source，
 //   因为 BACKFILL source + sourceRefType=VARIANT_ITEM 也走 VARIANT 路径）
-// - VARIANT_ITEM EXACT/ALIAS 命中 → PENDING_REVIEW + reviewReason=VARIANT_TO_PARENT_NEEDS_REVIEW
+// - promoted VARIANT_ITEM EXACT/ALIAS 命中 → LINKED + 写 variant QuestionKPLink
+// - legacy/null-questionId VARIANT_ITEM EXACT/ALIAS 命中 → PENDING_REVIEW + reviewReason=VARIANT_TO_PARENT_NEEDS_REVIEW
 // - 其它 sourceRefType EXACT/ALIAS 命中 → LINKED + upsert QuestionKPLink
 // - 未命中 → UNMATCHED
 //
@@ -112,12 +117,34 @@ export async function reconcileHintsSync(
   const result: ReconcileHintsSyncResult = { linked: 0, queued: 0, alreadySeen: 0 };
   if (args.hints.length === 0) return result;
 
+  let effectiveQuestionId: string | null = null;
+  let isVariantPath = false;
+  let isVariantPendingLegacy = false;
+
+  if (args.sourceRefType === "VARIANT_ITEM") {
+    const variantItem = await prisma.variantItem.findUnique({
+      where: { id: args.sourceRefId },
+      select: { questionId: true },
+    });
+    if (!variantItem) {
+      _logger.warn({ event: "kp_reconcile_variant_item_missing", sourceRefId: args.sourceRefId });
+      isVariantPendingLegacy = true;
+    } else if (variantItem.questionId != null) {
+      isVariantPath = true;
+      effectiveQuestionId = variantItem.questionId;
+    } else {
+      isVariantPendingLegacy = true;
+    }
+  }
+
+  const subjectQuestionId = args.questionId;
+  const linkedQuestionId = effectiveQuestionId ?? args.questionId;
+
   const question = await prisma.question.findUniqueOrThrow({
-    where: { id: args.questionId },
+    where: { id: subjectQuestionId },
     select: { subjectId: true },
   });
   const candidates = await loadSubjectCandidates(prisma, question.subjectId);
-  const writesToParent = args.sourceRefType !== "VARIANT_ITEM";
 
   // 同批内 dedup：同一 normalized hint 不重复处理
   const seen = new Set<string>();
@@ -155,7 +182,23 @@ export async function reconcileHintsSync(
 
     try {
       if (matchedKpId && matchVia) {
-        if (writesToParent) {
+        if (isVariantPath) {
+          await prisma.$transaction(async (tx) => {
+            await upsertReconcileMatch(tx, {
+              ...args,
+              questionId: linkedQuestionId,
+              normalizedHint: normalized,
+              rawHint,
+              kpId: matchedKpId,
+              matchVia,
+              confidence: 1.0,
+              status: "LINKED",
+              reviewReason: null,
+            });
+            await upsertQuestionKpLink(tx, linkedQuestionId, matchedKpId!, 1.0);
+          });
+          result.linked++;
+        } else if (!isVariantPendingLegacy) {
           // LINKED + upsert QuestionKPLink
           await prisma.$transaction(async (tx) => {
             await upsertReconcileMatch(tx, {
