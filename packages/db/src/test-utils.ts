@@ -32,6 +32,7 @@ export const prisma = testPrisma;
 // TRUNCATE handles it but the ordering keeps the dependency chain visible.
 export async function resetDb() {
   const tables = [
+    "ops_action_logs",
     // Plan 9 — child tables first; FKs to questions (Cascade) / knowledge_points
     // (SetNull) / subjects (Restrict) / users / model_calls. Listing them before
     // their parents keeps the ordering readable; CASCADE on TRUNCATE handles
