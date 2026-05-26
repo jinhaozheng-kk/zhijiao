@@ -58,6 +58,7 @@ certs/
 # Local tool worktree caches (Claude Code / Claire) — see plan-2-hardening Task 0
 .claude/worktrees/
 .claire/
+.superpowers/
 
 # planning-with-files working memory (skill: superpowers? / planning-with-files).
 # Source-of-truth specs/plans live in docs/superpowers/. These are session
