@@ -13,7 +13,10 @@
     "test:watch": "vitest",
     "test:e2e": "next build && playwright test",
     "kp:reconcile-pending": "tsx scripts/kp-reconcile-pending.ts",
-    "kp:review": "tsx scripts/kp-review.ts"
+    "kp:review": "tsx scripts/kp-review.ts",
+    "user:deactivate": "tsx scripts/user-deactivate.ts",
+    "user:export": "tsx scripts/user-export.ts",
+    "pii:gc-sweep": "tsx scripts/pii-gc-sweep.ts"
   },
   "dependencies": {
     "@zhijiao/ai":            "workspace:*",
