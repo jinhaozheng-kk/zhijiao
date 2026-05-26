@@ -228,6 +228,7 @@ model Question {
   answer             QuestionAnswer?
   knowledgePoints    QuestionKPLink[]
   errorBookEntries   ErrorBookEntry[]   // Plan 4
+  variantItem        VariantItem?
   kpReconcileMatches KpReconcileMatch[] // Plan 9
 
   // partial unique idx (created_by_user_id, normalized_stem_hash) WHERE source='USER_ADHOC' AND IS NOT NULL
@@ -488,6 +489,7 @@ model VariantGroup {
 model VariantItem {
   id                  String        @id @default(cuid())
   groupId             String        @map("group_id")
+  questionId          String?       @unique @map("question_id")
   level               VariantLevel
   position            Int
   stemMd              String        @db.Text @map("stem_md")
@@ -496,6 +498,7 @@ model VariantItem {
   createdAt           DateTime      @default(now()) @map("created_at")
 
   group               VariantGroup  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  question            Question?     @relation(fields: [questionId], references: [id], onDelete: Restrict)
 
   @@unique([groupId, level])
   @@index([groupId, position])
