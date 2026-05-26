@@ -59,6 +59,7 @@ certs/
 .claude/worktrees/
 .claire/
 .superpowers/
+.worktrees/
 
 # planning-with-files working memory (skill: superpowers? / planning-with-files).
 # Source-of-truth specs/plans live in docs/superpowers/. These are session
