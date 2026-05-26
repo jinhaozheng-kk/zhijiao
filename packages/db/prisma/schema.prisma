@@ -64,6 +64,9 @@ model User {
   wallet              Wallet?
   errorBookEntries    ErrorBookEntry[]   // Plan 4
   createdQuestions    Question[]         @relation("CreatedQuestions")  // Plan 8
+  classroomMemberships ClassroomMember[]
+  teacherAssignments   Assignment[]        @relation("TeacherAssignments")
+  studentAssignments   StudentAssignment[] @relation("StudentAssignments")
   createdKpAliases    KpAlias[]          @relation("KpAliasCreator")    // Plan 9
   reviewedKpMatches   KpReconcileMatch[] @relation("KpReconcileReviewer") // Plan 9
   initiatedOpsActions OpsActionLog[]     @relation("OpsActionInitiator")
@@ -162,6 +165,7 @@ model Subject {
 
   knowledgePoints KnowledgePoint[]
   questions       Question[]
+  classrooms      Classroom[]
   kpAliases       KpAlias[]            // Plan 9
 
   @@map("subjects")
@@ -228,6 +232,7 @@ model Question {
   answer             QuestionAnswer?
   knowledgePoints    QuestionKPLink[]
   errorBookEntries   ErrorBookEntry[]   // Plan 4
+  assignmentItems    AssignmentItem[]
   variantItem        VariantItem?
   kpReconcileMatches KpReconcileMatch[] // Plan 9
 
@@ -460,6 +465,7 @@ model ErrorBookEntry {
   user                User             @relation(fields: [userId], references: [id], onDelete: Restrict)
   question            Question         @relation(fields: [questionId], references: [id], onDelete: Restrict)
   variantGroups       VariantGroup[]
+  assignmentAnswers   AssignmentAnswer[]
 
   // ❌ 故意不加 @@unique([userId, questionId])
   //    DELETED entry 允许与新 ACTIVE entry 共存；partial unique index 在 migration 里加（步骤 1.7）
@@ -503,6 +509,186 @@ model VariantItem {
   @@unique([groupId, level])
   @@index([groupId, position])
   @@map("variant_items")
+}
+
+// === Plan 10: Classroom Assignments ===
+
+enum ClassroomMemberRole {
+  TEACHER
+  STUDENT
+}
+
+enum AssignmentStatus {
+  DRAFT
+  PUBLISHED
+  CLOSED
+}
+
+enum AssignmentTierLevel {
+  BASIC
+  CONSOLIDATION
+  CHALLENGE
+}
+
+enum StudentAssignmentStatus {
+  ASSIGNED
+  SUBMITTED
+  GRADED
+}
+
+enum AssignmentGradeStatus {
+  UNGRADED
+  CORRECT
+  PARTIAL
+  WRONG
+}
+
+model Classroom {
+  id          String      @id @default(cuid())
+  name        String
+  subjectId   String      @map("subject_id")
+  gradeLevel  GradeLevel? @map("grade_level")
+  createdAt   DateTime    @default(now()) @map("created_at")
+
+  subject     Subject           @relation(fields: [subjectId], references: [id])
+  members     ClassroomMember[]
+  assignments Assignment[]
+
+  @@map("classrooms")
+}
+
+model ClassroomMember {
+  classroomId String              @map("classroom_id")
+  userId      String              @map("user_id")
+  role        ClassroomMemberRole
+  createdAt   DateTime            @default(now()) @map("created_at")
+
+  classroom   Classroom @relation(fields: [classroomId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@id([classroomId, userId])
+  @@index([userId, role])
+  @@map("classroom_members")
+}
+
+model Assignment {
+  id                 String           @id @default(cuid())
+  classroomId        String           @map("classroom_id")
+  teacherUserId      String           @map("teacher_user_id")
+  title              String
+  status             AssignmentStatus @default(DRAFT)
+  source             String
+  generationLedgerId String?          @map("generation_ledger_id")
+  generationCallId   String?          @map("generation_call_id")
+  publishedAt        DateTime?        @map("published_at")
+  closedAt           DateTime?        @map("closed_at")
+  createdAt          DateTime         @default(now()) @map("created_at")
+  updatedAt          DateTime         @updatedAt @map("updated_at")
+
+  classroom          Classroom            @relation(fields: [classroomId], references: [id], onDelete: Restrict)
+  teacher            User                 @relation("TeacherAssignments", fields: [teacherUserId], references: [id], onDelete: Restrict)
+  tiers              AssignmentTier[]
+  studentAssignments StudentAssignment[]
+
+  @@index([teacherUserId, status, createdAt])
+  @@index([classroomId, status, createdAt])
+  @@map("assignments")
+}
+
+model AssignmentTier {
+  id                 String              @id @default(cuid())
+  assignmentId       String              @map("assignment_id")
+  level              AssignmentTierLevel
+  title              String
+  rationaleMd        String?             @db.Text @map("rationale_md")
+  createdAt          DateTime            @default(now()) @map("created_at")
+
+  assignment         Assignment          @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  items              AssignmentItem[]
+  studentAssignments StudentAssignment[]
+
+  @@unique([assignmentId, level])
+  @@map("assignment_tiers")
+}
+
+model AssignmentItem {
+  id          String       @id @default(cuid())
+  tierId      String       @map("tier_id")
+  questionId  String?      @map("question_id")
+  position    Int
+  stemMd      String       @db.Text @map("stem_md")
+  type        QuestionType
+  optionsJson Json?        @map("options_json")
+  answerMd    String       @db.Text @map("answer_md")
+  solutionMd  String       @db.Text @map("solution_md")
+  rubricMd    String?      @db.Text @map("rubric_md")
+  kpHints     String[]     @default([]) @map("kp_hints")
+  createdAt   DateTime     @default(now()) @map("created_at")
+
+  tier        AssignmentTier     @relation(fields: [tierId], references: [id], onDelete: Cascade)
+  question    Question?          @relation(fields: [questionId], references: [id], onDelete: SetNull)
+  answers     AssignmentAnswer[]
+
+  @@unique([tierId, position])
+  @@index([questionId])
+  @@map("assignment_items")
+}
+
+model StudentAssignment {
+  id                 String                  @id @default(cuid())
+  assignmentId       String                  @map("assignment_id")
+  studentUserId      String                  @map("student_user_id")
+  tierId             String                  @map("tier_id")
+  status             StudentAssignmentStatus @default(ASSIGNED)
+  suggestedTier      AssignmentTierLevel?    @map("suggested_tier")
+  tierOverrideReason String?                 @map("tier_override_reason")
+  submittedAt        DateTime?               @map("submitted_at")
+  gradedAt           DateTime?               @map("graded_at")
+  createdAt          DateTime                @default(now()) @map("created_at")
+  updatedAt          DateTime                @updatedAt @map("updated_at")
+
+  assignment         Assignment         @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  tier               AssignmentTier     @relation(fields: [tierId], references: [id], onDelete: Restrict)
+  student            User               @relation("StudentAssignments", fields: [studentUserId], references: [id], onDelete: Restrict)
+  answers            AssignmentAnswer[]
+
+  @@unique([assignmentId, studentUserId])
+  @@index([studentUserId, status, createdAt])
+  @@map("student_assignments")
+}
+
+model AssignmentAnswer {
+  id                  String                @id @default(cuid())
+  studentAssignmentId String                @map("student_assignment_id")
+  itemId              String                @map("item_id")
+  answerJson          Json                  @map("answer_json")
+  gradeStatus         AssignmentGradeStatus @default(UNGRADED) @map("grade_status")
+  teacherFeedbackMd   String?               @db.Text @map("teacher_feedback_md")
+  errorBookEntryId    String?               @map("error_book_entry_id")
+  gradedAt            DateTime?             @map("graded_at")
+
+  studentAssignment   StudentAssignment @relation(fields: [studentAssignmentId], references: [id], onDelete: Cascade)
+  item                AssignmentItem    @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  errorBookEntry      ErrorBookEntry?   @relation(fields: [errorBookEntryId], references: [id], onDelete: SetNull)
+
+  @@unique([studentAssignmentId, itemId])
+  @@index([itemId, gradeStatus])
+  @@map("assignment_answers")
+}
+
+model AssignmentPerformance {
+  id            String                @id @default(cuid())
+  assignmentId  String                @map("assignment_id")
+  studentUserId String                @map("student_user_id")
+  itemId        String                @map("item_id")
+  gradeStatus   AssignmentGradeStatus @map("grade_status")
+  kpIds         String[]              @default([]) @map("kp_ids")
+  createdAt     DateTime              @default(now()) @map("created_at")
+
+  @@unique([assignmentId, studentUserId, itemId])
+  @@index([studentUserId, createdAt])
+  @@index([assignmentId])
+  @@map("assignment_performance")
 }
 
 // === Plan 9: Knowledge Point Reconciler ===

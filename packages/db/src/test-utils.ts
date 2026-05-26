@@ -20,6 +20,39 @@ export const testPrisma = new PrismaClient({
 // Alias so consumers can `import { prisma, resetDb } from "@zhijiao/db/test-utils"`
 export const prisma = testPrisma;
 
+const TABLES = [
+  "assignment_performance",
+  "assignment_answers",
+  "student_assignments",
+  "assignment_items",
+  "assignment_tiers",
+  "assignments",
+  "classroom_members",
+  "classrooms",
+  "ops_action_logs",
+  "kp_reconcile_matches",
+  "kp_aliases",
+  "variant_items",
+  "variant_groups",
+  "error_book_entries",
+  "question_kp_links",
+  "question_answers",
+  "questions",
+  "model_calls",
+  "prompt_templates",
+  "credit_ledger",
+  "wallets",
+  "wechat_pay_events",
+  "topup_orders",
+  "sessions",
+  "auth_identities",
+  "otp_requests",
+  "user_roles",
+  "users",
+  "knowledge_points",
+  "subjects",
+];
+
 // 截断所有表（保留 schema），按依赖反向顺序
 // Plan 3 Task 10 additions: wechat_pay_events, topup_orders, credit_ledger,
 // wallets. All have FKs to users (Restrict on Wallet → User; no FK on
@@ -31,35 +64,7 @@ export const prisma = testPrisma;
 // (Restrict); ErrorBookEntry FK → User+Question (Restrict). CASCADE on
 // TRUNCATE handles it but the ordering keeps the dependency chain visible.
 export async function resetDb() {
-  const tables = [
-    "ops_action_logs",
-    // Plan 9 — child tables first; FKs to questions (Cascade) / knowledge_points
-    // (SetNull) / subjects (Restrict) / users / model_calls. Listing them before
-    // their parents keeps the ordering readable; CASCADE on TRUNCATE handles
-    // the actual dependency walk.
-    "kp_reconcile_matches",
-    "kp_aliases",
-    "variant_items",
-    "variant_groups",
-    "error_book_entries",
-    "wechat_pay_events",
-    "topup_orders",
-    "credit_ledger",
-    "wallets",
-    "model_calls",
-    "prompt_templates",
-    "question_kp_links",
-    "question_answers",
-    "questions",
-    "knowledge_points",
-    "subjects",
-    "otp_requests",
-    "sessions",
-    "auth_identities",
-    "user_roles",
-    "users",
-  ];
-  for (const t of tables) {
+  for (const t of TABLES) {
     await testPrisma.$executeRawUnsafe(`TRUNCATE TABLE "${t}" RESTART IDENTITY CASCADE;`);
   }
 }
