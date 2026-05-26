@@ -21,9 +21,9 @@ import {
   rejectMatch,
   remapMatch,
   learnAliasAndLink,
-  resolveReviewerUserId,
   KpAliasConflictError,
 } from "../server/lib/kp-reconcile.js";
+import { resolveOperatorUserId } from "../server/lib/operator.js";
 
 async function loadPending(prisma: PrismaClient) {
   return prisma.kpReconcileMatch.findMany({
@@ -161,7 +161,7 @@ async function main() {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
   try {
-    const reviewerUserId = await resolveReviewerUserId(prisma);
+    const reviewerUserId = await resolveOperatorUserId(prisma);
     // eslint-disable-next-line no-console
     console.log(`[kp:review] reviewer=${reviewerUserId}`);
 

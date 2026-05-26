@@ -481,7 +481,7 @@ Select-String -Path apps/web -Pattern "resolveReviewerUserId" -Recurse
 > **设计选择：** 抽 Plan 9 `resolveReviewerUserId` 重命名为 `resolveOperatorUserId`，env 从 `KP_REVIEW_USER_ID` 改名为 `OPERATOR_USER_ID`（更通用）。**保持 plain `throw new Error(...)` 行为**，**不**引入新的 typed error class，以最小化既有 Plan 9 测试改动（test 匹配 regex 在 message string 上）。新加 `buildInitiatorRef()` Plan 6 专属辅助。
 
 ```ts
-import "server-only";
+import os from "node:os";
 import type { PrismaClient } from "@prisma/client";
 
 // Plan 6 抽出 Plan 9 `resolveReviewerUserId` 重命名为通用 helper。
@@ -527,10 +527,9 @@ export async function resolveOperatorUserId(prisma: PrismaClient): Promise<strin
 }
 
 // Plan 6 专属：CLI 主机名 + OS 用户名兜底身份串；用于 OpsActionLog.initiatorRef
-// resolveOperatorUserId 返回失败（throw）时 CLI 用 .catch(() => null) 把 operatorId 设 null，
+// resolveOperatorUserId fail-close: CLI must not catch and downgrade to null.
 // initiatorRef 仍能给审计追溯到具体机器与系统账户。
 export function buildInitiatorRef(): string {
-  const os = require("node:os") as typeof import("node:os");
   const hostname = os.hostname() || "unknown-host";
   const username = os.userInfo().username || "unknown-user";
   return `cli:${hostname}:${username}`;
@@ -771,9 +770,9 @@ git commit -m "feat(auth,web): Plan 6 Task 4 — USER_DEACTIVATED in AuthError u
 - [ ] **步骤 5.1：新建 `pii-governance.ts` 类型 + `previewDeactivateUser`**
 
 ```ts
-import "server-only";
 import { Prisma, type PrismaClient } from "@prisma/client";
-import { logger } from "../logger.js";
+
+// CLI-safe service: avoid Next-only guards and app-level logging imports here.
 
 // ============ Types ============
 
@@ -1969,7 +1968,7 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const prisma = new PrismaClient();
   try {
-    const operatorId = await resolveOperatorUserId(prisma).catch(() => null);
+    const operatorId = await resolveOperatorUserId(prisma);
     const initiatorRef = buildInitiatorRef();
     const r = await deactivateUser(prisma, { userId: args.userId, operatorId, initiatorRef, reason: args.reason, dryRun: args.dryRun });
     if (r.alreadyDeactivated) {
@@ -2019,7 +2018,7 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const prisma = new PrismaClient();
   try {
-    const operatorId = await resolveOperatorUserId(prisma).catch(() => null);
+    const operatorId = await resolveOperatorUserId(prisma);
     const initiatorRef = buildInitiatorRef();
     const data = await exportUserData(prisma, args.userId);
     const json = JSON.stringify(data, null, 2);
@@ -2096,7 +2095,7 @@ async function main() {
   const thresholds = loadEnvThresholds();
   const prisma = new PrismaClient();
   try {
-    const operatorId = await resolveOperatorUserId(prisma).catch(() => null);
+    const operatorId = await resolveOperatorUserId(prisma);
     const initiatorRef = buildInitiatorRef();
     console.log(`[pii:gc-sweep] bucket=${args.bucket} dryRun=${args.dryRun} thresholds=${JSON.stringify(thresholds)}`);
 
@@ -2510,7 +2509,7 @@ pnpm.cmd --filter @zhijiao/web exec tsx -e "import('@prisma/client').then(({Pris
 
 ## 故障排查
 
-- CLI exit 1 + `OperatorResolutionError`：DB 内没 OPS/ADMIN user 或多于 1 个；export `OPERATOR_USER_ID=<ckxxx>` 显式指定（必须是 OPS/ADMIN role 的 userId）
+- CLI exit 1 + plain `Error`：DB 内没 OPS/ADMIN user；export `OPERATOR_USER_ID=<ckxxx>` 显式指定（必须是 OPS/ADMIN role 的 userId）
 - `pii:gc-sweep` 跑了但 affected 持续=0：先 `--dry-run` 看预估；如确实 0，说明 retention 阈值内无符合条件的行（小数据量 dev 环境正常）
 - 单批 hasMore=true 持续触发：MAX_BATCHES=10 兜底（hardcoded），OPS 跑完后 manually 查询确认；超量时拉数据规模 alert 而非加 batch
 ````
