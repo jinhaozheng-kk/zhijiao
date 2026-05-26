@@ -41,6 +41,10 @@ const RELEVANT_KEYS = [
   "E2E_TEST_HOOKS",
   "KP_RECONCILE_AUTO_LINK_THRESHOLD",
   "KP_RECONCILE_REVIEW_THRESHOLD",
+  "PII_RETENTION_SHORT_DAYS",
+  "PII_RETENTION_MEDIUM_DAYS",
+  "PII_RETENTION_ORPHAN_TOPUP_DAYS",
+  "FINANCIAL_RECORD_RETENTION_DAYS",
 ] as const;
 
 const VALID_BASE = {
@@ -266,5 +270,41 @@ describe("server/env.ts (fail-fast validator)", () => {
     process.env.KP_RECONCILE_AUTO_LINK_THRESHOLD = "0.7";
     process.env.KP_RECONCILE_REVIEW_THRESHOLD = "0.8";
     await expect(importEnv()).rejects.toThrow(/REVIEW_THRESHOLD must be strictly less/);
+  });
+
+  it("PII retention env defaults are 30 / 90 / 180 and financial retention is null", async () => {
+    applyBase();
+    const mod = await importEnv();
+    expect(mod.env.PII_RETENTION_SHORT_DAYS).toBe(30);
+    expect(mod.env.PII_RETENTION_MEDIUM_DAYS).toBe(90);
+    expect(mod.env.PII_RETENTION_ORPHAN_TOPUP_DAYS).toBe(180);
+    expect(mod.env.FINANCIAL_RECORD_RETENTION_DAYS).toBeNull();
+  });
+
+  it("PII retention env values are coerced to positive integers", async () => {
+    applyBase();
+    process.env.PII_RETENTION_SHORT_DAYS = "7";
+    process.env.PII_RETENTION_MEDIUM_DAYS = "30";
+    process.env.PII_RETENTION_ORPHAN_TOPUP_DAYS = "180";
+    process.env.FINANCIAL_RECORD_RETENTION_DAYS = "3650";
+    const mod = await importEnv();
+    expect(mod.env.PII_RETENTION_SHORT_DAYS).toBe(7);
+    expect(mod.env.PII_RETENTION_MEDIUM_DAYS).toBe(30);
+    expect(mod.env.PII_RETENTION_ORPHAN_TOPUP_DAYS).toBe(180);
+    expect(mod.env.FINANCIAL_RECORD_RETENTION_DAYS).toBe(3650);
+  });
+
+  it("PII retention medium must be strictly greater than short", async () => {
+    applyBase();
+    process.env.PII_RETENTION_SHORT_DAYS = "10";
+    process.env.PII_RETENTION_MEDIUM_DAYS = "5";
+    await expect(importEnv()).rejects.toThrow(/PII_RETENTION_MEDIUM_DAYS must be strictly greater/);
+  });
+
+  it("PII retention orphan topup must be strictly greater than medium", async () => {
+    applyBase();
+    process.env.PII_RETENTION_MEDIUM_DAYS = "90";
+    process.env.PII_RETENTION_ORPHAN_TOPUP_DAYS = "80";
+    await expect(importEnv()).rejects.toThrow(/PII_RETENTION_ORPHAN_TOPUP_DAYS must be strictly greater/);
   });
 });

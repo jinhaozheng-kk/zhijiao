@@ -1,6 +1,11 @@
 import "server-only";
 import { z } from "zod";
 
+const nullablePositiveIntEnv = z.preprocess(
+  (value) => (value === undefined || value === "" ? null : value),
+  z.coerce.number().int().min(1).nullable(),
+);
+
 // Plan 2 Hardening — Task 1 (C1 + C2): fail-fast server env validation.
 // Module-load side effect: any server bundle that touches env.ts first triggers
 // this. Missing or malformed env → throw → Next.js logs the issue at boot.
@@ -60,6 +65,12 @@ const Env = z
     // Plan 9 KP reconciler thresholds (kp:reconcile-pending CLI 用)
     KP_RECONCILE_AUTO_LINK_THRESHOLD: z.coerce.number().min(0).max(1).default(0.85),
     KP_RECONCILE_REVIEW_THRESHOLD:    z.coerce.number().min(0).max(1).default(0.6),
+
+    // Plan 6 PII governance retention buckets.
+    PII_RETENTION_SHORT_DAYS: z.coerce.number().int().min(1).default(30),
+    PII_RETENTION_MEDIUM_DAYS: z.coerce.number().int().min(1).default(90),
+    PII_RETENTION_ORPHAN_TOPUP_DAYS: z.coerce.number().int().min(1).default(180),
+    FINANCIAL_RECORD_RETENTION_DAYS: nullablePositiveIntEnv.default(null),
   })
   .refine(
     (e) => e.AI_USE_MOCK === "true" || (!!e.DASHSCOPE_API_KEY && !!e.DASHSCOPE_BASE_URL),
@@ -118,6 +129,22 @@ const Env = z
       path: ["KP_RECONCILE_REVIEW_THRESHOLD"],
       message:
         "KP_RECONCILE_REVIEW_THRESHOLD must be strictly less than KP_RECONCILE_AUTO_LINK_THRESHOLD",
+    },
+  )
+  .refine(
+    (e) => e.PII_RETENTION_MEDIUM_DAYS > e.PII_RETENTION_SHORT_DAYS,
+    {
+      path: ["PII_RETENTION_MEDIUM_DAYS"],
+      message:
+        "PII_RETENTION_MEDIUM_DAYS must be strictly greater than PII_RETENTION_SHORT_DAYS",
+    },
+  )
+  .refine(
+    (e) => e.PII_RETENTION_ORPHAN_TOPUP_DAYS > e.PII_RETENTION_MEDIUM_DAYS,
+    {
+      path: ["PII_RETENTION_ORPHAN_TOPUP_DAYS"],
+      message:
+        "PII_RETENTION_ORPHAN_TOPUP_DAYS must be strictly greater than PII_RETENTION_MEDIUM_DAYS",
     },
   );
 
