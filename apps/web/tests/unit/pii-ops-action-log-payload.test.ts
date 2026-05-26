@@ -25,6 +25,7 @@ describe("OpsActionLog payload guardrails", () => {
         modelCalls: 1,
         kpAliases: 1,
         kpReconcileMatches: 1,
+        variantGeneratedQuestions: 1,
         authIdentities: 1,
         otpRequests: 1,
       },

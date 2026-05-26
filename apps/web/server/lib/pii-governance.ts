@@ -9,6 +9,7 @@ export interface DeactivatePayload {
     modelCalls: number;
     kpAliases: number;
     kpReconcileMatches: number;
+    variantGeneratedQuestions: number;
     authIdentities: number;
     otpRequests: number;
   };
@@ -491,6 +492,10 @@ export async function deactivateUser(
       where: { reviewedByUserId: args.userId },
       data: { reviewedByUserId: null },
     });
+    const variantGeneratedQuestions = await tx.question.updateMany({
+      where: { source: "VARIANT_GENERATED", createdByUserId: args.userId },
+      data: { createdByUserId: null },
+    });
 
     await tx.user.update({
       where: { id: args.userId },
@@ -509,6 +514,7 @@ export async function deactivateUser(
         modelCalls: modelCalls.count,
         kpAliases: kpAliases.count,
         kpReconcileMatches: kpReconcileMatches.count,
+        variantGeneratedQuestions: variantGeneratedQuestions.count,
         authIdentities: authIdentities.count,
         otpRequests: otpRequests.count,
       },
@@ -563,6 +569,7 @@ async function buildDeactivatePlan(
       modelCalls: 0,
       kpAliases: 0,
       kpReconcileMatches: 0,
+      variantGeneratedQuestions: 0,
       authIdentities: 0,
       otpRequests: 0,
     },
@@ -610,6 +617,7 @@ async function buildDeactivatePlan(
     modelCalls,
     kpAliases,
     kpReconcileMatches,
+    variantGeneratedQuestions,
     authIdentities,
     otpRequests,
   ] = await Promise.all([
@@ -622,6 +630,9 @@ async function buildDeactivatePlan(
     prisma.modelCall.count({ where: { userId } }),
     prisma.kpAlias.count({ where: { createdByUserId: userId } }),
     prisma.kpReconcileMatch.count({ where: { reviewedByUserId: userId } }),
+    prisma.question.count({
+      where: { source: "VARIANT_GENERATED", createdByUserId: userId },
+    }),
     prisma.authIdentity.count({ where: { userId } }),
     phoneNumbers.length ? prisma.otpRequest.count({ where: { phone: { in: phoneNumbers } } }) : 0,
   ]);
@@ -636,6 +647,7 @@ async function buildDeactivatePlan(
         modelCalls,
         kpAliases,
         kpReconcileMatches,
+        variantGeneratedQuestions,
         authIdentities,
         otpRequests,
       },
