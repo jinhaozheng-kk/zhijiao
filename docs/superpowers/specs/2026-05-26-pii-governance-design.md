@@ -25,9 +25,9 @@
 - `app/api/auth/refresh/route.ts` `rotateSession` 后 `deletedAt` 校验 + 清 cookies
 - 3 个 CLI 脚本：`user-deactivate.ts` / `user-export.ts` / `pii-gc-sweep.ts`
 - 1 个静态页：`/support/deactivate` Server Component
-- 5 个 env + zod refine
+- 4 个 env + zod refine
 - `docs/ops/pii-scheduling.md`：外部 scheduler 配方
-- 13 个测试文件（integration + unit + 1 E2E）
+- 14 个测试文件（integration + unit + 1 E2E）
 - CLAUDE.md 更新：状态条目 + Merge 探针 35-41 + 候选 Plan 重排
 
 **显式 punt（写进本 spec + plan "不做" 清单）：**
@@ -120,17 +120,18 @@ model OpsActionLog {
 
 **`payload` 字段强约束（红线 #1）：** 仅放计数与非 PII 摘要，**绝不**放 phone / openid / unionId / rawBody / stemMd / requestJson / actualAnswerMd 任何字面值。spec §6.2 `pii-ops-action-log-payload.test.ts` regex 守门。
 
-### §2.5 5 个 env
+### §2.5 4 个 env
 
 ```ts
 PII_RETENTION_SHORT_DAYS:           z.coerce.number().int().min(1).default(30),    // OtpRequest / Session
 PII_RETENTION_MEDIUM_DAYS:          z.coerce.number().int().min(1).default(90),    // rawBody / TopupOrder ip+ua
 PII_RETENTION_ORPHAN_TOPUP_DAYS:    z.coerce.number().int().min(1).default(180),   // 孤儿 TopupOrder
 FINANCIAL_RECORD_RETENTION_DAYS:    z.coerce.number().int().nullable().default(null),  // null = 不自动删
-PII_GC_SWEEP_DRY_RUN:               z.coerce.boolean().default(false),
 ```
 
 zod refine：`MEDIUM > SHORT`；`ORPHAN > MEDIUM`；`FINANCIAL_RECORD_RETENTION_DAYS == null` 不报错也不报警告。
+
+**dry-run 通过 CLI flag 触发**（`--dry-run`），不走 env。env 路径会引入"配置-行为分离"的歧义（CLI flag 与 env 谁赢？）；单 CLI flag 路径更清晰。
 
 **`FINANCIAL_RECORD_RETENTION_DAYS = null` 设计意图：** 不在代码里写死"永久"的法律判断；当未来合规意见落地（如"PAID 订单保留 10 年"）时改 env 即可激活财务 sweeper（后续 plan 接），现在 Plan 6 不实现该 sweeper。
 
@@ -212,7 +213,7 @@ if (args.dryRun) {
 
 `previewDeactivateUser` 仅 `count()` / `select` 不修改任何行、不写 OpsActionLog；CLI stdout 打 payload。
 
-**为什么不走 "tx 内 throw 回滚"：** 实现上容易把"预览"和"执行"混成一条写路径；如果后面某步引入了 tx 外副作用（日志、文件写出、外部 API）dry-run 就不再真 dry-run。两条路径分离 + 共享 SQL predicate（spec §3.3 描述）。
+**为什么不走 "tx 内 throw 回滚"：** 实现上容易把"预览"和"执行"混成一条写路径；如果后面某步引入了 tx 外副作用（日志、文件写出、外部 API）dry-run 就不再真 dry-run。两条路径分离实现，共享 where 条件构造（`previewDeactivateUser` 用 `count()` / `select` 复用 §3.3 各步的 `where` clauses，避免预览与执行 predicate 漂移）。
 
 ### §3.3 执行序列（非 dryRun 路径，全程单 `prisma.$transaction`）
 
@@ -430,12 +431,13 @@ function maskPhone(s: string): string {
 }
 
 function maskWechatId(s: string): string {
+  // 同时用于 providerUserId (openid) 与 unionId 两类 WECHAT 标识
   if (s.length <= 8) return "***";
   return s.slice(0, 3) + "****" + s.slice(-3);
 }
 ```
 
-不输出明文 phone/openid——本人申请副本时 OPS 还要做身份核验，全明文反而是 PII 二次暴露。本人记得自己手机号尾号，masked 足够确认账号身份。
+不输出明文 phone/openid/unionId——本人申请副本时 OPS 还要做身份核验，全明文反而是 PII 二次暴露。本人记得自己手机号尾号，masked 足够确认账号身份。
 
 ### §4.4 CLI 形态 + 输出安全
 
@@ -487,7 +489,7 @@ export async function sweepPii(
 | # | Sweeper | Bucket | Predicate | Action |
 |---|---|---|---|---|
 | 1 | `sweepOtpRequests` | short | `COALESCE(consumedAt, expiredAt) IS NOT NULL AND COALESCE(consumedAt, expiredAt) < now - SHORT_DAYS` | DELETE 行 |
-| 2 | `sweepRevokedSessions` | short | `COALESCE(revokedAt, expiresAt) < now - SHORT_DAYS` | DELETE 行 |
+| 2 | `sweepInactiveSessions` | short | `COALESCE(revokedAt, expiresAt) < now - SHORT_DAYS` | DELETE 行 |
 | 3 | `sweepWechatPayEventBodies` | medium | `createdAt < now - MEDIUM_DAYS AND rawBody IS NOT NULL` | UPDATE rawBody=null（行留作 outTradeNo/transactionId 审计；幂等再跑 affected=0） |
 | 4 | `sweepTopupOrderPii` | medium | `status IN (PAID, FAILED, EXPIRED) AND updatedAt < now - MEDIUM_DAYS AND (ipCreated IS NOT NULL OR userAgent IS NOT NULL)` | UPDATE ipCreated=null, userAgent=null |
 | 5 | `sweepOrphanTopupOrders` | orphan | `status = EXPIRED AND paidAt IS NULL AND createdAt < now - ORPHAN_DAYS AND NOT EXISTS (SELECT 1 FROM credit_ledger WHERE refTable='topup_orders' AND refId=topup_orders.id)` | DELETE 行 |
@@ -541,7 +543,7 @@ UPDATE wechat_pay_events SET raw_body = null
 WHERE id IN (SELECT id FROM targets)
 ```
 
-CLI 见 `hasMore=true` 自动续跑（while 循环最多 N 轮，N 写在 env `PII_GC_MAX_BATCHES=10` 默认 10 兜底防失控）。
+CLI 见 `hasMore=true` 自动续跑（while 循环最多 `MAX_BATCHES=10` 兜底防失控；hardcoded 常量，真遇极端 case 再 env 化）。
 
 ### §5.4 OpsActionLog 写入
 
@@ -664,8 +666,8 @@ ICP 备案号：{{ICP_PLACEHOLDER}}
 
 | 测试 | 类型 | 覆盖 |
 |---|---|---|
-| `pii-deactivate-user.test.ts` | integration | happy path 11 步顺序 / 幂等（重跑 `alreadyDeactivated` 短路）/ Restrict 不阻挡（先删 entry 后 cascade 到 group）/ AuthIdentity 删后 OtpRequest by phone 删 / PHONE only providerScope=GLOBAL 不撞 WECHAT openid |
-| `pii-deactivate-user-tx-atomicity.test.ts` | integration | 单步抛错全 rollback：mock step 11 抛 → 验 ErrorBookEntry / USER_ADHOC Question 未删、AuthIdentity 未删、User.deletedAt 未变、OpsActionLog 未写 |
+| `pii-deactivate-user.test.ts` | integration | happy path 12 步顺序 / 幂等（重跑 `alreadyDeactivated` 短路）/ Restrict 不阻挡（先删 entry 后 cascade 到 group）/ AuthIdentity 删后 OtpRequest by phone 删 / PHONE only providerScope=GLOBAL 不撞 WECHAT openid |
+| `pii-deactivate-user-tx-atomicity.test.ts` | integration | 单步抛错全 rollback：mock step 12 抛 → 验 ErrorBookEntry / USER_ADHOC Question 未删、AuthIdentity 未删、User.deletedAt 未变、OpsActionLog 未写 |
 | `pii-deactivate-user-dryrun.test.ts` | integration | dryRun → `previewDeactivateUser` 纯读，count 正确；DB 行 0 改动；0 OpsActionLog 写入 |
 | `pii-export-user-data.test.ts` | integration | 输出 JSON 含全部白名单字段；不含 `rawBody / requestJson / responseJson / ipCreated / userAgent`（regex `expect(JSON.stringify(result)).not.toMatch(/rawBody\|requestJson\|responseJson\|ipCreated\|userAgent/)`）；ModelCall 摘要 5 字段限制；`providerUserIdMasked` 格式 |
 | `pii-deleted-user-auth-guard.test.ts` | integration | `createContext`：valid access token + `user.deletedAt != null` → `auth=null, authError="USER_DEACTIVATED"`；`authedProcedure` 自动 throw UNAUTHORIZED；`refresh` route：deactivated user → 401 USER_DEACTIVATED + 清 cookies |
@@ -676,7 +678,7 @@ ICP 备案号：{{ICP_PLACEHOLDER}}
 | `pii-gc-sweep-dryrun.test.ts` | integration | dryRun=true 对 5 个 sweeper 都 0 行改动；返 count 正确；不写 OpsActionLog |
 | `pii-gc-sweep-batching.test.ts` | integration | LIMIT=10000 + `hasMore=true` 续跑：seed 25k 行 → 第一批 affected=10000, hasMore=true → 第二/三批继续 → 第四批 affected=0 收尾 |
 | `pii-ops-action-log-payload.test.ts` | unit | payload regex 守门：`expect(JSON.stringify(payload)).not.toMatch(/(\d{11}\|wx_[a-zA-Z0-9]+\|stem_md\|raw_body)/)` 兜底，且字段白名单严格枚举 |
-| `pii-governance-env.test.ts` | unit | 5 env zod refine：`SHORT=10, MEDIUM=5` → throw "MEDIUM > SHORT"；`ORPHAN=80, MEDIUM=90` → throw；`FINANCIAL_RECORD_RETENTION_DAYS=null` 不报错；boolean coerce `DRY_RUN="1" → true` |
+| `pii-governance-env.test.ts` | unit | 4 env zod refine：`SHORT=10, MEDIUM=5` → throw "MEDIUM > SHORT"；`ORPHAN=80, MEDIUM=90` → throw；`FINANCIAL_RECORD_RETENTION_DAYS=null` 不报错 |
 | `support-deactivate-page.spec.ts` | E2E | 静态页 200 / 含 PIPL Art 47 字串 / 含监护人提示 / 占位常量显示（提醒未来 PR 替换；上线探针 #35 关联）/ 不含"退款承诺"或"全额退款"字符串 |
 
 **关键反向守门红线：**
@@ -693,7 +695,7 @@ ICP 备案号：{{ICP_PLACEHOLDER}}
 | `VariantGroup.entry` Restrict → Cascade 误删 ErrorBookEntry 时连带删未预期 group | 业务代码里有"删 entry 但保 group"语义 | migration 前 `grep -rn "errorBookEntry.delete" apps/web packages` 确认所有 entry.delete 调用都期望 cascade group；目前 0 命中（仅 §3.3 step 3 一处新加） |
 | `WechatPayEvent.rawBody` 改 nullable 后既有 webhook 处理代码假定非空挂掉 | `applyWechatPayNotify` 内 `event.rawBody.length` 之类 | migration 前 grep `rawBody`：目前仅在 audit 写入和测试 fixture 里用；读取路径用 `verifyNotify` 入参的 freshly-received body 不读 row；Plan 6 实施时再次 grep 验 |
 | `createContext` 加 deletedAt 查询多一次 DB | 性能微影响 | 已在 `findUnique({ select: { isMinor, deletedAt } })` 同一查询里加字段，无额外 round trip |
-| 注销 tx 太长（11 步）超 `idle_in_transaction_timeout` | 用户内容 >10k 行的极端 case | 默认 timeout=0 不设；当前 0 用户不存在；未来真出现走分批拆 tx |
+| 注销 tx 太长（12 步）超 `idle_in_transaction_timeout` | 用户内容 >10k 行的极端 case | 默认 timeout=0 不设；当前 0 用户不存在；未来真出现走分批拆 tx |
 | `prisma.user.delete()` 被未来代码误调用导致级联 | 误删整账户级 | ErrorBookEntry.user 保持 Restrict → 任何 user.delete() 命中 Restrict 会抛；CLAUDE.md 红线"Plan 6 后所有用户清理走 deactivateUser" |
 | GC sweep 跑慢锁表 | 量大时 affected=百万 | §5.3 LIMIT=10000 + hasMore 续跑；CLI 默认 max 10 batch 兜底；超出则 OPS 手动 |
 | dryRun preview 与 actual 不一致（race） | 高并发场景 | 当前 0 用户不存在；文档化"dryRun 是粗略预估" |
@@ -706,7 +708,7 @@ ICP 备案号：{{ICP_PLACEHOLDER}}
 
 - migration 风险：低（1 处 onDelete + 1 处 nullable + 1 新表 + 5 字段，全 Prisma 5 原生支持）
 - 跨包改动：中（packages/auth + apps/web 同步加 USER_DEACTIVATED；测试需双向覆盖）
-- 测试矩阵：高（13 个测试文件，PII 反向断言密度大）
+- 测试矩阵：高（14 个测试文件，PII 反向断言密度大）
 - 数据风险：低（0 真实用户；dryRun 双路径保命）
 
 ---
@@ -733,7 +735,7 @@ ICP 备案号：{{ICP_PLACEHOLDER}}
 
 - 所有 Task 1-N 步骤勾完（task 数量由实现 plan 划分）
 - `pnpm.cmd exec turbo typecheck --force` 全绿
-- `pnpm.cmd exec turbo test --force` 全绿（含 Plan 6 新加 13 测试）
+- `pnpm.cmd exec turbo test --force` 全绿（含 Plan 6 新加 14 测试）
 - `pnpm.cmd --filter @zhijiao/web exec next build` exit 0
 - `pnpm.cmd --filter @zhijiao/web exec playwright test` 全绿（含 `support-deactivate-page.spec.ts`）
 - CLAUDE.md 加 Plan 6 条目 + "PII 治理现状" 段 + Merge 探针 35-41 + 候选 Plan 重排（Plan 5/7/10/11/12/13/14）
