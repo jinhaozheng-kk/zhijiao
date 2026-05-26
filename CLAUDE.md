@@ -88,6 +88,7 @@
 - **Plan 6**（PII 治理：用户注销 / 数据导出 / 去标识化 / GC sweep / support 静态页 / OPS CLI + 外部 scheduler 文档）—— 见 `docs/superpowers/plans/2026-05-26-pii-governance.md`，spec 在 `docs/superpowers/specs/2026-05-26-pii-governance-design.md`
 - **Plan 8**（答疑题面持久化 + ErrorAnalysisCard 接入答疑闭环：tutor.ask 接受自由输入并 upsert USER_ADHOC Question + 返 questionId + TutorForm 接 ErrorAnalysisCard）—— 见 `docs/superpowers/plans/2026-05-25-tutor-question-bank-and-error-card-integration.md`，spec 在 `docs/superpowers/specs/2026-05-25-tutor-question-bank-and-error-card-integration-design.md`
 - **Plan 9**（知识点 reconciler：hint→KP 结构化映射 + KpReconcileMatch 审计队列 + CLI 异步 LLM/review）—— 见 `docs/superpowers/plans/2026-05-25-kp-reconciler.md`，spec 在 `docs/superpowers/specs/2026-05-25-kp-reconciler-design.md`
+- **Plan 12**（VariantItem 升格成独立 Question：VARIANT_GENERATED Question + variant question KP link + backfill CLI + owner-only access）—— 见 `docs/superpowers/plans/2026-05-27-variant-question-promotion.md`，spec 在 `docs/superpowers/specs/2026-05-27-variant-question-promotion-design.md`
 
 **计费现状**：
 - `packages/billing` 新建：ensureWallet / chargeForAction（predicate-on-update + idemKey 防重，原子化）/ compensate（写 COMPENSATION ledger + refId 指回 DEBIT）/ applyWechatPayNotify（P2002 idemKey 重读 → ALREADY_PAID；P2002 transactionId 重读 → DUPLICATE_TRANSACTION_ID；spec §4.1 状态机；FAILED→PAID 拒绝走 TERMINAL_STATE_CONFLICT）/ expireStaleOrders / adminAdjust（OPS 调账；负 delta 也走 predicate-on-update 防透支 → InsufficientBalanceForAdjustError）/ sumMonthlyTopupCents（Asia/Shanghai 自然月 + CREATED+PENDING by createdAt + PAID by paidAt）
@@ -141,7 +142,7 @@
 - `QuestionKPLink` 仍是唯一权威映射，新表 `KpAlias`（subject 内 normalizedAlias 唯一）+ `KpReconcileMatch`（hint→kp 审计队列）做支撑
 - `reconcileHintsSync(prisma, { questionId, hints, source, sourceRefType, sourceRefId })` 在 `tutor.ask` / `error.diagnose` / `variant.generateForEntry` 三处 body 接入，**await + try/catch**，失败不破坏主流程
 - 同步只跑 EXACT (KP.name/code) → ALIAS 表 → 命中即 LINKED + upsert QuestionKPLink（weight=max(existing, 1.0)）
-- 关键：`sourceRefType=VARIANT_ITEM` 永不自动写 parent QuestionKPLink（变式题 hint 可能跨原题域），命中 EXACT/ALIAS 也只到 PENDING_REVIEW(reviewReason=VARIANT_TO_PARENT_NEEDS_REVIEW)；判分流条件是 sourceRefType 不是 source
+- 关键：Plan 12 后 `sourceRefType=VARIANT_ITEM` 分两路：`VariantItem.questionId` 非空时 EXACT/ALIAS 直接 LINKED 到 variant Question 的 `QuestionKPLink`；`questionId` 为空时仍走旧 `PENDING_REVIEW(reviewReason=VARIANT_TO_PARENT_NEEDS_REVIEW)` migration safety。永不自动污染 parent QuestionKPLink；判分流条件是 sourceRefType 不是 source
 - 异步 LLM 走 `pnpm.cmd --filter @zhijiao/web kp:reconcile-pending [-- --limit N]`，三档 (≥0.85 / ≥0.6 / <0.6) 分流 LINKED / PENDING_REVIEW(LLM_CONFIDENCE_BAND) / DROPPED；matchId 对齐写回（不靠 rawHint）；LLM 漏返/重复 retry 2 次再 PARSE_FAILED；多返不属于本批 matchId 静默忽略
 - 人工 review 走 `pnpm.cmd --filter @zhijiao/web kp:review`，单键 a/r/m <code>/alias <code>/s/q；service 层 `apps/web/server/lib/kp-reconcile.ts` 的 `approveMatch / rejectMatch / remapMatch / learnAliasAndLink / unlinkIfOrphan` 5 个函数可被未来 `/ops/kp-reconcile` Web 页面复用
 - alias 冲突防御：`learnAliasAndLink` 检测 `(subjectId, normalizedAlias)` 已映射到不同 KP → 抛 `KpAliasConflictError`，不静默覆盖
@@ -154,11 +155,17 @@
 - CLI 暴露 LINKED→REJECTED 反悔入口（只 export `unlinkIfOrphan` helper，文档化清理 SQL）
 - cron 自动跑 `kp:reconcile-pending`（成本不可见，暂手动）
 - KP 树扩充（独立 plan）
-- VariantItem 升格成独立 Question（独立 plan / Plan 12 题库去重时考虑）
+
+**VariantItem 升格现状**（Plan 12）：
+- `VariantItem.questionId` 是 nullable 过渡字段，指向 `Question(source="VARIANT_GENERATED")`；新生成变式同事务双写 Question + VariantItem。
+- `variant:backfill-questions` 负责历史 VariantItem 补 Question；backfill 后 `variant_items.question_id IS NULL` 应为 0。
+- `reconcileHintsSync` 对 `sourceRefType=VARIANT_ITEM` 两阶段分流：有 `questionId` 直接 LINKED 到 variant Question；无 `questionId` 保留 `PENDING_REVIEW(VARIANT_TO_PARENT_NEEDS_REVIEW)` migration safety。
+- `VARIANT_GENERATED` 与 `USER_ADHOC` 同为 owner-only；注销时 scrub `createdByUserId=null`，Question 行保留作统计样本。
+- 历史 `VARIANT_TO_PARENT_NEEDS_REVIEW` 行升级为 LINKED + 补 QuestionKPLink 显式 punt 到 cleanup plan。
 
 **PII 治理现状**（Plan 6）：
 - OPS CLI：`user:deactivate <userId> [--reason TEXT] [--dry-run]` / `user:export <userId> --out <path.json>` / `pii:gc-sweep [--bucket short|medium|orphan|all] [--dry-run]`；全部走 shared service，不引入 apps/web 内置 cron
-- 注销：User 行 soft-delete 作 tombstone；硬删 `ErrorBookEntry`（级联 `VariantGroup`/`VariantItem`）和用户 `USER_ADHOC Question`；删除 `AuthIdentity` + PHONE/GLOBAL 对应 `OtpRequest`；scrub Session / TopupOrder / ModelCall / KpAlias / KpReconcileMatch PII；财务金额、订单号、ledger 保留
+- 注销：User 行 soft-delete 作 tombstone；硬删 `ErrorBookEntry`（级联 `VariantGroup`/`VariantItem`）和用户 `USER_ADHOC Question`；删除 `AuthIdentity` + PHONE/GLOBAL 对应 `OtpRequest`；scrub Session / TopupOrder / ModelCall / KpAlias / KpReconcileMatch PII；Plan 12 后额外 scrub `VARIANT_GENERATED Question.createdByUserId=null` 但保留 Question 行；财务金额、订单号、ledger 保留
 - 导出：`exportUserData` 只输出白名单 JSON；`AuthIdentity.providerUserId` 仅 masked；显式排除 `rawBody` / `requestJson` / `responseJson` / `ipCreated` / `userAgent` / 本地 outPath
 - GC：short bucket 删除过期 OTP/Session；medium bucket scrub `WechatPayEvent.rawBody` 与 `TopupOrder.ipCreated/userAgent`；orphan bucket 删除过期未支付且无 ledger 引用的订单。外部 scheduler 配方在 `docs/ops/pii-scheduling.md`
 - Auth guard：`USER_DEACTIVATED` 已进入 auth errors；`createContext` 对 deleted user 返回 `auth=null`，refresh route 清 cookies 并 401；注销后同手机号可重新注册新 User
@@ -230,12 +237,18 @@ pnpm --filter @zhijiao/web  test -- tests/integration/auth-register-race.test.ts
 39. **USER_DEACTIVATED auth guard 在位**（Plan 6 §3）：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/pii-deleted-user-auth-guard.test.ts` 应全绿；refresh route 应 401 + 清 cookies
 40. **OpsActionLog payload 不含 PII**（Plan 6 §2.4）：`pnpm.cmd --filter @zhijiao/web test -- tests/unit/pii-ops-action-log-payload.test.ts` 应全绿；禁止 phone/openid/rawBody/requestJson/outPath 等进入 payload
 41. **PII GC dry-run smoke**（Plan 6 §5）：`pnpm.cmd --filter @zhijiao/web pii:gc-sweep --dry-run` 应打印 results 且不写 `OpsActionLog`
+42. **VariantItem.questionId FK/unique 已落库**（Plan 12 §2）：`docker exec zhijiao-postgres psql -U postgres -d zhijiao -c "\d variant_items"` 应见 `question_id`、`variant_items_question_id_key`、`ON DELETE RESTRICT`
+43. **VariantItem backfill 0 残留**（Plan 12 §4.4）：三条探针均应 count=0：`variant_items WHERE question_id IS NULL`；`variant_items JOIN questions WHERE q.source IS DISTINCT FROM 'VARIANT_GENERATED'`；`q.created_by_user_id IS NOT NULL AND q.created_by_user_id != vg.user_id`
+44. **Promoted variant KP link 不污染 parent**（Plan 12 R2/R5）：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/kp-reconcile-sync-variant-promoted.test.ts` 应全绿，且断言 `KpReconcileMatch.questionId === QuestionKPLink.questionId === VariantItem.questionId`
+45. **VARIANT_GENERATED owner-only**（Plan 12 §6）：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/variant-question-access-owner-only.test.ts` 应全绿；cross-user 返回 `NOT_FOUND / QUESTION_NOT_FOUND` 且不写 DEBIT
+46. **Backfill CLI smoke**（Plan 12 §4）：`pnpm.cmd --filter @zhijiao/web variant:backfill-questions --dry-run` 应 exit 0；脚本不得 import `server/lib/question.js` 或 `server-only`
 
-**下一步候选 Plan**（Plan 4 + Plan 6 + Plan 8 + Plan 9 已落地）：
+**下一步候选 Plan**（Plan 4 + Plan 6 + Plan 8 + Plan 9 + Plan 12 已落地）：
 - Plan 5: 真接阿里云 SMS + 微信公众号（ICP 备案通过后；**且 Plan 2 Hardening 必须先 ship**；替换 `RealSmsAdapter` / `RealWechatH5Adapter` 的 stub 实现）
 - Plan 7: 真接微信支付 V3 API（需 ICP 备案 + 商户号 + APIv3 + 商户证书；激活 `RealWechatPayAdapter.unifiedOrder` + `verifyNotify`）—— **Plan 3 prod ship prereq**
 - Plan 14: 未成年人特殊保护 / PIPL 完版（<14 监护人代办、数据副本/删除请求 SLA 完整化、通用 PII 扫描与运营 SOP）
 - Plan 10: 教师端"分层作业"基于错题本扩展（教师可看班级错题热度图，按错因 / KP 分类布置分层作业 —— **Plan 9 接通后**有 KP id 数据可用）
 - Plan 11: 学情画像 / 趋势报告（学生掌握度 + 薄弱点 + 趋势画像；家长简版报告 —— **Plan 9 接通后**有 KP id 数据可用）
-- Plan 12: 题库去重 / PUBLISHED 复用 / 统计归并 + VariantItem 升格为独立 Question（Plan 8 §6.2 + Plan 9 §10.3 punt）
+- Plan 12 cleanup: `VariantItem.questionId NOT NULL` + 下线 nullable reconcile 分支 + 处理历史 `VARIANT_TO_PARENT_NEEDS_REVIEW` 行
+- Plan 15: USER_ADHOC × PUBLISHED canonical dedup / 题库去重 / PUBLISHED 复用 / 统计归并（Plan 8 §6.2 punt）
 - Plan 13: KP 树扩充（small / middle / high school math KP curation；当前 seed 仅 4 个 math KP，alias 表长得慢，Plan 9 上线一段时间后 UNMATCHED → DROPPED 比例高）
