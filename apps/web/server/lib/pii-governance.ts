@@ -96,6 +96,64 @@ export interface UserDataExport {
   }>;
 }
 
+export type SweepBucket = "short" | "medium" | "orphan";
+
+export interface SweepResult {
+  bucket: SweepBucket;
+  table: string;
+  affected: number;
+  dryRun: boolean;
+  hasMore: boolean;
+}
+
+export async function sweepPii(
+  prisma: PrismaClient,
+  args: {
+    bucket: SweepBucket | "all";
+    shortDays: number;
+    mediumDays: number;
+    orphanDays: number;
+    now?: Date;
+    dryRun?: boolean;
+    operatorId?: string | null;
+    initiatorRef?: string;
+  },
+): Promise<SweepResult[]> {
+  const now = args.now ?? new Date();
+  const dryRun = args.dryRun ?? false;
+  const buckets: SweepBucket[] =
+    args.bucket === "all" ? ["short", "medium", "orphan"] : [args.bucket];
+  const results: SweepResult[] = [];
+
+  for (const bucket of buckets) {
+    const bucketResults =
+      bucket === "short"
+        ? await sweepShort(prisma, { now, days: args.shortDays, dryRun })
+        : bucket === "medium"
+          ? await sweepMedium(prisma, { now, days: args.mediumDays, dryRun })
+          : await sweepOrphan(prisma, { now, days: args.orphanDays, dryRun });
+    results.push(...bucketResults);
+    if (!dryRun) {
+      await prisma.opsActionLog.create({
+        data: {
+          kind:
+            bucket === "short"
+              ? "GC_SWEEP_SHORT"
+              : bucket === "medium"
+                ? "GC_SWEEP_MEDIUM"
+                : "GC_SWEEP_ORPHAN",
+          initiatorId: args.operatorId ?? null,
+          initiatorRef: args.initiatorRef ?? "cli:unknown-host:unknown-user",
+          targetUserId: null,
+          payload: { results: bucketResults } as unknown as Prisma.InputJsonObject,
+        },
+      });
+    }
+  }
+
+  return results;
+}
+
 export async function exportUserData(
   prisma: DbClient,
   userId: string,
@@ -242,6 +300,121 @@ export async function exportUserData(
     userAdhocQuestions,
     modelCalls,
   };
+}
+
+function cutoff(now: Date, days: number): Date {
+  return new Date(now.getTime() - days * 86_400_000);
+}
+
+async function sweepShort(
+  prisma: PrismaClient,
+  args: { now: Date; days: number; dryRun: boolean },
+): Promise<SweepResult[]> {
+  const before = cutoff(args.now, args.days);
+  const otpWhere = {
+    OR: [
+      { consumedAt: { not: null, lt: before } },
+      { consumedAt: null, expiredAt: { not: null, lt: before } },
+    ],
+  } satisfies Prisma.OtpRequestWhereInput;
+  const sessionWhere = {
+    OR: [
+      { revokedAt: { not: null, lt: before } },
+      { revokedAt: null, expiresAt: { lt: before } },
+    ],
+  } satisfies Prisma.SessionWhereInput;
+
+  const otpCount = args.dryRun
+    ? await prisma.otpRequest.count({ where: otpWhere })
+    : (await prisma.otpRequest.deleteMany({ where: otpWhere })).count;
+  const sessionCount = args.dryRun
+    ? await prisma.session.count({ where: sessionWhere })
+    : (await prisma.session.deleteMany({ where: sessionWhere })).count;
+
+  return [
+    { bucket: "short", table: "otp_requests", affected: otpCount, dryRun: args.dryRun, hasMore: false },
+    { bucket: "short", table: "sessions", affected: sessionCount, dryRun: args.dryRun, hasMore: false },
+  ];
+}
+
+async function sweepMedium(
+  prisma: PrismaClient,
+  args: { now: Date; days: number; dryRun: boolean },
+): Promise<SweepResult[]> {
+  const before = cutoff(args.now, args.days);
+  const rawWhere = {
+    createdAt: { lt: before },
+    rawBody: { not: null },
+  } satisfies Prisma.WechatPayEventWhereInput;
+  const topupWhere = {
+    status: { in: ["PAID", "FAILED", "EXPIRED"] },
+    updatedAt: { lt: before },
+    OR: [{ ipCreated: { not: null } }, { userAgent: { not: null } }],
+  } satisfies Prisma.TopupOrderWhereInput;
+
+  const rawCount = args.dryRun
+    ? await prisma.wechatPayEvent.count({ where: rawWhere })
+    : (await prisma.wechatPayEvent.updateMany({ where: rawWhere, data: { rawBody: null } })).count;
+  const topupCount = args.dryRun
+    ? await prisma.topupOrder.count({ where: topupWhere })
+    : (await prisma.topupOrder.updateMany({
+        where: topupWhere,
+        data: { ipCreated: null, userAgent: null },
+      })).count;
+
+  return [
+    { bucket: "medium", table: "wechat_pay_events", affected: rawCount, dryRun: args.dryRun, hasMore: false },
+    { bucket: "medium", table: "topup_orders", affected: topupCount, dryRun: args.dryRun, hasMore: false },
+  ];
+}
+
+async function sweepOrphan(
+  prisma: PrismaClient,
+  args: { now: Date; days: number; dryRun: boolean },
+): Promise<SweepResult[]> {
+  const before = cutoff(args.now, args.days);
+  if (args.dryRun) {
+    const rows = await prisma.$queryRaw<Array<{ count: bigint }>>`
+      SELECT COUNT(*)::bigint AS count
+      FROM "topup_orders" t
+      WHERE t."status" = 'EXPIRED'
+        AND t."paid_at" IS NULL
+        AND t."created_at" < ${before}
+        AND NOT EXISTS (
+          SELECT 1 FROM "credit_ledger" l
+          WHERE l."ref_table" = 'topup_orders' AND l."ref_id" = t."id"
+        )
+    `;
+    return [
+      {
+        bucket: "orphan",
+        table: "topup_orders_orphan",
+        affected: Number(rows[0]?.count ?? 0),
+        dryRun: true,
+        hasMore: false,
+      },
+    ];
+  }
+
+  const affected = await prisma.$executeRaw`
+    DELETE FROM "topup_orders" t
+    WHERE t."status" = 'EXPIRED'
+      AND t."paid_at" IS NULL
+      AND t."created_at" < ${before}
+      AND NOT EXISTS (
+        SELECT 1 FROM "credit_ledger" l
+        WHERE l."ref_table" = 'topup_orders' AND l."ref_id" = t."id"
+      )
+  `;
+  return [
+    {
+      bucket: "orphan",
+      table: "topup_orders_orphan",
+      affected,
+      dryRun: false,
+      hasMore: false,
+    },
+  ];
 }
 
 export async function previewDeactivateUser(
