@@ -10,7 +10,12 @@ import { env } from "./env.js";
 // before chargedProcedure / wallet routes / wechat-notify can emit.
 import "./logger.js";
 
-export type AuthError = "ACCESS_EXPIRED" | "ACCESS_INVALID" | "NO_SESSION" | "SESSION_REVOKED";
+export type AuthError =
+  | "ACCESS_EXPIRED"
+  | "ACCESS_INVALID"
+  | "NO_SESSION"
+  | "SESSION_REVOKED"
+  | "USER_DEACTIVATED";
 
 // Plan 3 Task 8: isMinor lives on ctx.auth (not the JWT). JWT shape stays
 // stable so already-issued tokens keep working; createContext pays one
@@ -87,9 +92,13 @@ export async function createContext({ req, resHeaders }: FetchCreateContextFnOpt
         // unknown account top up freely.
         const user = await prisma.user.findUnique({
           where: { id: v.claims.userId },
-          select: { isMinor: true },
+          select: { isMinor: true, deletedAt: true },
         });
-        auth = { ...v.claims, isMinor: user?.isMinor ?? true };
+        if (user?.deletedAt != null) {
+          authError = "USER_DEACTIVATED";
+        } else {
+          auth = { ...v.claims, isMinor: user?.isMinor ?? true };
+        }
       }
     } else {
       authError = v.reason;

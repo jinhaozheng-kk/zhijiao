@@ -6,7 +6,7 @@ import {
   AuthError, COOKIE_AT,
   takeRule, RedisRateLimitStore, RULE_REFRESH, RateLimitBackendDownError,
 } from "@zhijiao/auth";
-import { Persona } from "@prisma/client";
+import { Persona, SessionRevokeReason } from "@prisma/client";
 import { env } from "@/server/env";
 import { redis } from "@/lib/redis";
 
@@ -53,6 +53,16 @@ export async function POST(req: Request) {
       userAgent: req.headers.get("user-agent") ?? null,
     });
     const user = await prisma.user.findUniqueOrThrow({ where: { id: userId }, include: { roles: true } });
+    if (user.deletedAt != null) {
+      await prisma.session.update({
+        where: { id: sessionId },
+        data: { revokedAt: new Date(), revokedReason: SessionRevokeReason.ADMIN_REVOKED },
+      });
+      const res = json401("USER_DEACTIVATED");
+      res.headers.append("Set-Cookie", clearCookie(COOKIE_AT, "/"));
+      res.headers.append("Set-Cookie", clearCookie(COOKIE_RT, "/api/auth"));
+      return res;
+    }
     const access = await signAccess(
       { userId, sessionId, persona: user.persona as Persona, roles: user.roles.map(r => r.role) as never },
       env.ACCESS_JWT_SECRET,

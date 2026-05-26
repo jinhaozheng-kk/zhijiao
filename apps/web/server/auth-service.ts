@@ -5,6 +5,7 @@ import {
   signAccess, createSession, buildAccessCookie, buildRefreshCookie,
   putRegisterPayload, buildRegisterCookie,
   type AccessClaims,
+  AuthError,
 } from "@zhijiao/auth";
 import { defaultRouteFor } from "@zhijiao/domain";
 import { appendSetCookie } from "./cookie-utils.js";
@@ -21,6 +22,9 @@ export async function issueSessionAndCookies(opts: {
     where: { id: opts.userId },
     include: { roles: true },
   });
+  if (user.deletedAt != null) {
+    throw new AuthError("USER_DEACTIVATED");
+  }
   const { sessionId, refreshToken } = await createSession(opts.prisma, opts.userId, {
     ipCreated: opts.ip ?? null, userAgent: opts.ua ?? null,
   });
@@ -43,7 +47,7 @@ export async function findUserByPhone(prisma: PrismaClient, phone: string) {
   const id = await prisma.authIdentity.findUnique({
     where: { uniq_identity: { provider: AuthProvider.PHONE, providerScope: "GLOBAL", providerUserId: phone } },
   });
-  return id ? prisma.user.findUnique({ where: { id: id.userId } }) : null;
+  return id ? prisma.user.findFirst({ where: { id: id.userId, deletedAt: null } }) : null;
 }
 
 export async function loginOrPrepareRegisterByWechat(opts: {
@@ -61,14 +65,26 @@ export async function loginOrPrepareRegisterByWechat(opts: {
     where: { uniq_identity: { provider: AuthProvider.WECHAT_H5, providerScope: opts.appId, providerUserId: opts.openid } },
   });
   if (hit) {
-    const { defaultRoute } = await issueSessionAndCookies({
-      prisma: opts.prisma, userId: hit.userId, resHeaders: opts.resHeaders, ip: opts.ip, ua: opts.ua,
+    const user = await opts.prisma.user.findFirst({
+      where: { id: hit.userId, deletedAt: null },
+      select: { id: true },
     });
-    return { status: "logged_in", defaultRoute };
+    if (user) {
+      const { defaultRoute } = await issueSessionAndCookies({
+        prisma: opts.prisma, userId: hit.userId, resHeaders: opts.resHeaders, ip: opts.ip, ua: opts.ua,
+      });
+      return { status: "logged_in", defaultRoute };
+    }
   }
   // unionId 合并：找其他 WECHAT_* identity
   if (opts.unionid) {
-    const sibling = await opts.prisma.authIdentity.findFirst({ where: { provider: { in: [AuthProvider.WECHAT_H5, AuthProvider.WECHAT_OPEN, AuthProvider.WECHAT_MINIAPP] }, unionId: opts.unionid } });
+    const sibling = await opts.prisma.authIdentity.findFirst({
+      where: {
+        provider: { in: [AuthProvider.WECHAT_H5, AuthProvider.WECHAT_OPEN, AuthProvider.WECHAT_MINIAPP] },
+        unionId: opts.unionid,
+        user: { deletedAt: null },
+      },
+    });
     if (sibling) {
       await opts.prisma.authIdentity.create({
         data: { userId: sibling.userId, provider: AuthProvider.WECHAT_H5, providerScope: opts.appId, providerUserId: opts.openid, unionId: opts.unionid, metadata: opts.profile as object | undefined },
