@@ -85,6 +85,7 @@
 - **Plan 2 Hardening**（env validator + 原子化 refresh/OTP + 会话吊销即时生效 + bind 身份重校验 + register/refresh 限频接入 + race tests + 跨 package 测试 DB 隔离 + 仓库卫生）—— 见 `docs/superpowers/plans/2026-05-20-plan2-hardening.md`，spec 在 `docs/superpowers/specs/2026-05-20-plan2-hardening-design.md`
 - **Plan 3**（Credit 计费 + 微信支付 V3 沙箱：Mock 主路径 + Real V3 骨架 + chargedProcedure + 未成年月度上限 + OPS 调账 + pino 结构化日志）—— 见 `docs/superpowers/plans/2026-05-21-credit-and-wechat-pay-sandbox.md`，spec 在 `docs/superpowers/specs/2026-05-21-credit-and-wechat-pay-sandbox-design.md`
 - **Plan 4**（举一反三 + 错因分析：ErrorBookEntry + VariantGroup + 三阶变式 + chargeMiddleware 抽取 + E2E 覆盖闭环）—— 见 `docs/superpowers/plans/2026-05-23-variant-and-error-analysis.md`，spec 在 `docs/superpowers/specs/2026-05-23-variant-and-error-analysis-design.md`
+- **Plan 6**（PII 治理：用户注销 / 数据导出 / 去标识化 / GC sweep / support 静态页 / OPS CLI + 外部 scheduler 文档）—— 见 `docs/superpowers/plans/2026-05-26-pii-governance.md`，spec 在 `docs/superpowers/specs/2026-05-26-pii-governance-design.md`
 - **Plan 8**（答疑题面持久化 + ErrorAnalysisCard 接入答疑闭环：tutor.ask 接受自由输入并 upsert USER_ADHOC Question + 返 questionId + TutorForm 接 ErrorAnalysisCard）—— 见 `docs/superpowers/plans/2026-05-25-tutor-question-bank-and-error-card-integration.md`，spec 在 `docs/superpowers/specs/2026-05-25-tutor-question-bank-and-error-card-integration-design.md`
 - **Plan 9**（知识点 reconciler：hint→KP 结构化映射 + KpReconcileMatch 审计队列 + CLI 异步 LLM/review）—— 见 `docs/superpowers/plans/2026-05-25-kp-reconciler.md`，spec 在 `docs/superpowers/specs/2026-05-25-kp-reconciler-design.md`
 
@@ -99,7 +100,6 @@
 - 测试 fixture 用户每个有 100 credits 起始余额（`packages/db/prisma/seed/1_test_users.ts`，idemKey `topup:seed:<userId>`，幂等）
 
 **Plan 3 *未*完成的事 —— prod ship 前必须做**：
-- PII 治理 plan：用户注销 / 去标识化 / `WechatPayEvent.rawBody` 保留期 / `TopupOrder` 孤儿订单清理策略
 - ICP 备案 + 微信商户号申请 + APIv3 密钥 + 商户证书 / `WECHAT_PAY_USE_MOCK=false` 配套 6 个 real env
 - Real adapter 激活：实现 `unifiedOrder` 走 V3 prepay API + `verifyNotify` 走 RSA-SHA256 + PlatformCertProvider 真接（独立 plan）
 
@@ -156,9 +156,16 @@
 - KP 树扩充（独立 plan）
 - VariantItem 升格成独立 Question（独立 plan / Plan 12 题库去重时考虑）
 
-**Plan 8 未完成的事 —— prod ship 前需 Plan 6 接力**：
-- USER_ADHOC 题 GC / 注销时去标识化（PII 治理）
-- PII 扫描（手机号 / 身份证 regex）
+**PII 治理现状**（Plan 6）：
+- OPS CLI：`user:deactivate <userId> [--reason TEXT] [--dry-run]` / `user:export <userId> --out <path.json>` / `pii:gc-sweep [--bucket short|medium|orphan|all] [--dry-run]`；全部走 shared service，不引入 apps/web 内置 cron
+- 注销：User 行 soft-delete 作 tombstone；硬删 `ErrorBookEntry`（级联 `VariantGroup`/`VariantItem`）和用户 `USER_ADHOC Question`；删除 `AuthIdentity` + PHONE/GLOBAL 对应 `OtpRequest`；scrub Session / TopupOrder / ModelCall / KpAlias / KpReconcileMatch PII；财务金额、订单号、ledger 保留
+- 导出：`exportUserData` 只输出白名单 JSON；`AuthIdentity.providerUserId` 仅 masked；显式排除 `rawBody` / `requestJson` / `responseJson` / `ipCreated` / `userAgent` / 本地 outPath
+- GC：short bucket 删除过期 OTP/Session；medium bucket scrub `WechatPayEvent.rawBody` 与 `TopupOrder.ipCreated/userAgent`；orphan bucket 删除过期未支付且无 ledger 引用的订单。外部 scheduler 配方在 `docs/ops/pii-scheduling.md`
+- Auth guard：`USER_DEACTIVATED` 已进入 auth errors；`createContext` 对 deleted user 返回 `auth=null`，refresh route 清 cookies 并 401；注销后同手机号可重新注册新 User
+- `OpsActionLog.payload` 只能写非 PII 摘要；新增 payload guard test 守门。业务代码不得直接 `prisma.user.delete()`，注销统一走 `deactivateUser`
+
+**Plan 8 未完成的事 —— 等后续 plan**：
+- PII 扫描（手机号 / 身份证 regex）未在 Plan 6 做通用扫描器；当前靠字段级去标识化 + payload/export 守门
 
 **常用命令**：
 
@@ -216,11 +223,18 @@ pnpm --filter @zhijiao/web  test -- tests/integration/auth-register-race.test.ts
 32. **sourceRefType=VARIANT_ITEM 永不写 QuestionKPLink**（Plan 9 §3.3 / 红线 #2）：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/kp-reconcile-sync-variant.test.ts` 应全绿（含 BACKFILL+VARIANT_ITEM 测例守门 source vs sourceRefType 分流条件）
 33. **LINKED→REJECTED 反悔入口未暴露**（Plan 9 §5.5 / 红线 #10）：`grep -rn "unlinkIfOrphan" apps/web/server/routers apps/web/scripts` 应 0 命中。Plan 9 只 export helper + 文档化清理 SQL；unit test import 它走 helper 不算"用户入口"
 34. **backfill 脚本幂等**（Plan 9 §7.2）：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/kp-reconcile-backfill.test.ts` 应全绿（覆盖第二次跑 alreadySeen 计数 + 行数不变）
+35. **注销支持页 placeholder 不能误当正式信息**（Plan 6 §6.1）：`Select-String -Path apps/web/app/support/deactivate/page.tsx -Pattern "XXXXX|support@zhijiao.example"` 应命中；prod ship 前必须替换公众号 / 邮箱域名 / 运营主体 / ICP 号
+36. **VariantGroup.entry 已改 Cascade**（Plan 6 §2）：`docker exec zhijiao-postgres psql -U postgres -d zhijiao -c "\d variant_groups"` 应见 `ON DELETE CASCADE`，保证注销删 ErrorBookEntry 时变式组/题跟随删除
+37. **WechatPayEvent.rawBody 可 nullable**（Plan 6 §2）：`docker exec zhijiao-postgres psql -U postgres -d zhijiao -c "\d wechat_pay_events"` 应见 `raw_body` nullable；GC medium bucket 才能 scrub raw body
+38. **业务代码不得直接 hard-delete User**（Plan 6 红线）：`rg -n "prisma\.user\.delete\(|users\.delete\(" apps/web/server packages/billing/src packages/auth/src` 应 0 命中；账号注销统一走 `deactivateUser`
+39. **USER_DEACTIVATED auth guard 在位**（Plan 6 §3）：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/pii-deleted-user-auth-guard.test.ts` 应全绿；refresh route 应 401 + 清 cookies
+40. **OpsActionLog payload 不含 PII**（Plan 6 §2.4）：`pnpm.cmd --filter @zhijiao/web test -- tests/unit/pii-ops-action-log-payload.test.ts` 应全绿；禁止 phone/openid/rawBody/requestJson/outPath 等进入 payload
+41. **PII GC dry-run smoke**（Plan 6 §5）：`pnpm.cmd --filter @zhijiao/web pii:gc-sweep --dry-run` 应打印 results 且不写 `OpsActionLog`
 
-**下一步候选 Plan**（Plan 4 + Plan 8 + Plan 9 已落地）：
+**下一步候选 Plan**（Plan 4 + Plan 6 + Plan 8 + Plan 9 已落地）：
 - Plan 5: 真接阿里云 SMS + 微信公众号（ICP 备案通过后；**且 Plan 2 Hardening 必须先 ship**；替换 `RealSmsAdapter` / `RealWechatH5Adapter` 的 stub 实现）
-- Plan 6: PII 治理（用户注销 / 去标识化 / `WechatPayEvent.rawBody` 保留期 / `TopupOrder` 孤儿订单清理 / `ErrorBookEntry` 用户注销时去标识化 / `Question.USER_ADHOC` 孤儿清理 + 注销时去标识化 / `KpReconcileMatch.reviewedByUserId` 注销时 SetNull —— 已实现）—— **Plan 3 prod ship prereq**
 - Plan 7: 真接微信支付 V3 API（需 ICP 备案 + 商户号 + APIv3 + 商户证书；激活 `RealWechatPayAdapter.unifiedOrder` + `verifyNotify`）—— **Plan 3 prod ship prereq**
+- Plan 14: 未成年人特殊保护 / PIPL 完版（<14 监护人代办、数据副本/删除请求 SLA 完整化、通用 PII 扫描与运营 SOP）
 - Plan 10: 教师端"分层作业"基于错题本扩展（教师可看班级错题热度图，按错因 / KP 分类布置分层作业 —— **Plan 9 接通后**有 KP id 数据可用）
 - Plan 11: 学情画像 / 趋势报告（学生掌握度 + 薄弱点 + 趋势画像；家长简版报告 —— **Plan 9 接通后**有 KP id 数据可用）
 - Plan 12: 题库去重 / PUBLISHED 复用 / 统计归并 + VariantItem 升格为独立 Question（Plan 8 §6.2 + Plan 9 §10.3 punt）
