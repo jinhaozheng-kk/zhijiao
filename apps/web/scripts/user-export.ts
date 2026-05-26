@@ -3,6 +3,9 @@ import fs from "node:fs";
 import { PrismaClient } from "@prisma/client";
 import { exportUserData } from "../server/lib/pii-governance.js";
 import { buildInitiatorRef, resolveOperatorUserId } from "../server/lib/operator.js";
+import { loadCliEnv } from "./load-cli-env.js";
+
+loadCliEnv();
 
 function parseArgs(argv: string[]) {
   const positional: string[] = [];

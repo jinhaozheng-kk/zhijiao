@@ -2,6 +2,9 @@
 import { PrismaClient } from "@prisma/client";
 import { sweepPii, type SweepBucket } from "../server/lib/pii-governance.js";
 import { buildInitiatorRef, resolveOperatorUserId } from "../server/lib/operator.js";
+import { loadCliEnv } from "./load-cli-env.js";
+
+loadCliEnv();
 
 function parseArgs(argv: string[]) {
   let bucket: SweepBucket | "all" = "all";
