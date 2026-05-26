@@ -1,25 +1,19 @@
 import "server-only";
-import crypto from "node:crypto";
 import { Prisma, type PrismaClient, type Question } from "@prisma/client";
+import {
+  QUESTION_SOURCE_USER_ADHOC,
+  QUESTION_SOURCE_VARIANT_GENERATED,
+  normalizeStem,
+  stemHashHex,
+} from "./question-shared.js";
 
-export const QUESTION_SOURCE_USER_ADHOC = "USER_ADHOC";
-
-/**
- * spec §4.2: 仅 trim + 空白折叠，不 lowercase。
- * 数学文本大小写可有义（点 A vs a / 变量 X vs x / 集合矩阵符号 / sin x vs SIN x）。
- * 本 plan 仅"防膨胀"，不做语义相似题合并。
- */
-export function normalizeStem(stem: string): string {
-  return stem.trim().replace(/\s+/g, " ");
-}
-
-/**
- * 128-bit prefix is enough for dedup; keeps the indexed value compact.
- * This is not a privacy boundary.
- */
-export function stemHashHex(stem: string): string {
-  return crypto.createHash("sha256").update(normalizeStem(stem)).digest("hex").slice(0, 32);
-}
+export {
+  QUESTION_SOURCE_USER_ADHOC,
+  QUESTION_SOURCE_VARIANT_GENERATED,
+  createVariantQuestion,
+  normalizeStem,
+  stemHashHex,
+} from "./question-shared.js";
 
 export interface UpsertUserAdhocQuestionArgs {
   userId: string;

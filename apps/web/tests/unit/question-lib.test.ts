@@ -2,10 +2,11 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { prisma, resetDb } from "@zhijiao/db/test-utils";
 import {
   QUESTION_SOURCE_USER_ADHOC,
+  QUESTION_SOURCE_VARIANT_GENERATED,
   normalizeStem,
   stemHashHex,
-  upsertUserAdhocQuestion,
-} from "@/server/lib/question";
+} from "@/server/lib/question-shared";
+import { upsertUserAdhocQuestion } from "@/server/lib/question";
 
 async function seedMathSubject() {
   await prisma.subject.upsert({
@@ -30,6 +31,13 @@ beforeEach(async () => {
 
 afterAll(async () => {
   await prisma.$disconnect();
+});
+
+describe("Question.source literals", () => {
+  it("defines stable Question.source literals", () => {
+    expect(QUESTION_SOURCE_USER_ADHOC).toBe("USER_ADHOC");
+    expect(QUESTION_SOURCE_VARIANT_GENERATED).toBe("VARIANT_GENERATED");
+  });
 });
 
 describe("normalizeStem", () => {
