@@ -25,7 +25,7 @@ export interface BackfillVariantQuestionsResult {
 
 export function parseArgs(argv: string[]): BackfillVariantQuestionsArgs {
   let dryRun = false;
-  let limit = Number.POSITIVE_INFINITY;
+  let limit = 1000;
 
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -57,14 +57,14 @@ export async function backfillVariantQuestions(
   let processed = 0;
   let created = 0;
   let alreadySeen = 0;
-  let cursor: string | undefined;
 
   while (processed < args.limit) {
     const remaining = args.limit - processed;
+    const take = Math.min(BATCH, remaining);
     const items = await prisma.variantItem.findMany({
       where: { questionId: null },
-      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-      take: Math.min(BATCH, remaining),
+      ...(args.dryRun ? { skip: processed } : {}),
+      take,
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       include: {
         group: {
@@ -85,7 +85,6 @@ export async function backfillVariantQuestions(
 
     for (const item of items) {
       processed += 1;
-      cursor = item.id;
 
       if (args.dryRun) {
         created += 1;

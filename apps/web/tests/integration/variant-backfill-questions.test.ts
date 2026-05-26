@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { resetDb, prisma } from "@zhijiao/db/test-utils";
-import { backfillVariantQuestions } from "@/scripts/variant-backfill-questions";
+import { backfillVariantQuestions, parseArgs } from "@/scripts/variant-backfill-questions";
+import { stemHashHex } from "@/server/lib/question-shared";
 
 async function seedVariantBackfillRows(count: number, opts: { linked?: number } = {}) {
   const linked = opts.linked ?? 0;
@@ -112,7 +113,25 @@ describe("backfillVariantQuestions", () => {
       expect(item.question!.createdByUserId).toBe(user.id);
       expect(item.question!.subjectId).toBe(parentQuestion.subjectId);
       expect(item.question!.status).toBe("DRAFT");
+      expect(item.question!.stemMd).toBe(item.stemMd);
+      expect(item.question!.normalizedStemHash).toBe(stemHashHex(item.stemMd));
     }
+  });
+
+  it("continues batching until every remaining null VariantItem is linked", async () => {
+    await seedVariantBackfillRows(205);
+
+    const result = await backfillVariantQuestions(prisma, { limit: 1000, dryRun: false });
+
+    expect(result).toEqual({ processed: 205, created: 205, alreadySeen: 0, dryRun: false });
+    await expect(prisma.variantItem.count({ where: { questionId: null } })).resolves.toBe(0);
+    await expect(
+      prisma.question.count({ where: { source: "VARIANT_GENERATED" } }),
+    ).resolves.toBe(205);
+  });
+
+  it("defaults CLI limit to 1000", () => {
+    expect(parseArgs([])).toEqual({ limit: 1000, dryRun: false });
   });
 
   it("is idempotent after rows are linked", async () => {
