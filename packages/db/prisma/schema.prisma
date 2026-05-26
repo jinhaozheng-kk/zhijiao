@@ -53,6 +53,8 @@ model User {
   persona     Persona     @default(STUDENT)
   gradeLevel  GradeLevel? @map("grade_level")
   isMinor     Boolean     @default(true) @map("is_minor")
+  deletedAt   DateTime?   @map("deleted_at")
+  deactivationReason String? @map("deactivation_reason")
   createdAt   DateTime    @default(now()) @map("created_at")
   updatedAt   DateTime    @updatedAt      @map("updated_at")
 
@@ -64,7 +66,10 @@ model User {
   createdQuestions    Question[]         @relation("CreatedQuestions")  // Plan 8
   createdKpAliases    KpAlias[]          @relation("KpAliasCreator")    // Plan 9
   reviewedKpMatches   KpReconcileMatch[] @relation("KpReconcileReviewer") // Plan 9
+  initiatedOpsActions OpsActionLog[]     @relation("OpsActionInitiator")
+  opsActionLogs       OpsActionLog[]     @relation("OpsActionTarget")
 
+  @@index([deletedAt])
   @@map("users")
 }
 
@@ -391,7 +396,7 @@ model WechatPayEvent {
   id            String                @id @default(cuid())
   outTradeNo    String                @map("out_trade_no")
   transactionId String?               @map("transaction_id")
-  rawBody       String                @db.Text @map("raw_body")
+  rawBody       String?               @db.Text @map("raw_body")
   signature     String?
   timestamp     String?
   nonce         String?
@@ -472,7 +477,7 @@ model VariantGroup {
   modelCallId     String?        @map("model_call_id")
   createdAt       DateTime       @default(now()) @map("created_at")
 
-  entry           ErrorBookEntry @relation(fields: [entryId], references: [id], onDelete: Restrict)
+  entry           ErrorBookEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
   items           VariantItem[]
 
   @@index([entryId, createdAt(sort: Desc)])
@@ -583,4 +588,32 @@ model KpReconcileMatch {
   @@index([status, createdAt])
   @@index([questionId])
   @@map("kp_reconcile_matches")
+}
+
+// === Plan 6: PII Governance ===
+
+enum OpsActionKind {
+  DEACTIVATE_USER
+  EXPORT_USER_DATA
+  GC_SWEEP_SHORT
+  GC_SWEEP_MEDIUM
+  GC_SWEEP_ORPHAN
+}
+
+model OpsActionLog {
+  id           String        @id @default(cuid())
+  kind         OpsActionKind
+  initiatorId  String?       @map("initiator_id")
+  initiatorRef String        @map("initiator_ref")
+  targetUserId String?       @map("target_user_id")
+  reason       String?
+  payload      Json?
+  createdAt    DateTime      @default(now()) @map("created_at")
+
+  initiator    User?         @relation("OpsActionInitiator", fields: [initiatorId], references: [id], onDelete: SetNull)
+  target       User?         @relation("OpsActionTarget", fields: [targetUserId], references: [id], onDelete: SetNull)
+
+  @@index([kind, createdAt])
+  @@index([targetUserId])
+  @@map("ops_action_logs")
 }
