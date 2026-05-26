@@ -26,6 +26,224 @@ export interface DeactivateResult {
   payload: DeactivatePayload;
 }
 
+export interface UserDataExport {
+  schemaVersion: "2026-05-26";
+  exportedAt: string;
+  userId: string;
+  user: {
+    name: string | null;
+    avatarUrl: string | null;
+    persona: string;
+    gradeLevel: string | null;
+    isMinor: boolean;
+    createdAt: Date;
+    deletedAt: Date | null;
+    deactivationReason: string | null;
+  };
+  authIdentities: Array<{
+    provider: string;
+    providerScope: string;
+    providerUserIdMasked: string;
+    createdAt: Date;
+    lastUsedAt: Date | null;
+  }>;
+  wallet: { id: string; balance: number; createdAt: Date } | null;
+  creditLedger: Array<{
+    kind: string;
+    delta: number;
+    balanceAfter: number;
+    actionKind: string | null;
+    createdAt: Date;
+    refTable: string | null;
+    refId: string | null;
+    idemKey: string;
+  }>;
+  topupOrders: Array<{
+    outTradeNo: string;
+    amountCents: number;
+    credits: number;
+    status: string;
+    transactionId: string | null;
+    paidAt: Date | null;
+    expiredAt: Date;
+    createdAt: Date;
+  }>;
+  errorBookEntries: Array<{
+    id: string;
+    questionId: string;
+    status: string;
+    rootCause: string;
+    rootCauseReasoning: string;
+    actualAnswerMd: string | null;
+    reviewCount: number;
+    nextReviewAt: Date | null;
+    createdAt: Date;
+  }>;
+  userAdhocQuestions: Array<{
+    id: string;
+    stemMd: string;
+    type: string;
+    normalizedStemHash: string | null;
+    createdAt: Date;
+  }>;
+  modelCalls: Array<{
+    taskKind: string;
+    status: string;
+    latencyMs: number | null;
+    tokensIn: number | null;
+    tokensOut: number | null;
+    createdAt: Date;
+  }>;
+}
+
+export async function exportUserData(
+  prisma: DbClient,
+  userId: string,
+): Promise<UserDataExport> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      id: true,
+      name: true,
+      avatarUrl: true,
+      persona: true,
+      gradeLevel: true,
+      isMinor: true,
+      createdAt: true,
+      deletedAt: true,
+      deactivationReason: true,
+    },
+  });
+  if (!user) {
+    throw new Error(`User not found: ${userId}`);
+  }
+
+  const [
+    authIdentities,
+    wallet,
+    topupOrders,
+    errorBookEntries,
+    userAdhocQuestions,
+    modelCalls,
+  ] = await Promise.all([
+    prisma.authIdentity.findMany({
+      where: { userId },
+      orderBy: { createdAt: "asc" },
+      select: {
+        provider: true,
+        providerScope: true,
+        providerUserId: true,
+        createdAt: true,
+        lastUsedAt: true,
+      },
+    }),
+    prisma.wallet.findUnique({
+      where: { userId },
+      select: {
+        id: true,
+        balance: true,
+        createdAt: true,
+        ledger: {
+          orderBy: { createdAt: "asc" },
+          select: {
+            kind: true,
+            delta: true,
+            balanceAfter: true,
+            actionKind: true,
+            createdAt: true,
+            refTable: true,
+            refId: true,
+            idemKey: true,
+          },
+        },
+      },
+    }),
+    prisma.topupOrder.findMany({
+      where: { userId },
+      orderBy: { createdAt: "asc" },
+      select: {
+        outTradeNo: true,
+        amountCents: true,
+        credits: true,
+        status: true,
+        transactionId: true,
+        paidAt: true,
+        expiredAt: true,
+        createdAt: true,
+      },
+    }),
+    prisma.errorBookEntry.findMany({
+      where: { userId, status: { in: ["ACTIVE", "ARCHIVED"] } },
+      orderBy: { createdAt: "asc" },
+      select: {
+        id: true,
+        questionId: true,
+        status: true,
+        rootCause: true,
+        rootCauseReasoning: true,
+        actualAnswerMd: true,
+        reviewCount: true,
+        nextReviewAt: true,
+        createdAt: true,
+      },
+    }),
+    prisma.question.findMany({
+      where: { source: "USER_ADHOC", createdByUserId: userId },
+      orderBy: { createdAt: "asc" },
+      select: {
+        id: true,
+        stemMd: true,
+        type: true,
+        normalizedStemHash: true,
+        createdAt: true,
+      },
+    }),
+    prisma.modelCall.findMany({
+      where: { userId },
+      orderBy: { createdAt: "asc" },
+      select: {
+        taskKind: true,
+        status: true,
+        latencyMs: true,
+        tokensIn: true,
+        tokensOut: true,
+        createdAt: true,
+      },
+    }),
+  ]);
+
+  return {
+    schemaVersion: "2026-05-26",
+    exportedAt: new Date().toISOString(),
+    userId: user.id,
+    user: {
+      name: user.name,
+      avatarUrl: user.avatarUrl,
+      persona: user.persona,
+      gradeLevel: user.gradeLevel,
+      isMinor: user.isMinor,
+      createdAt: user.createdAt,
+      deletedAt: user.deletedAt,
+      deactivationReason: user.deactivationReason,
+    },
+    authIdentities: authIdentities.map((identity) => ({
+      provider: identity.provider,
+      providerScope: identity.providerScope,
+      providerUserIdMasked: maskProviderUserId(identity.provider, identity.providerUserId),
+      createdAt: identity.createdAt,
+      lastUsedAt: identity.lastUsedAt,
+    })),
+    wallet: wallet
+      ? { id: wallet.id, balance: wallet.balance, createdAt: wallet.createdAt }
+      : null,
+    creditLedger: wallet?.ledger ?? [],
+    topupOrders,
+    errorBookEntries,
+    userAdhocQuestions,
+    modelCalls,
+  };
+}
+
 export async function previewDeactivateUser(
   prisma: DbClient,
   userId: string,
@@ -138,6 +356,19 @@ export async function deactivateUser(
 
     return { alreadyDeactivated: false, payload };
   });
+}
+
+function maskProviderUserId(provider: string, providerUserId: string): string {
+  if (provider === "PHONE") {
+    if (providerUserId.length >= 7) {
+      return `${providerUserId.slice(0, 3)}****${providerUserId.slice(-4)}`;
+    }
+    return "****";
+  }
+  if (providerUserId.length <= 6) {
+    return "****";
+  }
+  return `${providerUserId.slice(0, 3)}****${providerUserId.slice(-3)}`;
 }
 
 async function buildDeactivatePlan(
