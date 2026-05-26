@@ -311,10 +311,12 @@ export const validateEntryOwnership = t.middleware(
   },
 );
 
+const OWNER_ONLY_QUESTION_SOURCES = new Set(["USER_ADHOC", "VARIANT_GENERATED"]);
+
 // Plan 8 hotfix (P1 from review): error.diagnose 必须在扣费前校验 questionId 归属，
-// 否则用户 A 可拿用户 B 的 USER_ADHOC questionId 调 diagnose，被扣费 + 信息泄露
+// 否则用户 A 可拿用户 B 的 USER_ADHOC / VARIANT_GENERATED questionId 调 diagnose，被扣费 + 信息泄露
 // (B 的题面会被读出并写入 A 的错题本)。同 Plan 4 validateEntryOwnership 同款隐私
-// 不变量：USER_ADHOC 跨用户与 questionId 不存在合并为同一 NOT_FOUND，避免存在性侧信道。
+// 不变量：USER_ADHOC / VARIANT_GENERATED 跨用户与 questionId 不存在合并为同一 NOT_FOUND，避免存在性侧信道。
 //
 // 链顺序硬约束（与 Plan 4 Blocker 1 同理）：
 //   authedProcedure.use(validateQuestionAccess).use(chargeMiddleware("ERROR_ANALYSIS"))
@@ -322,8 +324,8 @@ export const validateEntryOwnership = t.middleware(
 // 余额虽然没变但 ledger 噪音 + 无意义 AI 调用。
 //
 // 访问规则：
-//   USER_ADHOC: createdByUserId === ctx.auth.userId → 允许；否则 NOT_FOUND
-//   其它 source（含 null / PUBLISHED 等）：允许（题库公共题）
+//   USER_ADHOC / VARIANT_GENERATED: createdByUserId === ctx.auth.userId → 允许；否则 NOT_FOUND
+//   其它 source（含 null / 自有 / PUBLISHED 等）：允许（题库公共题）
 //   missing questionId / 不存在的 id → BAD_REQUEST / NOT_FOUND
 //
 // 注入 ctx.question (含 answer + knowledgePoints) 省一次 DB round trip，模式跟
@@ -357,10 +359,11 @@ export const validateQuestionAccess = t.middleware(
     });
     if (
       !question ||
-      (question.source === "USER_ADHOC" &&
+      (question.source != null &&
+        OWNER_ONLY_QUESTION_SOURCES.has(question.source) &&
         question.createdByUserId !== ctx.auth.userId)
     ) {
-      // 合并 missing + cross-user USER_ADHOC 为同一 NOT_FOUND/QUESTION_NOT_FOUND
+      // 合并 missing + cross-user owner-only questions 为同一 NOT_FOUND/QUESTION_NOT_FOUND
       // 关键：必须在 chargeMiddleware 之前抛出，不写 DEBIT
       throw new TRPCError({
         code: "NOT_FOUND",
