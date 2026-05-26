@@ -11,6 +11,7 @@ import { ComplianceRejectedError } from "@zhijiao/ai";
 import { getAiRouter } from "@/lib/ai-client";
 import { toVariantGroupView } from "../lib/error-book.js";
 import { reconcileHintsSync } from "../lib/kp-reconcile.js";
+import { createVariantQuestion } from "@/server/lib/question-shared";
 import { logger } from "../logger.js";
 
 export const variantRouter = router({
@@ -94,16 +95,24 @@ export const variantRouter = router({
             modelCallId: ai.modelCallId,
           },
         });
-        await tx.variantItem.createMany({
-          data: ai.items.map((it, idx) => ({
-            groupId: group.id,
-            level: it.level,
-            position: idx + 1,
+        for (const [idx, it] of ai.items.entries()) {
+          const question = await createVariantQuestion(tx, {
             stemMd: it.stemMd,
-            solutionMd: it.solutionMd,
-            knowledgePointHints: it.knowledgePointHints ?? [],
-          })),
-        });
+            userId: ctx.auth.userId,
+            subjectId: ctx.entry.question.subjectId,
+          });
+          await tx.variantItem.create({
+            data: {
+              questionId: question.id,
+              groupId: group.id,
+              level: it.level,
+              position: idx + 1,
+              stemMd: it.stemMd,
+              solutionMd: it.solutionMd,
+              knowledgePointHints: it.knowledgePointHints ?? [],
+            },
+          });
+        }
         return tx.variantGroup.findUniqueOrThrow({
           where: { id: group.id },
           include: { items: { orderBy: { position: "asc" } } },
@@ -115,6 +124,8 @@ export const variantRouter = router({
       // （红线 #2）—— 命中 EXACT/ALIAS 也只到 PENDING_REVIEW。
       // 在 $transaction 之外做，避免 reconcile 失败 rollback 已写好的 VariantGroup/Items。
       // await + try/catch + logger.warn 兜底（红线 #1）。
+      // Plan 12: caller still passes the parent question id as subject context;
+      // reconcileHintsSync internally uses item.questionId when present.
       for (const item of result.items) {
         try {
           await reconcileHintsSync(ctx.db, {
