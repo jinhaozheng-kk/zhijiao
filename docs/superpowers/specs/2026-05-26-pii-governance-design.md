@@ -250,20 +250,20 @@ if (args.dryRun) {
 
 6. `tx.otpRequest.deleteMany({ where: { phone: { in: phones } } })` —— 用步骤 2 读出的 phones 集合
 
-7. Sessions：
+7. Sessions —— 分两步执行（顺序敏感）：
    ```ts
+   // 7.1 先收尾活跃 session（仅 revokedAt=null 的行需要状态推进）
    tx.session.updateMany({
      where: { userId, revokedAt: null },
-     data: {
-       revokedAt: now,
-       revokedReason: "ADMIN_REVOKED",
-       deviceLabel: null,
-       ipCreated: null,
-       userAgent: null,
-     },
+     data: { revokedAt: now, revokedReason: "ADMIN_REVOKED" },
+   });
+   // 7.2 再对该用户所有 session（含历史已 revoke）清 PII 字段
+   tx.session.updateMany({
+     where: { userId },
+     data: { deviceLabel: null, ipCreated: null, userAgent: null },
    });
    ```
-   既有 revoked 行不动（其 ipCreated/userAgent 由 §5 GC sweep 处理）
+   **为什么分两步：** 单步 `where: { userId, revokedAt: null }` 会漏掉已 revoke 的历史 session，把 `ipCreated/userAgent/deviceLabel` 留到 §5 GC sweep——这与"注销 = 立即去标识化"原则不一致。分两步后历史 session 行也即时擦 PII；状态字段（revokedAt/revokedReason）只对活跃 session 推进，避免覆盖既有 revoke 时间戳
 
 8. `tx.topupOrder.updateMany({ where: { userId }, data: { ipCreated: null, userAgent: null } })`
    金额、订单号、transactionId、paidAt 不动（财务永久）
@@ -450,7 +450,7 @@ CLI 行为：
 2. 调 `exportUserData(prisma, userId)` 返 `UserDataExport`
 3. `fs.writeFileSync(path, JSON.stringify(result, null, 2))`
 4. `fs.chmod(path, 0o600)` —— Windows best-effort，失败 warn 不 abort
-5. 写 `OpsActionLog`（`kind="EXPORT_USER_DATA"`，payload 仅 `{ exportSizeBytes, outPath, recordCounts }`；**不写 JSON 内容本身**）
+5. 写 `OpsActionLog`（`kind="EXPORT_USER_DATA"`，payload 仅 `{ exportSizeBytes, recordCounts, outputWritten: true }`；**不写 JSON 内容本身**，**也不写 outPath**——本地路径可能含 OS 用户名 / 主目录 / 文件名片段等弱 PII，与 payload 非 PII 红线 #1 冲突）
 6. stdout 打 `Exported to <path> (<bytes> bytes)`
 
 ### §4.5 安全交付（流程层，非代码）
@@ -488,31 +488,42 @@ export async function sweepPii(
 
 | # | Sweeper | Bucket | Predicate | Action |
 |---|---|---|---|---|
-| 1 | `sweepOtpRequests` | short | `COALESCE(consumedAt, expiredAt) IS NOT NULL AND COALESCE(consumedAt, expiredAt) < now - SHORT_DAYS` | DELETE 行 |
+| 1 | `sweepOtpRequests` | short | `COALESCE(consumedAt, expiredAt, expiresAt) < now - SHORT_DAYS` | DELETE 行 |
 | 2 | `sweepInactiveSessions` | short | `COALESCE(revokedAt, expiresAt) < now - SHORT_DAYS` | DELETE 行 |
 | 3 | `sweepWechatPayEventBodies` | medium | `createdAt < now - MEDIUM_DAYS AND rawBody IS NOT NULL` | UPDATE rawBody=null（行留作 outTradeNo/transactionId 审计；幂等再跑 affected=0） |
 | 4 | `sweepTopupOrderPii` | medium | `status IN (PAID, FAILED, EXPIRED) AND updatedAt < now - MEDIUM_DAYS AND (ipCreated IS NOT NULL OR userAgent IS NOT NULL)` | UPDATE ipCreated=null, userAgent=null |
 | 5 | `sweepOrphanTopupOrders` | orphan | `status = EXPIRED AND paidAt IS NULL AND createdAt < now - ORPHAN_DAYS AND NOT EXISTS (SELECT 1 FROM credit_ledger WHERE refTable='topup_orders' AND refId=topup_orders.id)` | DELETE 行 |
 
-**sweeper #2 用 COALESCE（红线 #5）：** Session GC 不只清 revoked，也清自然过期。`revokedAt` 优先；若空（自然过期未主动 logout），用 `expiresAt`。30d 是足够的安全排查窗口，再长就不符合 PIPL"不超过必要期限"。
+**sweeper #1 / #2 COALESCE 顺序（红线 #5）：**
 
-**sweeper #5 NOT EXISTS 实现（红线 #6）：** Prisma `deleteMany` 不支持跨表 NOT EXISTS；用 raw SQL：
+- `sweepOtpRequests`：`COALESCE(consumedAt, expiredAt, expiresAt)` —— 优先 consumedAt（被验证过且消费）；其次 expiredAt（被显式标记过期）；最后 expiresAt（自然过期未消费且未标记的 row，currentcode 路径可能漏写 expiredAt）。三层兜底确保任何"超出 SHORT_DAYS 仍留在表里"的 OTP 都被扫到
+- `sweepInactiveSessions`：`COALESCE(revokedAt, expiresAt)` —— 不只清 revoked，也清自然过期。`revokedAt` 优先；若空（自然过期未主动 logout）用 `expiresAt`。30d 是足够的安全排查窗口，再长就不符合 PIPL"不超过必要期限"
+
+**sweeper #5 NOT EXISTS 实现（红线 #6）：** Prisma `deleteMany` 不支持跨表 NOT EXISTS；走 raw SQL CTE + `$queryRaw` 取 count + hasMore：
 
 ```ts
-await prisma.$executeRaw`
-  DELETE FROM topup_orders
-  WHERE status = 'EXPIRED'
-    AND paid_at IS NULL
-    AND created_at < ${cutoff}
-    AND NOT EXISTS (
-      SELECT 1 FROM credit_ledger
-      WHERE ref_table = 'topup_orders' AND ref_id = topup_orders.id
-    )
-  RETURNING id
+const rows = await prisma.$queryRaw<{ count: bigint }[]>`
+  WITH targets AS (
+    SELECT id FROM topup_orders
+    WHERE status = 'EXPIRED'
+      AND paid_at IS NULL
+      AND created_at < ${cutoff}
+      AND NOT EXISTS (
+        SELECT 1 FROM credit_ledger
+        WHERE ref_table = 'topup_orders' AND ref_id = topup_orders.id
+      )
+    LIMIT 10000
+  ),
+  deleted AS (
+    DELETE FROM topup_orders WHERE id IN (SELECT id FROM targets) RETURNING id
+  )
+  SELECT count(*)::bigint AS count FROM deleted
 `;
+const affected = Number(rows[0]!.count);
+return { affected, hasMore: affected === 10000 };
 ```
 
-单条原子 SQL，比"先 findMany 后 deleteMany"少一次往返且无 race window。
+**为什么不用 `$executeRaw + RETURNING id`：** Prisma `$executeRaw` 只返 affected count（number），不返行集；要拿 RETURNING 的 id 必须用 `$queryRaw`。CTE 把 LIMIT-targets + DELETE + count 拼成单原子 SQL，比"先 findMany 后 deleteMany"少一次往返、无 race window，比 `$executeRaw` 多了"DRY count 与 LIMIT 一致"的可观测性。
 
 ### §5.3 批量上限 + Prisma `updateMany` 无 `take` 的实现笔记
 
@@ -532,16 +543,23 @@ const affected = await tx.session.updateMany({  // 或 deleteMany
 return { affected: affected.count, hasMore: ids.length === 10000 };
 ```
 
-**模式 B（raw SQL CTE，sweeper 3 / 5）：**
-```sql
-WITH targets AS (
-  SELECT id FROM wechat_pay_events
-  WHERE created_at < $1 AND raw_body IS NOT NULL
-  LIMIT 10000
-)
-UPDATE wechat_pay_events SET raw_body = null
-WHERE id IN (SELECT id FROM targets)
+**模式 B（raw SQL CTE，sweeper 3）—— UPDATE 用 `$executeRaw`：**
+```ts
+const affected = await prisma.$executeRaw`
+  WITH targets AS (
+    SELECT id FROM wechat_pay_events
+    WHERE created_at < ${cutoff} AND raw_body IS NOT NULL
+    LIMIT 10000
+  )
+  UPDATE wechat_pay_events SET raw_body = null
+  WHERE id IN (SELECT id FROM targets)
+`;
+return { affected, hasMore: affected === 10000 };
 ```
+
+`$executeRaw` 对 UPDATE 返 affected count（number）—— UPDATE 不带 RETURNING 行集，没有 §5.2 sweeper #5 的"DELETE+RETURNING 必须走 `$queryRaw`"问题。
+
+**模式 C（raw SQL CTE + `$queryRaw`，sweeper 5）：** 见 §5.2 sweeper #5 代码块——DELETE 要拿 RETURNING 集合做 count，必须用 `$queryRaw` 拿行集再 `Number(rows[0].count)` 解析。
 
 CLI 见 `hasMore=true` 自动续跑（while 循环最多 `MAX_BATCHES=10` 兜底防失控；hardcoded 常量，真遇极端 case 再 env 化）。
 
@@ -666,18 +684,18 @@ ICP 备案号：{{ICP_PLACEHOLDER}}
 
 | 测试 | 类型 | 覆盖 |
 |---|---|---|
-| `pii-deactivate-user.test.ts` | integration | happy path 12 步顺序 / 幂等（重跑 `alreadyDeactivated` 短路）/ Restrict 不阻挡（先删 entry 后 cascade 到 group）/ AuthIdentity 删后 OtpRequest by phone 删 / PHONE only providerScope=GLOBAL 不撞 WECHAT openid |
+| `pii-deactivate-user.test.ts` | integration | happy path 12 步顺序 / 幂等（重跑 `alreadyDeactivated` 短路）/ Restrict 不阻挡（先删 entry 后 cascade 到 group）/ AuthIdentity 删后 OtpRequest by phone 删 / PHONE only providerScope=GLOBAL 不撞 WECHAT openid / Session 7.1+7.2 分两步：种 1 活跃 + 1 历史 revoked，验证两者 ipCreated/userAgent/deviceLabel 都为 null（历史 revoked 不能被 7.1 的 `revokedAt: null` 过滤漏掉）|
 | `pii-deactivate-user-tx-atomicity.test.ts` | integration | 单步抛错全 rollback：mock step 12 抛 → 验 ErrorBookEntry / USER_ADHOC Question 未删、AuthIdentity 未删、User.deletedAt 未变、OpsActionLog 未写 |
 | `pii-deactivate-user-dryrun.test.ts` | integration | dryRun → `previewDeactivateUser` 纯读，count 正确；DB 行 0 改动；0 OpsActionLog 写入 |
 | `pii-export-user-data.test.ts` | integration | 输出 JSON 含全部白名单字段；不含 `rawBody / requestJson / responseJson / ipCreated / userAgent`（regex `expect(JSON.stringify(result)).not.toMatch(/rawBody\|requestJson\|responseJson\|ipCreated\|userAgent/)`）；ModelCall 摘要 5 字段限制；`providerUserIdMasked` 格式 |
 | `pii-deleted-user-auth-guard.test.ts` | integration | `createContext`：valid access token + `user.deletedAt != null` → `auth=null, authError="USER_DEACTIVATED"`；`authedProcedure` 自动 throw UNAUTHORIZED；`refresh` route：deactivated user → 401 USER_DEACTIVATED + 清 cookies |
 | `pii-deleted-user-relogin.test.ts` | integration | 同手机号注销后重新走 register flow：findUnique PHONE identity 命中 0 行（已删）→ 走 register 路径建**新** User row；旧 User.deletedAt 行保留作 tombstone |
-| `pii-gc-sweep-short.test.ts` | integration | OtpRequest 28d/32d boundary / Session COALESCE 三种形态（revoked-not-expired / expired-not-revoked / 活跃 session 不动）|
+| `pii-gc-sweep-short.test.ts` | integration | OtpRequest COALESCE 四种形态（consumedAt-only / expiredAt-only / expiresAt-only 即自然过期未标记 / 全空活跃）+ 28d/32d boundary；Session COALESCE 三种形态（revoked-not-expired / expired-not-revoked / 活跃 session 不动）|
 | `pii-gc-sweep-medium.test.ts` | integration | WechatPayEvent createdAt 88d/92d boundary + 第二次跑 affected=0 幂等 / TopupOrder PII updatedAt boundary + 已 null 字段第二次跑 affected=0 |
 | `pii-gc-sweep-orphan.test.ts` | integration | EXPIRED 175d/185d boundary / `paidAt` 非空不动 / NOT EXISTS CreditLedger refId 引用的不动（即使 EXPIRED 且超期）|
 | `pii-gc-sweep-dryrun.test.ts` | integration | dryRun=true 对 5 个 sweeper 都 0 行改动；返 count 正确；不写 OpsActionLog |
 | `pii-gc-sweep-batching.test.ts` | integration | LIMIT=10000 + `hasMore=true` 续跑：seed 25k 行 → 第一批 affected=10000, hasMore=true → 第二/三批继续 → 第四批 affected=0 收尾 |
-| `pii-ops-action-log-payload.test.ts` | unit | payload regex 守门：`expect(JSON.stringify(payload)).not.toMatch(/(\d{11}\|wx_[a-zA-Z0-9]+\|stem_md\|raw_body)/)` 兜底，且字段白名单严格枚举 |
+| `pii-ops-action-log-payload.test.ts` | unit | payload regex 守门：`expect(JSON.stringify(payload)).not.toMatch(/(\d{11}\|wx_[a-zA-Z0-9]+\|stem_md\|raw_body\|outPath\|C:\\\\\|\/Users\/\|\/home\/)/)` 兜底——同时拦 11 位手机号、wx_ openid、stem_md/raw_body 字面字段名、outPath 字段名、Windows/Unix 本地路径前缀；且 payload 字段白名单严格枚举（DEACTIVATE_USER 仅 scrubbed/deleted/dryRun；EXPORT_USER_DATA 仅 exportSizeBytes/recordCounts/outputWritten；GC_SWEEP_* 仅 results/bucket/nowAt）|
 | `pii-governance-env.test.ts` | unit | 4 env zod refine：`SHORT=10, MEDIUM=5` → throw "MEDIUM > SHORT"；`ORPHAN=80, MEDIUM=90` → throw；`FINANCIAL_RECORD_RETENTION_DAYS=null` 不报错 |
 | `support-deactivate-page.spec.ts` | E2E | 静态页 200 / 含 PIPL Art 47 字串 / 含监护人提示 / 占位常量显示（提醒未来 PR 替换；上线探针 #35 关联）/ 不含"退款承诺"或"全额退款"字符串 |
 
