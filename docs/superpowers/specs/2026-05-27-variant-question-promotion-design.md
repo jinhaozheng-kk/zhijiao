@@ -17,7 +17,8 @@
 
 - `packages/db/prisma/schema.prisma`：`VariantItem` +`questionId String? @unique` + Question 反向 `variantItem VariantItem?`（1:1，VariantItem 是 owner 侧）
 - 1 migration（加列 + unique idx + FK；无 raw SQL append）
-- `apps/web/server/lib/question.ts`：新 helper `createVariantQuestion(tx, { stemMd, userId, subjectId })`
+- `apps/web/server/lib/question-shared.ts` 新建：CLI-safe module（不带 `import "server-only"`）；放 `createVariantQuestion / normalizeStem / stemHashHex / QUESTION_SOURCE_*` 常量与 helper（spec §3.1）
+- `apps/web/server/lib/question.ts` 改造：保留 `import "server-only"` + `upsertUserAdhocQuestion`；通过 `export { ... } from "./question-shared.js"` re-export CLI-safe helpers（既有 server 调用 0 行 diff）
 - `apps/web/server/routers/variant.ts`：`generateForEntry` body 改造 —— 同事务串行建 3 对 Question + VariantItem
 - `apps/web/server/lib/kp-reconcile.ts`：`sourceRefType=VARIANT_ITEM` 分支两阶段分流（spec §5）
 - `apps/web/server/trpc.ts`：`validateQuestionAccess` 加 VARIANT_GENERATED 分支 + 抽 `OWNER_ONLY_SOURCES` set
@@ -34,7 +35,7 @@
 - VariantItem.stemMd / solutionMd 列删除（destructive migration）→ 不做；保留作冗余字段，view layer 0 改动
 - 建 QuestionAnswer for variant question → 不做；solutionMd 仍从 VariantItem 读
 - ErrorBookEntry.questionId 改指向 variant question → 不动（仍指向 parent question）
-- 历史 KpReconcileMatch `PENDING_REVIEW(VARIANT_TO_PARENT_NEEDS_REVIEW)` 行的 cleanup → 留给后续 cleanup plan 一起处理
+- 历史 `KpReconcileMatch PENDING_REVIEW(VARIANT_TO_PARENT_NEEDS_REVIEW)` 行升级为 LINKED + 为对应 variant question 补 `QuestionKPLink` → **显式 punt 给后续 cleanup plan**（详 spec §5.5）；本 plan 不自动升级，且因 `@@unique([sourceRefType, sourceRefId, normalizedHint])` 唯一约束，重跑 reconcileHintsSync 会 `alreadySeen` no-op
 - `kp:reconcile-pending` CLI 改造 → 不动；其处理逻辑等 backfill + cleanup plan 同步迁移
 - VariantItem 间 dedup（同 user 多次生成相同 stem 的 variant）→ 不做；spec §8 风险表说明设计代价
 
@@ -88,20 +89,40 @@ ALTER TABLE variant_items ADD CONSTRAINT variant_items_question_id_fkey
 
 ## §3 `variant.generateForEntry` 改造
 
-### §3.1 新 helper `createVariantQuestion`
+### §3.1 新 helper + CLI-safe 模块拆分
 
-文件 `apps/web/server/lib/question.ts` 追加：
+**为什么拆模块**：当前 `apps/web/server/lib/question.ts` 顶部有 `import "server-only"`（Plan 8 设的防 Next 客户端 bundle 误引）。`variant:backfill-questions` CLI 要复用 `createVariantQuestion`，server-only 会在 tsx 打包/运行边界踩坑——沿用 Plan 6 `pii-governance.ts` / Plan 9 `operator.ts` 的 CLI-safe 工艺（这两个模块都不带 server-only marker）。
+
+**拆法**：新建 `apps/web/server/lib/question-shared.ts`（CLI-safe；不带 server-only），把 CLI 也要用的 helper 都放进去；`apps/web/server/lib/question.ts` 改为 re-export + 加 server-only-required 的部分。
+
+**新文件 `apps/web/server/lib/question-shared.ts`**：
 
 ```ts
+import crypto from "node:crypto";
+import { Prisma, type Question } from "@prisma/client";
+
+// === 常量（CLI 与 server 共用）===
+export const QUESTION_SOURCE_USER_ADHOC = "USER_ADHOC";
+export const QUESTION_SOURCE_VARIANT_GENERATED = "VARIANT_GENERATED";   // Plan 12
+
+// === Plan 8: stem 规范化与 hash（CLI backfill / dedup 都要复用）===
+export function normalizeStem(stem: string): string {
+  return stem.trim().replace(/\s+/g, " ");
+}
+
+export function stemHashHex(stem: string): string {
+  return crypto.createHash("sha256").update(normalizeStem(stem)).digest("hex").slice(0, 32);
+}
+
+// === Plan 12 §3.1: 升格出来的变式 Question helper ===
 export interface CreateVariantQuestionArgs {
   stemMd: string;
   userId: string;
   subjectId: string;
 }
 
-// Plan 12 §3：升格出来的变式 Question。
 // 与 USER_ADHOC 不同点：
-//   - source = "VARIANT_GENERATED"（新字面值；validateQuestionAccess 走 owner-only）
+//   - source = "VARIANT_GENERATED"（validateQuestionAccess 走 owner-only）
 //   - 不查 partial unique idx（USER_ADHOC dedup 不约束此 source）
 //   - 不带 P2002 重读（变式 stem 由 AI 生成；同 user 同 stem 重复几乎不存在）
 // 与 USER_ADHOC 同点：
@@ -118,13 +139,39 @@ export async function createVariantQuestion(
       stemMd: args.stemMd,
       type: "ESSAY",
       status: "DRAFT",
-      source: "VARIANT_GENERATED",
+      source: QUESTION_SOURCE_VARIANT_GENERATED,
       createdByUserId: args.userId,
       normalizedStemHash: stemHashHex(args.stemMd),
     },
   });
 }
 ```
+
+**改造既有 `apps/web/server/lib/question.ts`**：
+
+```ts
+import "server-only";
+
+// Plan 12 §3.1: CLI-safe helpers 从 question-shared.ts re-export
+// 既有 server-only Plan 8 helper（upsertUserAdhocQuestion）继续留在本文件
+export {
+  QUESTION_SOURCE_USER_ADHOC,
+  QUESTION_SOURCE_VARIANT_GENERATED,
+  normalizeStem,
+  stemHashHex,
+  createVariantQuestion,
+  type CreateVariantQuestionArgs,
+} from "./question-shared.js";
+
+// === 既有：upsertUserAdhocQuestion（Plan 8；server-only 因为有 P2002 race-safe 重读 + Next-side 调用约定）===
+// （函数体保留 Plan 8 原始实现）
+```
+
+**变更点总结**：
+- 既有 server-side callers (`tutor.ask`) `import { upsertUserAdhocQuestion } from "../server/lib/question.js"` 不动
+- 既有 server-side callers `import { stemHashHex, normalizeStem } from "../server/lib/question.js"` 通过 re-export 仍可走（0 行 diff）
+- 新 CLI 直接 `import { createVariantQuestion } from "../server/lib/question-shared.js"`（避开 server-only）
+- 新 server caller (`variant.ts`) `import { createVariantQuestion } from "../server/lib/question.js"`（走 re-export）
 
 ### §3.2 新 tx body（替换 `variant.ts:87-111`）
 
@@ -238,7 +285,8 @@ import { loadCliEnv } from "./load-cli-env.js";
 loadCliEnv();
 
 import { PrismaClient } from "@prisma/client";
-import { createVariantQuestion } from "../server/lib/question.js";
+// Plan 12 §3.1: 走 CLI-safe shared module，避开 question.ts 顶部的 server-only marker
+import { createVariantQuestion } from "../server/lib/question-shared.js";
 
 const BATCH = 200;
 
@@ -317,18 +365,27 @@ async function main() {
 main().catch(e => { console.error(e); process.exit(1); });
 ```
 
-### §4.4 Backfill 后验证（探针 43）
+### §4.4 Backfill 后验证（探针 43）—— 3 项**注销不变量**
+
+3 个 DB 探针都要求 count=0，且**在任意 deactivateUser 调用后仍成立**（探针稳定性是关键）：
 
 ```powershell
+# 探针 1: backfill 完整性 —— 不存在未关联 Question 的 VariantItem
 docker exec zhijiao-postgres psql -U postgres -d zhijiao -c "SELECT count(*) FROM variant_items WHERE question_id IS NULL;"
 # 期望: 0
 
-docker exec zhijiao-postgres psql -U postgres -d zhijiao -c "SELECT count(*) FROM questions WHERE source = 'VARIANT_GENERATED' AND created_by_user_id IS NULL;"
-# 期望: 0（每个 VARIANT_GENERATED Question 必有 owner —— 除非该 owner 已注销且 Plan 6 scrub 过；那时 createdByUserId 为 null 也合规）
+# 探针 2: 关联 Question 的 source 一致性 —— 每个被 VariantItem 引用的 Question 必须是 VARIANT_GENERATED
+# （不要查 created_by_user_id IS NULL —— 注销后 scrub 会变 null 是合规的，与该探针互斥）
+docker exec zhijiao-postgres psql -U postgres -d zhijiao -c "SELECT count(*) FROM variant_items vi JOIN questions q ON q.id = vi.question_id WHERE q.source IS DISTINCT FROM 'VARIANT_GENERATED';"
+# 期望: 0
 
+# 探针 3: owner 一致性 —— 未注销用户的 variant Question 必须 createdByUserId == VariantGroup.userId
+# （注销 scrub 后 createdByUserId IS NULL；这条用 IS NOT NULL 守门把注销态排除在外）
 docker exec zhijiao-postgres psql -U postgres -d zhijiao -c "SELECT count(*) FROM variant_items vi JOIN questions q ON q.id = vi.question_id JOIN variant_groups vg ON vg.id = vi.group_id WHERE q.created_by_user_id IS NOT NULL AND q.created_by_user_id != vg.user_id;"
-# 期望: 0（每个 backfilled Question 的 createdByUserId 等于其 VariantGroup.userId，除非已被 Plan 6 scrub 成 null）
+# 期望: 0
 ```
+
+**为什么不直接查 `created_by_user_id IS NULL`**：Plan 6 deactivateUser 完成后，注销用户的 VARIANT_GENERATED Question 的 createdByUserId 会被 scrub 成 null（spec §9）—— 这是设计意图，不应触发探针 fail。改用 "owner mismatch 但 owner 非空" 守门，把注销态自然排除在外。
 
 ---
 
@@ -455,13 +512,25 @@ if (matchedKpId && matchVia) {
 
 caller（`tutor.ts` / `error.ts` / `variant.ts`）不需要知道这层切换；继续传 parent / entry / question 的 id 即可。
 
-### §5.5 `kp:reconcile-pending` CLI 不动
+### §5.5 `kp:reconcile-pending` CLI + 历史 legacy 行**显式 punt**
 
-异步 LLM 路径 `processBatch` 保持现状。理由：
+异步 LLM 路径 `processBatch` 保持现状。**Plan 12 不升级既有 legacy `KpReconcileMatch` 行**，也**不为历史 variant question 补写 `QuestionKPLink`**：
 
-- `VARIANT_TO_PARENT_NEEDS_REVIEW` 行只在 `questionId==null` 时产生；Plan 12 backfill 跑完后这种 review 行不会再增加
-- 旧残留行作为 cleanup plan 的输入保留，供未来人工 review 或批量处理
-- 改造 `processBatch` 涉及对 batch 内行重新按 VariantItem.questionId 分流，复杂度高、收益低（量小、靠手动 review 即可）
+- 既有 `PENDING_REVIEW(VARIANT_TO_PARENT_NEEDS_REVIEW)` 行不会被 Plan 12 自动 LINKED 到 variant Question 的 KPLink
+- 由于 `KpReconcileMatch @@unique([sourceRefType, sourceRefId, normalizedHint])` 唯一约束，backfill 之后**重跑** `reconcileHintsSync` for 同一 VariantItem + hint → P2002 → `alreadySeen++` → no-op，不会自动写新 LINKED row + KPLink
+- `VARIANT_TO_PARENT_NEEDS_REVIEW` 行作为历史 audit 行保留，供未来 cleanup plan 一次性扫描 + 升级（基于 `VariantItem.questionId IS NOT NULL` 判断升级条件）
+- `kp:review` CLI 仍能看到这些行供 OPS 人工 review
+
+**理由**：
+
+- Plan 12 backfill 跑完后该路径在新数据上不再触发（红线 R5 守门）
+- 历史升级要写 `KpReconcileMatch.kpId / status / reviewReason` UPDATE + 补 `QuestionKPLink` INSERT 的批量逻辑，复杂度高、量小，独立 cleanup plan 处理更稳
+- 当前 dev DB 0 `KpReconcileMatch` 行；prod 上量后再开 cleanup plan
+
+**若未来 cleanup plan 接力**，应做的事：
+1. 扫 `KpReconcileMatch` where `sourceRefType="VARIANT_ITEM" AND reviewReason="VARIANT_TO_PARENT_NEEDS_REVIEW" AND status="PENDING_REVIEW"`
+2. JOIN `VariantItem` 取 `questionId`；若 `questionId IS NOT NULL` → upgrade row: `status=LINKED, reviewReason=null, questionId=variant.questionId`（注意覆盖 KpReconcileMatch.questionId 与 KPLink 目标一致，与红线 R5 同手艺）+ upsert `QuestionKPLink(variant.questionId, kpId, 1.0)`
+3. 若 `questionId IS NULL` → 维持 PENDING_REVIEW 等更早 backfill 补 questionId
 
 ---
 
@@ -524,7 +593,7 @@ if (
 | `kp-reconcile-sync-variant-legacy.test.ts` | integration | sourceRefType=VARIANT_ITEM + VariantItem.questionId==null（migration safety path）：EXACT/ALIAS 命中 → 仍走 `PENDING_REVIEW(VARIANT_TO_PARENT_NEEDS_REVIEW)`；`KpReconcileMatch.questionId === parent.questionId`；不写 QuestionKPLink。**legacy 路径在 backfill 跑完后理论不再触发，本测例防回归** |
 | `variant-backfill-questions.test.ts` | integration | 4 测例：(a) seed 5 行无 questionId VariantItem → backfill → 5 行有 questionId + 5 个 VARIANT_GENERATED Question + createdByUserId=group.userId / subjectId=parent.question.subjectId / status=DRAFT；(b) 二次跑 0 改动 + 0 新 Question（红线 R3 幂等）；(c) `--dry-run` 0 写但 count 准；(d) 部分已 backfill 部分未 backfill 混合 → 只动 null 行 |
 | `variant-backfill-race.test.ts` | integration | 模拟 race：seed 1 行 → mock `createVariantQuestion` 之后、`updateMany` 之前手动 update questionId → backfill 检测 update.count=0 → 删自己刚建的 orphan Question（断言 `prisma.question.count({ where: { source: "VARIANT_GENERATED" } })` 不增）+ continue 不抛 |
-| `pii-deactivate-variant-questions.test.ts` | integration | Plan 6 deactivateUser 补丁验证（spec §9）：seed VARIANT_GENERATED Question(createdByUserId=user) + VariantItem.questionId → deactivateUser → 验 Question 仍在 + createdByUserId === null + VariantItem 仍在 + questionId 不变 + `DeactivatePayload.scrubbed.variantGeneratedQuestions === 1` |
+| `pii-deactivate-variant-questions.test.ts` | integration | Plan 6 deactivateUser 补丁验证（spec §9）：seed ErrorBookEntry + VariantGroup + VariantItem.questionId + VARIANT_GENERATED Question(createdByUserId=user) → deactivateUser → 验：(a) `Question` 仍在 + `createdByUserId === null`；(b) `ErrorBookEntry / VariantGroup / VariantItem` 全删（Plan 6 既有 cascade chain，Plan 12 §9 不改）；(c) `DeactivatePayload.scrubbed.variantGeneratedQuestions === 1`；(d) `DeactivatePayload.deleted.variantItems / variantGroups / errorBookEntries` 计数仍正确（与 Plan 6 cascade 兼容）|
 
 **8 个测试文件**（全 integration；无 UI / E2E 改动）。
 
@@ -571,11 +640,25 @@ tx.question.deleteMany({ where: { source: "USER_ADHOC", createdByUserId: userId 
 
 ### §9.2 处理策略
 
-**方案 B：scrub `createdByUserId` 为 null，不删行。** 与 Plan 6 设计哲学一致（"PII 去标识化 + 统计数据保留"）；VARIANT_GENERATED 题面是用户提交内容的 AI 衍生，按 PII 原则应 scrub 归属字段，但 KP 命中数据有学情统计价值。
+**方案 B：scrub `createdByUserId` 为 null，不删 Question 行。** 与 Plan 6 设计哲学一致（"PII 去标识化 + 统计数据保留"）；VARIANT_GENERATED 题面是用户提交内容的 AI 衍生，按 PII 原则应 scrub 归属字段，但 KP 命中数据有学情统计价值。
 
-**为什么不删行**：`VariantItem.questionId` Restrict 卡删 Question；若级联删 VariantItem 与 Plan 12b "保留变式统计样本"目标冲突。
+**重要：VariantItem / VariantGroup / ErrorBookEntry 仍按 Plan 6 既有行为硬删**（注销 step 3 `ErrorBookEntry.deleteMany` → `VariantGroup.entry` Cascade → `VariantItem.groupId` Cascade）。Plan 12 不改这条 cascade chain。
 
-**为什么不留 tombstone FK**：去标识化不完整，与 Plan 6 方向不一致；Plan 6 对 `ModelCall.userId` 已采 scrub null 路径，VARIANT_GENERATED 同手艺。
+**注销后的数据形态**：
+
+| 表 | 操作 | 残留 |
+|---|---|---|
+| `ErrorBookEntry`（user 的） | 硬删 | 0 行 |
+| `VariantGroup`（cascade 自 ErrorBookEntry） | 硬删 | 0 行 |
+| `VariantItem`（cascade 自 VariantGroup） | 硬删 | 0 行 |
+| `Question`（source=VARIANT_GENERATED, createdByUserId=user） | scrub `createdByUserId=null`，**不动行** | 仍在；变 orphan（无 VariantItem 引用）；保留作 KP 统计样本 |
+| `QuestionKPLink`（指向变式 Question） | 不动 | 仍在；Plan 10/11 统计可用 |
+
+**为什么不删 Question 行**：
+- `VariantItem.questionId` Restrict 仅在"删 Question 而 VariantItem 仍引用"时触发；本注销路径 VariantItem 已先被 cascade 删，Restrict 不会卡 —— 但 Plan 12 选择不删 Question 是因为 KP 命中样本对未来学情有价值
+- 与 Plan 6 对 `ModelCall.userId` 已采 scrub null 路径同手艺；保留 "AI 衍生 metadata" 抹归属字段而非删行
+
+**为什么不留 tombstone FK**：去标识化不完整，与 Plan 6 方向不一致。
 
 ### §9.3 deactivateUser step C 补丁
 
@@ -666,7 +749,7 @@ return {
 - `pnpm.cmd --filter @zhijiao/web exec next build` exit 0
 - `pnpm.cmd --filter @zhijiao/web exec playwright test` 全绿（无 E2E 改动，零回归）
 - CLAUDE.md 加 Plan 12 条目 + "VariantItem 升格现状" 段 + Merge 探针 42-46 + 候选 Plan 重排
-- Backfill 跑完后 3 项 DB 探针（§4.4）全 0
+- Backfill 跑完后 3 项 DB 探针（§4.4）全 count=0，且在任意 deactivateUser 调用后仍成立（探针稳定性是关键，故探针 2/3 用 "owner IS NOT NULL" 把注销态排除）
 - 红线 R1-R5 全部测试覆盖
 - Plan 6 `deactivateUser` 补丁落地 + `pii-deactivate-variant-questions.test.ts` 绿
 - `pnpm.cmd --filter @zhijiao/web variant:backfill-questions --dry-run` smoke exit 0
