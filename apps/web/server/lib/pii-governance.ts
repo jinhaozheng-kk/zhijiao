@@ -18,6 +18,9 @@ export interface DeactivatePayload {
     variantGroups: number;
     variantItems: number;
     userAdhocQuestions: number;
+    assignmentAnswers: number;
+    assignmentPerformance: number;
+    studentAssignments: number;
   };
   dryRun: boolean;
 }
@@ -93,6 +96,36 @@ export interface UserDataExport {
     latencyMs: number | null;
     tokensIn: number | null;
     tokensOut: number | null;
+    createdAt: Date;
+  }>;
+  studentAssignments: Array<{
+    id: string;
+    assignmentId: string;
+    tierId: string;
+    status: string;
+    suggestedTier: string | null;
+    tierOverrideReason: string | null;
+    submittedAt: Date | null;
+    gradedAt: Date | null;
+    createdAt: Date;
+  }>;
+  assignmentAnswers: Array<{
+    id: string;
+    studentAssignmentId: string;
+    itemId: string;
+    answerJson: Prisma.JsonValue;
+    gradeStatus: string;
+    teacherFeedbackMd: string | null;
+    errorBookEntryId: string | null;
+    gradedAt: Date | null;
+  }>;
+  assignmentPerformance: Array<{
+    id: string;
+    assignmentId: string;
+    studentUserId: string;
+    itemId: string;
+    gradeStatus: string;
+    kpIds: string[];
     createdAt: Date;
   }>;
 }
@@ -184,6 +217,9 @@ export async function exportUserData(
     errorBookEntries,
     userAdhocQuestions,
     modelCalls,
+    studentAssignments,
+    assignmentAnswers,
+    assignmentPerformance,
   ] = await Promise.all([
     prisma.authIdentity.findMany({
       where: { userId },
@@ -269,6 +305,48 @@ export async function exportUserData(
         createdAt: true,
       },
     }),
+    prisma.studentAssignment.findMany({
+      where: { studentUserId: userId },
+      orderBy: { createdAt: "asc" },
+      select: {
+        id: true,
+        assignmentId: true,
+        tierId: true,
+        status: true,
+        suggestedTier: true,
+        tierOverrideReason: true,
+        submittedAt: true,
+        gradedAt: true,
+        createdAt: true,
+      },
+    }),
+    prisma.assignmentAnswer.findMany({
+      where: { studentAssignment: { studentUserId: userId } },
+      orderBy: { id: "asc" },
+      select: {
+        id: true,
+        studentAssignmentId: true,
+        itemId: true,
+        answerJson: true,
+        gradeStatus: true,
+        teacherFeedbackMd: true,
+        errorBookEntryId: true,
+        gradedAt: true,
+      },
+    }),
+    prisma.assignmentPerformance.findMany({
+      where: { studentUserId: userId },
+      orderBy: { createdAt: "asc" },
+      select: {
+        id: true,
+        assignmentId: true,
+        studentUserId: true,
+        itemId: true,
+        gradeStatus: true,
+        kpIds: true,
+        createdAt: true,
+      },
+    }),
   ]);
 
   return {
@@ -300,6 +378,9 @@ export async function exportUserData(
     errorBookEntries,
     userAdhocQuestions,
     modelCalls,
+    studentAssignments,
+    assignmentAnswers,
+    assignmentPerformance,
   };
 }
 
@@ -496,6 +577,15 @@ export async function deactivateUser(
       where: { source: "VARIANT_GENERATED", createdByUserId: args.userId },
       data: { createdByUserId: null },
     });
+    const assignmentAnswers = await tx.assignmentAnswer.count({
+      where: { studentAssignment: { studentUserId: args.userId } },
+    });
+    const assignmentPerformance = await tx.assignmentPerformance.deleteMany({
+      where: { studentUserId: args.userId },
+    });
+    const studentAssignments = await tx.studentAssignment.deleteMany({
+      where: { studentUserId: args.userId },
+    });
 
     await tx.user.update({
       where: { id: args.userId },
@@ -518,7 +608,12 @@ export async function deactivateUser(
         authIdentities: authIdentities.count,
         otpRequests: otpRequests.count,
       },
-      deleted: plan.payload.deleted,
+      deleted: {
+        ...plan.payload.deleted,
+        assignmentAnswers,
+        assignmentPerformance: assignmentPerformance.count,
+        studentAssignments: studentAssignments.count,
+      },
       dryRun: false,
     };
 
@@ -578,6 +673,9 @@ async function buildDeactivatePlan(
       variantGroups: 0,
       variantItems: 0,
       userAdhocQuestions: 0,
+      assignmentAnswers: 0,
+      assignmentPerformance: 0,
+      studentAssignments: 0,
     },
     dryRun: false,
   };
@@ -620,6 +718,9 @@ async function buildDeactivatePlan(
     variantGeneratedQuestions,
     authIdentities,
     otpRequests,
+    assignmentAnswers,
+    assignmentPerformance,
+    studentAssignments,
   ] = await Promise.all([
     prisma.errorBookEntry.count({ where: { userId } }),
     entryIds.length ? prisma.variantGroup.count({ where: { entryId: { in: entryIds } } }) : 0,
@@ -635,6 +736,11 @@ async function buildDeactivatePlan(
     }),
     prisma.authIdentity.count({ where: { userId } }),
     phoneNumbers.length ? prisma.otpRequest.count({ where: { phone: { in: phoneNumbers } } }) : 0,
+    prisma.assignmentAnswer.count({
+      where: { studentAssignment: { studentUserId: userId } },
+    }),
+    prisma.assignmentPerformance.count({ where: { studentUserId: userId } }),
+    prisma.studentAssignment.count({ where: { studentUserId: userId } }),
   ]);
 
   return {
@@ -656,6 +762,9 @@ async function buildDeactivatePlan(
         variantGroups,
         variantItems,
         userAdhocQuestions,
+        assignmentAnswers,
+        assignmentPerformance,
+        studentAssignments,
       },
       dryRun: false,
     },

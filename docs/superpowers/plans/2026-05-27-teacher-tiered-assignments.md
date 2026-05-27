@@ -2034,7 +2034,7 @@ git commit -m "feat(web): add student assignment workflow"
 - Modify: `apps/web/tests/integration/pii-deactivate-user.test.ts`
 - Modify: `apps/web/tests/integration/pii-export-user-data.test.ts`
 
-- [ ] **Step 1: Add PII tests for assignment data**
+- [x] **Step 1: Add PII tests for assignment data**
 
 Extend `pii-deactivate-user.test.ts`:
 
@@ -2060,7 +2060,7 @@ it("scrubs assignment answers and performance on student deactivation", async ()
 });
 ```
 
-- [ ] **Step 2: Run failing PII test**
+- [x] **Step 2: Run failing PII test**
 
 Run:
 
@@ -2070,7 +2070,7 @@ pnpm.cmd --filter @zhijiao/web test -- tests/integration/pii-deactivate-user.tes
 
 Expected: FAIL because assignment data is not handled yet.
 
-- [ ] **Step 3: Patch PII service**
+- [x] **Step 3: Patch PII service**
 
 Modify `apps/web/server/lib/pii-governance.ts` in the student deactivation path:
 
@@ -2102,7 +2102,7 @@ assignmentPerformance: assignmentPerformance.count,
 studentAssignments: studentAssignments.count,
 ```
 
-- [ ] **Step 4: Run PII tests**
+- [x] **Step 4: Run PII tests**
 
 Run:
 

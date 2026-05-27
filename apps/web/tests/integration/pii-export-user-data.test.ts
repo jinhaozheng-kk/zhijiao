@@ -21,6 +21,9 @@ async function seedExportFixture() {
     },
   });
   const subject = await prisma.subject.create({ data: { code: "math", name: "Math" } });
+  const teacher = await prisma.user.create({
+    data: { name: "Teacher", persona: "TEACHER", isMinor: false },
+  });
   const question = await prisma.question.create({
     data: {
       subjectId: subject.id,
@@ -103,6 +106,78 @@ async function seedExportFixture() {
       actualAnswerMd: "actual",
     },
   });
+  const classroom = await prisma.classroom.create({
+    data: {
+      name: "Export classroom",
+      subjectId: subject.id,
+      gradeLevel: "G8",
+      members: {
+        create: [
+          { userId: teacher.id, role: "TEACHER" },
+          { userId: user.id, role: "STUDENT" },
+        ],
+      },
+    },
+  });
+  const assignment = await prisma.assignment.create({
+    data: {
+      classroomId: classroom.id,
+      teacherUserId: teacher.id,
+      title: "Export assignment",
+      source: "MANUAL_AI",
+      status: "PUBLISHED",
+      publishedAt: new Date("2026-01-03T00:00:00Z"),
+      tiers: {
+        create: {
+          level: "CONSOLIDATION",
+          title: "Export tier",
+          items: {
+            create: {
+              questionId: question.id,
+              position: 1,
+              stemMd: "Assignment stem",
+              type: "CALCULATION",
+              answerMd: "x = 4",
+              solutionMd: "Subtract 3.",
+            },
+          },
+        },
+      },
+    },
+    include: { tiers: { include: { items: true } } },
+  });
+  const assignmentTier = assignment.tiers[0]!;
+  const assignmentItem = assignmentTier.items[0]!;
+  const studentAssignment = await prisma.studentAssignment.create({
+    data: {
+      assignmentId: assignment.id,
+      studentUserId: user.id,
+      tierId: assignmentTier.id,
+      status: "GRADED",
+      suggestedTier: "CONSOLIDATION",
+      submittedAt: new Date("2026-01-04T00:00:00Z"),
+      gradedAt: new Date("2026-01-05T00:00:00Z"),
+    },
+  });
+  const assignmentAnswer = await prisma.assignmentAnswer.create({
+    data: {
+      studentAssignmentId: studentAssignment.id,
+      itemId: assignmentItem.id,
+      answerJson: { text: "student private answer" },
+      gradeStatus: "CORRECT",
+      teacherFeedbackMd: "teacher private feedback",
+      gradedAt: new Date("2026-01-05T00:00:00Z"),
+    },
+  });
+  const assignmentPerformance = await prisma.assignmentPerformance.create({
+    data: {
+      assignmentId: assignment.id,
+      studentUserId: user.id,
+      itemId: assignmentItem.id,
+      gradeStatus: "CORRECT",
+      kpIds: [],
+    },
+  });
   await prisma.modelCall.create({
     data: {
       taskKind: "TUTOR_ADHOC",
@@ -117,12 +192,13 @@ async function seedExportFixture() {
       userId: user.id,
     },
   });
-  return { user, wallet, userAdhoc };
+  return { user, wallet, userAdhoc, studentAssignment, assignmentAnswer, assignmentPerformance };
 }
 
 describe("exportUserData", () => {
   it("exports whitelisted user data and excludes internal PII fields", async () => {
-    const { user, wallet, userAdhoc } = await seedExportFixture();
+    const { user, wallet, userAdhoc, studentAssignment, assignmentAnswer, assignmentPerformance } =
+      await seedExportFixture();
 
     const result = await exportUserData(prisma, user.id);
     expect(result.schemaVersion).toBe("2026-05-26");
@@ -159,6 +235,22 @@ describe("exportUserData", () => {
         status: "SUCCESS",
         tokensIn: 10,
         tokensOut: 20,
+      }),
+    ]);
+    expect(result.studentAssignments).toEqual([
+      expect.objectContaining({ id: studentAssignment.id, status: "GRADED" }),
+    ]);
+    expect(result.assignmentAnswers).toEqual([
+      expect.objectContaining({
+        id: assignmentAnswer.id,
+        gradeStatus: "CORRECT",
+        teacherFeedbackMd: "teacher private feedback",
+      }),
+    ]);
+    expect(result.assignmentPerformance).toEqual([
+      expect.objectContaining({
+        id: assignmentPerformance.id,
+        gradeStatus: "CORRECT",
       }),
     ]);
 
