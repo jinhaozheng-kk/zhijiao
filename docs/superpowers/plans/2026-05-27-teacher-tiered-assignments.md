@@ -1167,7 +1167,7 @@ git commit -m "feat(web): generate charged assignment drafts"
 - Test: `apps/web/tests/integration/assignment-state-machine.test.ts`
 - Test: `apps/web/tests/integration/assignment-permissions.test.ts`
 
-- [ ] **Step 1: Add state machine tests**
+- [x] **Step 1: Add state machine tests**
 
 Create `apps/web/tests/integration/assignment-state-machine.test.ts`:
 
@@ -1231,7 +1231,7 @@ describe("assignment state machine", () => {
 });
 ```
 
-- [ ] **Step 2: Run failing tests**
+- [x] **Step 2: Run failing tests**
 
 Run:
 
@@ -1241,7 +1241,7 @@ pnpm.cmd --filter @zhijiao/web test -- tests/integration/assignment-state-machin
 
 Expected: FAIL because `publish`, `updateDraft`, and `submit` are not implemented.
 
-- [ ] **Step 3: Add updateDraft, publish, submit**
+- [x] **Step 3: Add updateDraft, publish, submit**
 
 Modify `apps/web/server/routers/assignment.ts`:
 
@@ -1331,7 +1331,7 @@ publish: authedProcedure
 
 Add `submit` and owner validation following the same pattern; it must check assigned tier item ids before writing `AssignmentAnswer`.
 
-- [ ] **Step 4: Add permission tests**
+- [x] **Step 4: Add permission tests**
 
 Create `apps/web/tests/integration/assignment-permissions.test.ts`:
 
@@ -1363,7 +1363,7 @@ describe("assignment permissions", () => {
 });
 ```
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
 
 Run:
 
@@ -1377,7 +1377,7 @@ Expected: both pass.
 - [ ] **Step 6: Commit**
 
 ```powershell
-git add apps/web/server/routers/assignment.ts apps/web/server/lib/assignment-access.ts apps/web/tests/integration/assignment-state-machine.test.ts apps/web/tests/integration/assignment-permissions.test.ts
+git add apps/web/server/routers/assignment.ts apps/web/tests/integration/_helpers/assignment-fixtures.ts apps/web/tests/integration/assignment-state-machine.test.ts apps/web/tests/integration/assignment-permissions.test.ts
 git commit -m "feat(web): add assignment publish and submit flow"
 ```
 

@@ -1,4 +1,5 @@
 import "server-only";
+import type { Prisma } from "@prisma/client";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import {
@@ -7,7 +8,10 @@ import {
   router,
 } from "../trpc.js";
 import { getAiRouter } from "@/lib/ai-client";
-import { requireTeacherClassroom } from "../lib/assignment-access.js";
+import {
+  requireTeacherAssignment,
+  requireTeacherClassroom,
+} from "../lib/assignment-access.js";
 import { persistGeneratedAssignment } from "../lib/assignment-generation.js";
 
 const TierCountsSchema = z.object({
@@ -111,5 +115,200 @@ export const assignmentRouter = router({
       });
 
       return { assignmentId: assignment.id };
+    }),
+
+  updateDraft: authedProcedure
+    .input(
+      z.object({
+        assignmentId: z.string().cuid(),
+        title: z.string().min(1).max(120).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const assignment = await requireTeacherAssignment(
+        ctx.db,
+        ctx.auth.userId,
+        input.assignmentId,
+      );
+      if (assignment.status !== "DRAFT") {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "Assignment state changed",
+          cause: { reason: "ASSIGNMENT_STATE_CHANGED" },
+        });
+      }
+      return ctx.db.assignment.update({
+        where: { id: input.assignmentId },
+        data: { title: input.title },
+      });
+    }),
+
+  publish: authedProcedure
+    .input(z.object({ assignmentId: z.string().cuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const assignment = await requireTeacherAssignment(
+        ctx.db,
+        ctx.auth.userId,
+        input.assignmentId,
+      );
+      if (assignment.status !== "DRAFT") {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "Assignment state changed",
+          cause: { reason: "ASSIGNMENT_STATE_CHANGED" },
+        });
+      }
+
+      const studentMembers = await ctx.db.classroomMember.findMany({
+        where: { classroomId: assignment.classroomId, role: "STUDENT" },
+      });
+      if (studentMembers.length === 0) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Classroom has no students",
+          cause: { reason: "CLASSROOM_HAS_NO_STUDENTS" },
+        });
+      }
+
+      const tiers = assignment.tiers;
+      if (tiers.length === 0 || tiers.some((tier) => tier.items.length === 0)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Assignment tier is empty",
+          cause: { reason: "ASSIGNMENT_TIER_EMPTY" },
+        });
+      }
+
+      return ctx.db.$transaction(async (tx) => {
+        await tx.assignment.update({
+          where: { id: assignment.id },
+          data: { status: "PUBLISHED", publishedAt: new Date() },
+        });
+        const defaultTier =
+          tiers.find((tier) => tier.level === "CONSOLIDATION") ?? tiers[0]!;
+        for (const member of studentMembers) {
+          await tx.studentAssignment.upsert({
+            where: {
+              assignmentId_studentUserId: {
+                assignmentId: assignment.id,
+                studentUserId: member.userId,
+              },
+            },
+            update: {
+              tierId: defaultTier.id,
+              suggestedTier: defaultTier.level,
+            },
+            create: {
+              assignmentId: assignment.id,
+              studentUserId: member.userId,
+              tierId: defaultTier.id,
+              suggestedTier: defaultTier.level,
+            },
+          });
+        }
+        return { assignmentId: assignment.id };
+      });
+    }),
+
+  getForStudent: authedProcedure
+    .input(z.object({ studentAssignmentId: z.string().cuid() }))
+    .query(async ({ ctx, input }) => {
+      const studentAssignment = await ctx.db.studentAssignment.findUnique({
+        where: { id: input.studentAssignmentId },
+        include: {
+          assignment: true,
+          tier: { include: { items: { orderBy: { position: "asc" } } } },
+          answers: true,
+        },
+      });
+      if (
+        !studentAssignment ||
+        studentAssignment.studentUserId !== ctx.auth.userId
+      ) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Student assignment not found",
+          cause: { reason: "STUDENT_ASSIGNMENT_NOT_FOUND" },
+        });
+      }
+      return { studentAssignment };
+    }),
+
+  submit: authedProcedure
+    .input(
+      z.object({
+        studentAssignmentId: z.string().cuid(),
+        answers: z
+          .array(
+            z.object({
+              itemId: z.string().cuid(),
+              answerJson: z.unknown(),
+            }),
+          )
+          .min(1),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const studentAssignment = await ctx.db.studentAssignment.findUnique({
+        where: { id: input.studentAssignmentId },
+        include: {
+          assignment: true,
+          tier: { include: { items: true } },
+        },
+      });
+      if (
+        !studentAssignment ||
+        studentAssignment.studentUserId !== ctx.auth.userId
+      ) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Student assignment not found",
+          cause: { reason: "STUDENT_ASSIGNMENT_NOT_FOUND" },
+        });
+      }
+      if (
+        studentAssignment.assignment.status !== "PUBLISHED" ||
+        studentAssignment.status !== "ASSIGNED"
+      ) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "Assignment state changed",
+          cause: { reason: "ASSIGNMENT_STATE_CHANGED" },
+        });
+      }
+
+      const allowedItemIds = new Set(
+        studentAssignment.tier.items.map((item) => item.id),
+      );
+      const submittedItemIds = new Set<string>();
+      for (const answer of input.answers) {
+        if (
+          !allowedItemIds.has(answer.itemId) ||
+          submittedItemIds.has(answer.itemId)
+        ) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Answer item is not assigned",
+            cause: { reason: "ASSIGNMENT_ITEM_NOT_ASSIGNED" },
+          });
+        }
+        submittedItemIds.add(answer.itemId);
+      }
+
+      return ctx.db.$transaction(async (tx) => {
+        for (const answer of input.answers) {
+          await tx.assignmentAnswer.create({
+            data: {
+              studentAssignmentId: studentAssignment.id,
+              itemId: answer.itemId,
+              answerJson: answer.answerJson as Prisma.InputJsonValue,
+            },
+          });
+        }
+        return tx.studentAssignment.update({
+          where: { id: studentAssignment.id },
+          data: { status: "SUBMITTED", submittedAt: new Date() },
+        });
+      });
     }),
 });
