@@ -69,7 +69,7 @@ Modify:
 - Modify: `packages/db/src/test-utils.ts`
 - Test: `packages/db/prisma/migrations/<timestamp>_plan10_teacher_assignments/migration.sql`
 
-- [ ] **Step 1: Add Prisma enums and models**
+- [x] **Step 1: Add Prisma enums and models**
 
 Add the enums and models from the design spec to `packages/db/prisma/schema.prisma`. Add these back-relations to existing models:
 
@@ -95,7 +95,7 @@ model ErrorBookEntry {
 
 Use `onDelete: Restrict` for user-owned assignment relations and `onDelete: Cascade` for assignment-owned child rows.
 
-- [ ] **Step 2: Create the migration**
+- [x] **Step 2: Create the migration**
 
 Run:
 
@@ -105,7 +105,7 @@ pnpm.cmd --filter @zhijiao/db db:migrate --name plan10_teacher_assignments
 
 Expected: Prisma creates a new migration directory and applies it to the dev DB. If the wrapper script does not accept `--name`, run the repo's existing migration command documented in `README.md` and keep the generated migration name ending in `plan10_teacher_assignments`.
 
-- [ ] **Step 3: Generate Prisma client**
+- [x] **Step 3: Generate Prisma client**
 
 Run:
 
@@ -115,7 +115,7 @@ pnpm.cmd --filter @zhijiao/db db:generate
 
 Expected: Prisma client generation succeeds with no schema validation errors.
 
-- [ ] **Step 4: Add classroom seed**
+- [x] **Step 4: Add classroom seed**
 
 Create `packages/db/prisma/seed/4_classroom.ts`:
 
@@ -168,7 +168,7 @@ export async function seedClassroom(prisma: PrismaClient) {
 }
 ```
 
-- [ ] **Step 5: Wire the seed**
+- [x] **Step 5: Wire the seed**
 
 Modify `packages/db/prisma/seed/index.ts`:
 
@@ -180,7 +180,7 @@ await seedClassroom(prisma);
 
 Place it after test users, subjects, questions, and KP aliases have been seeded.
 
-- [ ] **Step 6: Update reset order**
+- [x] **Step 6: Update reset order**
 
 Modify `packages/db/src/test-utils.ts` so the truncation list starts with assignment children before parents:
 
@@ -220,7 +220,7 @@ const TABLES = [
 
 Keep any existing repo-specific tables in their current relative positions after assignment tables.
 
-- [ ] **Step 7: Verify schema**
+- [x] **Step 7: Verify schema**
 
 Run:
 
@@ -232,7 +232,14 @@ pnpm.cmd --filter @zhijiao/db exec tsx scripts/setup-test-dbs.ts
 
 Expected: all three commands complete without Prisma relation errors, and `dev-classroom-math-g8-01` exists in dev seed.
 
-- [ ] **Step 8: Commit**
+Verified 2026-05-27:
+
+- `pnpm.cmd --filter @zhijiao/db db:generate`
+- `$env:DATABASE_URL='postgresql://postgres:postgres@localhost:5432/zhijiao'; pnpm.cmd --filter @zhijiao/db db:seed`
+- `$env:DATABASE_URL='postgresql://postgres:postgres@localhost:5432/zhijiao'; $env:DATABASE_URL_TEST='postgresql://postgres:postgres@localhost:5432/zhijiao_test'; pnpm.cmd --filter @zhijiao/db exec tsx scripts/setup-test-dbs.ts`
+- `docker exec zhijiao-postgres psql -U postgres -d zhijiao -t -A -c "select c.id, c.name, count(cm.*) as members from classrooms c left join classroom_members cm on cm.classroom_id = c.id where c.id = 'dev-classroom-math-g8-01' group by c.id, c.name;"` returned `dev-classroom-math-g8-01|八年级数学 1 班|4`.
+
+- [x] **Step 8: Commit**
 
 ```powershell
 git add packages/db/prisma/schema.prisma packages/db/prisma/migrations packages/db/prisma/seed packages/db/src/test-utils.ts
