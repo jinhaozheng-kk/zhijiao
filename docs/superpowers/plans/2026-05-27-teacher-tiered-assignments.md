@@ -1632,7 +1632,7 @@ git commit -m "feat(web): write assignment grading back to error book"
 - Create: `apps/web/app/teacher/assignments/[assignmentId]/page.tsx`
 - Create: `apps/web/app/teacher/assignments/[assignmentId]/grading-panel.tsx`
 
-- [ ] **Step 1: Add teacher dashboard**
+- [x] **Step 1: Add teacher dashboard**
 
 Modify `apps/web/app/teacher/page.tsx`:
 
@@ -1671,7 +1671,7 @@ export default function TeacherPage() {
 }
 ```
 
-- [ ] **Step 2: Add generation form**
+- [x] **Step 2: Add generation form**
 
 Create `generation-form.tsx` with tRPC mutation and visible cost:
 
@@ -1774,7 +1774,7 @@ export default async function NewAssignmentPage({
 }
 ```
 
-- [ ] **Step 3: Add draft editor and teacher detail**
+- [x] **Step 3: Add draft editor and teacher detail**
 
 Implement pages with dense, operational layouts:
 
@@ -1791,7 +1791,7 @@ export default function AssignmentEditPage({ params }: { params: { assignmentId:
 
 `DraftEditor` must call `assignment.updateDraft` and `assignment.publish`, show state conflict messages, and not render publish as successful until the mutation returns.
 
-- [ ] **Step 4: Run typecheck**
+- [x] **Step 4: Run typecheck**
 
 Run:
 
