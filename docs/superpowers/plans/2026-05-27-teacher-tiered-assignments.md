@@ -1374,7 +1374,7 @@ pnpm.cmd --filter @zhijiao/web test -- tests/integration/assignment-permissions.
 
 Expected: both pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add apps/web/server/routers/assignment.ts apps/web/tests/integration/_helpers/assignment-fixtures.ts apps/web/tests/integration/assignment-state-machine.test.ts apps/web/tests/integration/assignment-permissions.test.ts
