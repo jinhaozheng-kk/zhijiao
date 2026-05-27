@@ -2114,7 +2114,7 @@ pnpm.cmd --filter @zhijiao/web test -- tests/unit/pii-ops-action-log-payload.tes
 
 Expected: pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add apps/web/server/lib/pii-governance.ts apps/web/tests/integration/pii-deactivate-user.test.ts apps/web/tests/integration/pii-export-user-data.test.ts apps/web/tests/unit/pii-ops-action-log-payload.test.ts
