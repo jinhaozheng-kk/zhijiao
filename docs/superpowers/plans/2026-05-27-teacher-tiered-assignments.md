@@ -1801,7 +1801,7 @@ pnpm.cmd --filter @zhijiao/web typecheck
 
 Expected: pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add apps/web/app/teacher
