@@ -2017,7 +2017,7 @@ pnpm.cmd --filter @zhijiao/web test:e2e -- e2e/assignment-lifecycle.spec.ts
 
 Expected: pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add apps/web/app/assignments apps/web/app/api/e2e-hooks/assignment/route.ts apps/web/e2e/assignment-lifecycle.spec.ts
