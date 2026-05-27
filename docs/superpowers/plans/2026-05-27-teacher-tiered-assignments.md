@@ -1610,7 +1610,7 @@ pnpm.cmd --filter @zhijiao/web test -- tests/integration/assignment-error-book-w
 
 Expected: pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add apps/web/server/lib/assignment-writeback.ts apps/web/server/routers/assignment.ts apps/web/tests/integration/assignment-error-book-writeback.test.ts
