@@ -678,7 +678,7 @@ git commit -m "feat(ai): add assignment question generation"
 - Modify: `apps/web/server/trpc.ts`
 - Test: `apps/web/tests/integration/assignment-generate-billing.test.ts`
 
-- [ ] **Step 1: Add failing variable billing tests**
+- [x] **Step 1: Add failing variable billing tests**
 
 Create `apps/web/tests/integration/assignment-generate-billing.test.ts` with the first tests focused on middleware behavior:
 
@@ -744,7 +744,7 @@ describe("assignment generation billing", () => {
 
 Add helper functions inside the test file if no shared helper exists. Use existing test fixture style from nearby integration tests.
 
-- [ ] **Step 2: Run failing test**
+- [x] **Step 2: Run failing test**
 
 Run:
 
@@ -754,7 +754,7 @@ pnpm.cmd --filter @zhijiao/web test -- tests/integration/assignment-generate-bil
 
 Expected: FAIL because router and action kind do not exist yet.
 
-- [ ] **Step 3: Add billing kind**
+- [x] **Step 3: Add billing kind**
 
 Modify `packages/billing/src/pricing.ts`:
 
@@ -779,7 +779,7 @@ export const PRICING: Record<ActionKind, number> = {
 };
 ```
 
-- [ ] **Step 4: Add variable charge middleware**
+- [x] **Step 4: Add variable charge middleware**
 
 Modify `apps/web/server/trpc.ts`:
 
@@ -851,7 +851,7 @@ export const chargeVariableMiddleware = (
 
 Use the existing private helper names in `trpc.ts`. If `readClientRequestId`, `shouldCompensate`, or `errorReason` are currently local to `chargeMiddleware`, extract them above both middlewares without changing behavior.
 
-- [ ] **Step 5: Run focused billing tests**
+- [x] **Step 5: Run focused billing tests**
 
 Run:
 
@@ -861,7 +861,15 @@ pnpm.cmd --filter @zhijiao/web test -- tests/integration/assignment-generate-bil
 
 Expected: tests still fail because assignment router is not implemented. The failure should now be a missing router/procedure error, not missing pricing or middleware symbols.
 
-- [ ] **Step 6: Commit**
+Verified 2026-05-27:
+
+- RED: `pnpm.cmd --filter @zhijiao/web test -- tests/integration/assignment-generate-billing.test.ts` failed on missing `assignment.generateDraftFromCriteria`.
+- `pnpm.cmd --filter @zhijiao/web typecheck` passed.
+- `pnpm.cmd --filter @zhijiao/billing typecheck` passed.
+- `pnpm.cmd --filter @zhijiao/billing test` passed: 10 files, 38 tests.
+- Focused assignment billing test still fails as expected with `No procedure found on path "assignment,generateDraftFromCriteria"`; this is Task 4 scope.
+
+- [x] **Step 6: Commit**
 
 ```powershell
 git add packages/billing/src/pricing.ts apps/web/server/trpc.ts apps/web/tests/integration/assignment-generate-billing.test.ts

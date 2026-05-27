@@ -53,6 +53,20 @@ export const permissionProcedure = (perm: Permission) =>
     return next();
   });
 
+function readClientRequestId(rawInput: unknown): string {
+  const parsed = z
+    .object({ clientRequestId: z.string().uuid() })
+    .safeParse(rawInput);
+  if (!parsed.success) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "clientRequestId is required",
+      cause: { reason: "CLIENT_REQUEST_ID_REQUIRED" },
+    });
+  }
+  return parsed.data.clientRequestId;
+}
+
 // Plan 3 Task 9 (extracted into reusable middleware by Plan 4 Task 3).
 //
 // Charges 1 priceOf(kind) credit before next() runs the procedure body.
@@ -239,6 +253,134 @@ export const chargeMiddleware = (kind: ActionKind) =>
 // implementation — chargeMiddleware was extracted verbatim.
 export const chargedProcedure = (kind: ActionKind) =>
   authedProcedure.use(chargeMiddleware(kind));
+
+// Plan 10: charge by generated question count, not by a fixed action cost.
+// Compose after auth and assignment/classroom access validation so invalid
+// resource access cannot create a debit row.
+export const chargeVariableMiddleware = (
+  kind: ActionKind,
+  getUnits: (rawInput: unknown) => number,
+) =>
+  t.middleware(async ({ ctx, next, getRawInput }) => {
+    if (!ctx.auth) {
+      throw new TRPCError({
+        code: "UNAUTHORIZED",
+        message: "Please sign in first",
+        cause: { reason: ctx.authError ?? "NO_SESSION" },
+      });
+    }
+
+    const raw = await getRawInput();
+    const clientRequestId = readClientRequestId(raw);
+    const units = getUnits(raw);
+    if (!Number.isInteger(units) || units <= 0 || units > 30) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "Invalid generation count",
+        cause: { reason: "ASSIGNMENT_GENERATION_COUNT_INVALID" },
+      });
+    }
+
+    const wallet = await ensureWallet(ctx.db, ctx.auth.userId);
+    const cost = priceOf(kind) * units;
+    const idemKey = `debit:${kind.toLowerCase()}:${ctx.auth.userId}:${clientRequestId}`;
+
+    let debit: Awaited<ReturnType<typeof chargeForAction>>;
+    try {
+      debit = await chargeForAction(ctx.db, {
+        walletId: wallet.id,
+        kind,
+        cost,
+        idemKey,
+        createdByUserId: ctx.auth.userId,
+      });
+    } catch (e) {
+      if (e instanceof ActionAlreadyChargedError) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "Request already processed",
+          cause: { reason: "ACTION_IDEMPOTENCY_HIT" },
+        });
+      }
+      throw e;
+    }
+
+    if (debit.kind === "INSUFFICIENT_BALANCE") {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: "Insufficient balance",
+        cause: {
+          reason: "INSUFFICIENT_BALANCE",
+          required: cost,
+          balance: debit.balance,
+        },
+      });
+    }
+
+    const result = await next({
+      ctx: {
+        ...ctx,
+        auth: ctx.auth,
+        debit: { ledgerId: debit.ledgerId, cost },
+      },
+    });
+    if (result.ok) return result;
+
+    const e = result.error;
+    if (shouldCompensate(e)) {
+      await compensate(ctx.db, {
+        originalLedgerId: debit.ledgerId,
+        walletId: wallet.id,
+        cost,
+        kind,
+        reason: errorReason(e),
+      });
+    } else {
+      const causeObj = (e as { cause?: unknown } | null)?.cause;
+      const originalFromCauseObj =
+        causeObj && typeof causeObj === "object" && "original" in causeObj
+          ? (causeObj as { original?: unknown }).original
+          : undefined;
+      const originalClass =
+        originalFromCauseObj instanceof Error
+          ? originalFromCauseObj.constructor.name
+          : causeObj instanceof Error
+            ? causeObj.constructor.name
+            : (e as { constructor?: { name?: string } } | null)?.constructor
+                ?.name ?? "Unknown";
+      const existing = await ctx.db.creditLedger.findUnique({
+        where: { id: debit.ledgerId },
+        select: { metadata: true },
+      });
+      const prior =
+        (existing?.metadata as Record<string, unknown> | null) ?? {};
+      await ctx.db.creditLedger.update({
+        where: { id: debit.ledgerId },
+        data: {
+          metadata: {
+            ...prior,
+            compensationStatus: "not_compensated_whitelisted",
+            errorClass: originalClass,
+          },
+        },
+      });
+      logger.warn(
+        {
+          event: "charged_action_not_compensated",
+          ledgerId: debit.ledgerId,
+          walletId: wallet.id,
+          userId: ctx.auth.userId,
+          actionKind: kind,
+          cost,
+          units,
+          errorClass: originalClass,
+          requestId: ctx.requestId,
+        },
+        "Action failed but whitelisted as non-compensable",
+      );
+    }
+    return result;
+  });
 
 // Plan 4 Task 3 new middleware.
 // Loads ctx.entry from rawInput.entryId, with three failures collapsed into
