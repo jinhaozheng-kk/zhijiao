@@ -889,7 +889,7 @@ git commit -m "feat(billing): support variable assignment generation charges"
 - Modify: `apps/web/server/root.ts`
 - Test: `apps/web/tests/integration/assignment-generate-billing.test.ts`
 
-- [ ] **Step 1: Implement access helpers**
+- [x] **Step 1: Implement access helpers**
 
 Create `apps/web/server/lib/assignment-access.ts`:
 
@@ -936,7 +936,7 @@ export async function requireTeacherAssignment(
 }
 ```
 
-- [ ] **Step 2: Implement generation persistence**
+- [x] **Step 2: Implement generation persistence**
 
 Create `apps/web/server/lib/assignment-generation.ts`:
 
@@ -1030,7 +1030,7 @@ export async function persistGeneratedAssignment(
 
 If `reconcileHintsSync` expects a full PrismaClient rather than transaction client, keep the transaction write and call reconcile after the transaction per created question ids.
 
-- [ ] **Step 3: Implement assignment router generation procedures**
+- [x] **Step 3: Implement assignment router generation procedures**
 
 Create `apps/web/server/routers/assignment.ts`:
 
@@ -1120,7 +1120,7 @@ export const assignmentRouter = createTRPCRouter({
 });
 ```
 
-- [ ] **Step 4: Mount router**
+- [x] **Step 4: Mount router**
 
 Modify `apps/web/server/root.ts`:
 
@@ -1133,7 +1133,7 @@ export const appRouter = createTRPCRouter({
 });
 ```
 
-- [ ] **Step 5: Run generation billing tests**
+- [x] **Step 5: Run generation billing tests**
 
 Run:
 
@@ -1143,7 +1143,14 @@ pnpm.cmd --filter @zhijiao/web test -- tests/integration/assignment-generate-bil
 
 Expected: tests pass. Configure the test AI adapter in `assignment-generate-billing.test.ts` to return the valid output object from Task 2 before the first green run.
 
-- [ ] **Step 6: Commit**
+Verified 2026-05-27:
+
+- `pnpm.cmd --filter @zhijiao/web test -- tests/integration/assignment-generate-billing.test.ts` passed: 2 tests.
+- `pnpm.cmd --filter @zhijiao/web typecheck` passed.
+- `pnpm.cmd --filter @zhijiao/web test -- tests/integration/charged-procedure-tutor.test.ts tests/integration/variant-generate-for-entry.test.ts` passed: 15 tests.
+- `pnpm.cmd --filter @zhijiao/billing test` passed: 10 files, 38 tests.
+
+- [x] **Step 6: Commit**
 
 ```powershell
 git add apps/web/server packages/billing/src/pricing.ts apps/web/tests/integration/assignment-generate-billing.test.ts

@@ -5,6 +5,7 @@ import { tutorRouter } from "./tutor.js";
 import { walletRouter } from "./wallet.js";
 import { errorRouter } from "./error.js";
 import { variantRouter } from "./variant.js";
+import { assignmentRouter } from "./assignment.js";
 
 export const appRouter = router({
   auth: authRouter,
@@ -12,5 +13,6 @@ export const appRouter = router({
   wallet: walletRouter,
   error: errorRouter,
   variant: variantRouter,
+  assignment: assignmentRouter,
 });
 export type AppRouter = typeof appRouter;

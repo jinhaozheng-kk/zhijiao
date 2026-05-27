@@ -1,10 +1,52 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { resetDb, prisma } from "@zhijiao/db/test-utils";
 import { appRouter } from "@/server/routers/_root";
 import {
   makeCtx,
   redis,
 } from "./_helpers/error-book-fixtures";
+
+const aiMock = {
+  generateAssignmentQuestions: vi.fn(async () => ({
+    title: "Linear equations tiered practice",
+    tiers: [
+      {
+        level: "BASIC" as const,
+        rationaleMd: "Basic practice.",
+        items: [
+          {
+            type: "SINGLE_CHOICE" as const,
+            stemMd: "Solve x + 3 = 7.",
+            options: [
+              { key: "A", text: "x = 4" },
+              { key: "B", text: "x = 10" },
+            ],
+            answerMd: "A",
+            solutionMd: "Subtract 3 from both sides.",
+            rubricMd: "Can isolate x.",
+            knowledgePointHints: ["linear equations"],
+            difficulty: 2,
+          },
+        ],
+      },
+      { level: "CONSOLIDATION" as const, rationaleMd: "Mixed forms.", items: [] },
+      { level: "CHALLENGE" as const, rationaleMd: "Applications.", items: [] },
+    ],
+    modelCallId: "mock-assignment-call-id",
+  })),
+};
+
+vi.mock("@/lib/ai-client", () => ({
+  getAiRouter: () => aiMock,
+}));
 
 async function seedKpId(): Promise<string> {
   const subject = await prisma.subject.findFirstOrThrow({
@@ -71,6 +113,7 @@ beforeAll(async () => {
 beforeEach(async () => {
   await resetDb();
   await redis.flushdb();
+  aiMock.generateAssignmentQuestions.mockClear();
 });
 
 afterAll(async () => {
