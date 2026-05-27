@@ -38,3 +38,22 @@ export async function requireTeacherAssignment(
   }
   return assignment;
 }
+
+export async function requireTeacherAnswer(
+  db: PrismaClient,
+  userId: string,
+  answerId: string,
+) {
+  const answer = await db.assignmentAnswer.findUnique({
+    where: { id: answerId },
+    include: { studentAssignment: { include: { assignment: true } } },
+  });
+  if (!answer || answer.studentAssignment.assignment.teacherUserId !== userId) {
+    throw new TRPCError({
+      code: "NOT_FOUND",
+      message: "Assignment answer not found",
+      cause: { reason: "ASSIGNMENT_ANSWER_NOT_FOUND" },
+    });
+  }
+  return answer;
+}

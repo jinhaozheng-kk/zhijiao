@@ -9,10 +9,12 @@ import {
 } from "../trpc.js";
 import { getAiRouter } from "@/lib/ai-client";
 import {
+  requireTeacherAnswer,
   requireTeacherAssignment,
   requireTeacherClassroom,
 } from "../lib/assignment-access.js";
 import { persistGeneratedAssignment } from "../lib/assignment-generation.js";
+import { gradeAssignmentAnswer } from "../lib/assignment-writeback.js";
 
 const TierCountsSchema = z.object({
   BASIC: z.number().int().min(0).max(10),
@@ -52,6 +54,15 @@ const GenerateCriteriaInput = z.object({
   questionTypes: z.array(QuestionTypeSchema).min(1),
   teachingGoalMd: z.string().max(2000).optional(),
 });
+
+const ErrorRootCauseSchema = z.enum([
+  "CONCEPT_CONFUSION",
+  "READING_ERROR",
+  "FORMULA_MISUSE",
+  "CALCULATION_SLIP",
+  "TRANSFER_GAP",
+  "OTHER",
+]);
 
 export const assignmentRouter = router({
   generateDraftFromCriteria: authedProcedure
@@ -310,5 +321,19 @@ export const assignmentRouter = router({
           data: { status: "SUBMITTED", submittedAt: new Date() },
         });
       });
+    }),
+
+  gradeAnswer: authedProcedure
+    .input(
+      z.object({
+        answerId: z.string().cuid(),
+        gradeStatus: z.enum(["CORRECT", "PARTIAL", "WRONG"]),
+        rootCause: ErrorRootCauseSchema.optional(),
+        teacherFeedbackMd: z.string().max(4000).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      await requireTeacherAnswer(ctx.db, ctx.auth.userId, input.answerId);
+      return gradeAssignmentAnswer(ctx.db, input);
     }),
 });

@@ -156,3 +156,61 @@ export async function seedPublishedStudentAssignment() {
     otherTierItem: otherTier.items[0]!,
   };
 }
+
+export async function seedSubmittedAssignmentAnswer() {
+  const seeded = await seedPublishedStudentAssignment();
+  const kp = await prisma.knowledgePoint.create({
+    data: {
+      subjectId: seeded.classroom.subjectId,
+      code: `assignment-linear-${crypto.randomUUID()}`,
+      name: "assignment linear equations",
+      difficulty: 2,
+    },
+  });
+  const question = await prisma.question.create({
+    data: {
+      subjectId: seeded.classroom.subjectId,
+      stemMd: seeded.assignedItem.stemMd,
+      type: seeded.assignedItem.type,
+      difficulty: 2,
+      status: "PUBLISHED",
+      source: "ASSIGNMENT_TEST",
+      answer: {
+        create: {
+          contentMd: seeded.assignedItem.answerMd,
+          solutionMd: seeded.assignedItem.solutionMd,
+        },
+      },
+      knowledgePoints: {
+        create: {
+          kpId: kp.id,
+          weight: 1,
+        },
+      },
+    },
+  });
+  const assignedItem = await prisma.assignmentItem.update({
+    where: { id: seeded.assignedItem.id },
+    data: { questionId: question.id },
+  });
+  const studentAssignment = await prisma.studentAssignment.update({
+    where: { id: seeded.studentAssignment.id },
+    data: { status: "SUBMITTED", submittedAt: new Date() },
+  });
+  const answer = await prisma.assignmentAnswer.create({
+    data: {
+      studentAssignmentId: studentAssignment.id,
+      itemId: assignedItem.id,
+      answerJson: { text: "x = 4" },
+    },
+  });
+
+  return {
+    ...seeded,
+    kp,
+    question,
+    assignedItem,
+    studentAssignment,
+    answer,
+  };
+}

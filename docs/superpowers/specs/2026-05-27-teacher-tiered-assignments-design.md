@@ -601,7 +601,7 @@ Only `WRONG` and `PARTIAL` write error book. `CORRECT` does not.
 For `WRONG/PARTIAL`, teacher must select root cause:
 
 - `CONCEPT_CONFUSION`
-- `MISREADING`
+- `READING_ERROR`
 - `FORMULA_MISUSE`
 - `CALCULATION_SLIP`
 - `TRANSFER_GAP`
