@@ -245,6 +245,18 @@ export const assignmentRouter = router({
       return { studentAssignment };
     }),
 
+  listForStudent: authedProcedure.query(async ({ ctx }) => {
+    const assignments = await ctx.db.studentAssignment.findMany({
+      where: { studentUserId: ctx.auth.userId },
+      orderBy: { createdAt: "desc" },
+      include: {
+        assignment: { include: { classroom: true } },
+        tier: true,
+      },
+    });
+    return { assignments };
+  }),
+
   submit: authedProcedure
     .input(
       z.object({

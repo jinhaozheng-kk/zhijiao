@@ -1822,7 +1822,7 @@ git commit -m "feat(web): add teacher assignment workflow UI"
 - Create: `apps/web/app/api/e2e-hooks/assignment/route.ts`
 - Test: `apps/web/e2e/assignment-lifecycle.spec.ts`
 
-- [ ] **Step 1: Add student list**
+- [x] **Step 1: Add student list**
 
 Create `apps/web/app/assignments/page.tsx`:
 
@@ -1842,7 +1842,7 @@ export default function AssignmentsPage() {
 }
 ```
 
-- [ ] **Step 2: Add submit form**
+- [x] **Step 2: Add submit form**
 
 Create `submit-form.tsx`:
 
@@ -1894,7 +1894,7 @@ export function SubmitForm({ studentAssignmentId, items }: {
 
 Choice controls can be added in the same component by checking `item.type` and rendering radio/checkbox inputs. Keep text fallback for calculation/proof/essay.
 
-- [ ] **Step 3: Add deterministic E2E hook**
+- [x] **Step 3: Add deterministic E2E hook**
 
 Create `apps/web/app/api/e2e-hooks/assignment/route.ts`:
 
@@ -1979,7 +1979,7 @@ export async function POST() {
 }
 ```
 
-- [ ] **Step 4: Add lifecycle E2E**
+- [x] **Step 4: Add lifecycle E2E**
 
 Create `apps/web/e2e/assignment-lifecycle.spec.ts`:
 
@@ -2007,7 +2007,7 @@ test("teacher generates assignment, student submits, teacher grades", async ({ p
 });
 ```
 
-- [ ] **Step 5: Run E2E**
+- [x] **Step 5: Run E2E**
 
 Run:
 
