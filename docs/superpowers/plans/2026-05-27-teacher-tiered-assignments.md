@@ -258,7 +258,7 @@ git commit -m "feat(db): add assignment classroom schema"
 - Create: `packages/ai/src/prompts/assignment-question-gen/v1.md`
 - Test: `packages/ai/tests/assignment-question-generation.test.ts`
 
-- [ ] **Step 1: Add failing AI schema tests**
+- [x] **Step 1: Add failing AI schema tests**
 
 Create `packages/ai/tests/assignment-question-generation.test.ts`:
 
@@ -342,7 +342,7 @@ describe("assignment question generation schemas", () => {
 });
 ```
 
-- [ ] **Step 2: Run failing tests**
+- [x] **Step 2: Run failing tests**
 
 Run:
 
@@ -352,7 +352,7 @@ pnpm.cmd --filter @zhijiao/ai test -- tests/assignment-question-generation.test.
 
 Expected: FAIL because the schemas are not exported yet.
 
-- [ ] **Step 3: Add task kind**
+- [x] **Step 3: Add task kind**
 
 Modify `packages/ai/src/tasks.ts`:
 
@@ -379,7 +379,7 @@ export const TASK_MODEL_MAP: Record<TaskKind, string> = {
 };
 ```
 
-- [ ] **Step 4: Add schemas**
+- [x] **Step 4: Add schemas**
 
 Modify `packages/ai/src/schemas.ts`:
 
@@ -450,7 +450,7 @@ export type AssignmentQuestionGenerationOutput = z.infer<
 >;
 ```
 
-- [ ] **Step 5: Add prompt**
+- [x] **Step 5: Add prompt**
 
 Create `packages/ai/src/prompts/assignment-question-gen/v1.md`:
 
@@ -502,7 +502,7 @@ Create `packages/ai/src/prompts/assignment-question-gen/v1.md`:
 }
 ```
 
-- [ ] **Step 6: Extract audited JSON helper**
+- [x] **Step 6: Extract audited JSON helper**
 
 Modify `packages/ai/src/router.ts` by extracting the repeated JSON-call/audit loop into a private method on `AiRouter`. Keep `tutor()` returning `TutoringOutput` unchanged.
 
@@ -595,7 +595,7 @@ private async runJsonTaskWithAudit<T>(args: {
 }
 ```
 
-- [ ] **Step 7: Add router method**
+- [x] **Step 7: Add router method**
 
 Modify `packages/ai/src/router.ts` by adding `generateAssignmentQuestions` following the existing `diagnoseError` / `generateVariantGroup` pattern:
 
@@ -643,7 +643,7 @@ async generateAssignmentQuestions(
 }
 ```
 
-- [ ] **Step 8: Run tests**
+- [x] **Step 8: Run tests**
 
 Run:
 
@@ -654,7 +654,14 @@ pnpm.cmd --filter @zhijiao/ai test -- tests/router.test.ts
 
 Expected: both pass.
 
-- [ ] **Step 9: Commit**
+Verified 2026-05-27:
+
+- RED: `pnpm.cmd --filter @zhijiao/ai test -- tests/assignment-question-generation.test.ts` failed because the new schemas and router method were missing.
+- GREEN: `pnpm.cmd --filter @zhijiao/ai test -- tests/assignment-question-generation.test.ts tests/router.test.ts` passed: 2 files, 9 tests.
+- `pnpm.cmd --filter @zhijiao/ai typecheck` passed.
+- `pnpm.cmd --filter @zhijiao/ai test` passed: 6 files, 36 tests.
+
+- [x] **Step 9: Commit**
 
 ```powershell
 git add packages/ai/src packages/ai/tests

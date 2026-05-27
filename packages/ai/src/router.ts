@@ -15,6 +15,9 @@ import {
   VariantGenerationInputSchema,
   VariantGenerationOutputSchema,
   type VariantGenerationOutput,
+  AssignmentQuestionGenerationInputSchema,
+  AssignmentQuestionGenerationOutputSchema,
+  type AssignmentQuestionGenerationOutput,
   KpReconciliationInputSchema,
   KpReconciliationOutputSchema,
   type KpReconciliationOutput,
@@ -56,6 +59,26 @@ function scanVariantGenerationOutputForForbidden(
   return findForbidden(corpus);
 }
 
+function scanAssignmentQuestionGenerationForForbidden(
+  out: AssignmentQuestionGenerationOutput,
+): string[] {
+  const corpus = [
+    out.title,
+    ...out.tiers.flatMap((tier) => [
+      tier.rationaleMd,
+      ...tier.items.flatMap((item) => [
+        item.stemMd,
+        item.answerMd,
+        item.solutionMd,
+        item.rubricMd ?? "",
+        ...(item.options ?? []).map((option) => option.text),
+        ...item.knowledgePointHints,
+      ]),
+    ]),
+  ].join("\n");
+  return findForbidden(corpus);
+}
+
 export interface RouterOptions {
   prisma: PrismaClient;
   adapter: ModelAdapter;
@@ -66,6 +89,105 @@ export interface RouterOptions {
 
 export class AiRouter {
   constructor(private opts: RouterOptions) {}
+
+  private async runJsonTaskWithAudit<T extends object>(args: {
+    taskKind: TaskKind;
+    promptTemplateId: string;
+    request: {
+      model: string;
+      messages: Array<{ role: "system" | "user"; content: string }>;
+      responseFormat: "json_object";
+      temperature: number;
+    };
+    schema: z.ZodType<T>;
+    scanForbidden: (output: T) => string[];
+    retryMessage?: string;
+  }): Promise<T & { modelCallId: string }> {
+    const start = Date.now();
+    let response = null as Awaited<ReturnType<typeof this.opts.adapter.call>> | null;
+    let parseAttempts = 0;
+    let lastError: unknown = null;
+
+    while (parseAttempts < 3) {
+      try {
+        response = await this.opts.adapter.call(args.request);
+        const json = JSON.parse(response.content);
+        const validated = args.schema.parse(json);
+
+        const hits = args.scanForbidden(validated);
+        if (hits.length > 0) {
+          const modelCallId = await writeAudit(this.opts.prisma, {
+            taskKind: args.taskKind,
+            promptTemplateId: args.promptTemplateId,
+            request: args.request,
+            response,
+            latencyMs: Date.now() - start,
+            status: ModelCallStatus.COMPLIANCE_REJECTED,
+            errorMessage: `forbidden phrases: ${hits.join(", ")}`,
+            userId: this.opts.userId ?? null,
+          });
+          const error = new ComplianceRejectedError(hits, args.taskKind);
+          (error as ComplianceRejectedError & { modelCallId?: string }).modelCallId =
+            modelCallId;
+          throw error;
+        }
+
+        const modelCallId = await writeAudit(this.opts.prisma, {
+          taskKind: args.taskKind,
+          promptTemplateId: args.promptTemplateId,
+          request: args.request,
+          response,
+          latencyMs: Date.now() - start,
+          status: ModelCallStatus.SUCCESS,
+          errorMessage: null,
+          userId: this.opts.userId ?? null,
+        });
+        return { ...validated, modelCallId };
+      } catch (e) {
+        if (e instanceof ComplianceRejectedError) throw e;
+
+        lastError = e;
+        parseAttempts++;
+        if (e instanceof z.ZodError || e instanceof SyntaxError) {
+          args.request.messages.push({
+            role: "user",
+            content:
+              args.retryMessage ??
+              "The previous output was not valid JSON for the schema. Return JSON only.",
+          });
+          continue;
+        }
+
+        await writeAudit(this.opts.prisma, {
+          taskKind: args.taskKind,
+          promptTemplateId: args.promptTemplateId,
+          request: args.request,
+          response,
+          latencyMs: Date.now() - start,
+          status: ModelCallStatus.ADAPTER_ERROR,
+          errorMessage: e instanceof Error ? e.message : String(e),
+          userId: this.opts.userId ?? null,
+        });
+        throw e;
+      }
+    }
+
+    await writeAudit(this.opts.prisma, {
+      taskKind: args.taskKind,
+      promptTemplateId: args.promptTemplateId,
+      request: args.request,
+      response,
+      latencyMs: Date.now() - start,
+      status: ModelCallStatus.PARSE_FAILED,
+      errorMessage: lastError instanceof Error ? lastError.message : String(lastError),
+      userId: this.opts.userId ?? null,
+    });
+    throw new Error(
+      `${args.taskKind} failed after ${parseAttempts} attempts: ${
+        lastError instanceof Error ? lastError.message : String(lastError)
+      }`,
+    );
+  }
 
   async tutor(input: unknown): Promise<TutoringOutput> {
     const parsed = TutoringInputSchema.parse(input);
@@ -422,6 +544,52 @@ export class AiRouter {
   // Plan 9: kp:reconcile-pending CLI 调这个；不计 Credit。
   // 输出按 matchId 对齐写回：LLM 漏返/重复 → retry 2 次再 PARSE_FAILED；
   // 多返不在本批 matchId → 静默忽略（不算异常，spec §4.2）。
+  async generateAssignmentQuestions(
+    input: unknown,
+  ): Promise<AssignmentQuestionGenerationOutput & { modelCallId: string }> {
+    const parsed = AssignmentQuestionGenerationInputSchema.parse(input);
+    const taskKind: TaskKind = "ASSIGNMENT_QUESTION_GEN";
+    const prompt = await loadPrompt(
+      "assignment-question-gen",
+      this.opts.promptVersion ?? "v1",
+    );
+    const promptTemplateId = await ensurePromptInDb(this.opts.prisma, prompt);
+
+    const userContent = prompt.interpolate({
+      subject: parsed.subject,
+      gradeLevel: parsed.gradeLevel,
+      kpNames: parsed.kpNames.join(", "),
+      questionTypes: parsed.questionTypes.join(", "),
+      tierCounts: JSON.stringify(parsed.tierCounts),
+      difficultyRange: `${parsed.difficultyRange[0]}-${parsed.difficultyRange[1]}`,
+      teachingGoalMd: parsed.teachingGoalMd ?? "(not provided)",
+      classWeaknessSummaryMd: parsed.classWeaknessSummaryMd ?? "(not provided)",
+    });
+
+    const model = this.opts.modelOverride ?? TASK_MODEL_MAP[taskKind];
+    const request = {
+      model,
+      messages: [
+        {
+          role: "system" as const,
+          content:
+            "You are a rigorous K12 math assignment question generation assistant.",
+        },
+        { role: "user" as const, content: userContent },
+      ],
+      responseFormat: "json_object" as const,
+      temperature: 0.35,
+    };
+
+    return this.runJsonTaskWithAudit({
+      taskKind,
+      promptTemplateId,
+      request,
+      schema: AssignmentQuestionGenerationOutputSchema,
+      scanForbidden: scanAssignmentQuestionGenerationForForbidden,
+    });
+  }
+
   async kpReconcile(
     input: unknown,
   ): Promise<{

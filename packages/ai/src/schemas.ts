@@ -122,3 +122,84 @@ export type KpReconciliationItem = z.infer<typeof KpReconciliationItemSchema>;
 
 export const KpReconciliationOutputSchema = z.array(KpReconciliationItemSchema);
 export type KpReconciliationOutput = z.infer<typeof KpReconciliationOutputSchema>;
+
+// === AssignmentQuestionGeneration (Plan 10) ===
+
+export const AssignmentTierLevelSchema = z.enum([
+  "BASIC",
+  "CONSOLIDATION",
+  "CHALLENGE",
+]);
+export type AssignmentTierLevel = z.infer<typeof AssignmentTierLevelSchema>;
+
+export const AssignmentQuestionTypeSchema = z.enum([
+  "SINGLE_CHOICE",
+  "MULTI_CHOICE",
+  "FILL_BLANK",
+  "CALCULATION",
+  "PROOF",
+  "ESSAY",
+]);
+export type AssignmentQuestionType = z.infer<
+  typeof AssignmentQuestionTypeSchema
+>;
+
+export const AssignmentQuestionGenerationInputSchema = z.object({
+  mode: z.enum(["CLASS_WEAKNESS", "MANUAL_CRITERIA"]),
+  subject: z.string().min(1),
+  gradeLevel: z.string().min(1),
+  tierCounts: z.object({
+    BASIC: z.number().int().min(0).max(10),
+    CONSOLIDATION: z.number().int().min(0).max(10),
+    CHALLENGE: z.number().int().min(0).max(10),
+  }),
+  questionTypes: z.array(AssignmentQuestionTypeSchema).min(1),
+  kpNames: z.array(z.string().min(1)).min(1),
+  difficultyRange: z.tuple([
+    z.number().int().min(1).max(5),
+    z.number().int().min(1).max(5),
+  ]),
+  teachingGoalMd: z.string().max(2000).optional(),
+  classWeaknessSummaryMd: z.string().max(4000).optional(),
+});
+export type AssignmentQuestionGenerationInput = z.infer<
+  typeof AssignmentQuestionGenerationInputSchema
+>;
+
+export const AssignmentQuestionGenerationItemSchema = z.object({
+  type: AssignmentQuestionTypeSchema,
+  stemMd: z.string().min(1).max(4000),
+  options: z
+    .array(
+      z.object({
+        key: z.string().min(1).max(4),
+        text: z.string().min(1),
+      }),
+    )
+    .optional(),
+  answerMd: z.string().min(1).max(4000),
+  solutionMd: z.string().min(1).max(6000),
+  rubricMd: z.string().max(4000).optional(),
+  knowledgePointHints: z.array(z.string().min(1)).max(8),
+  difficulty: z.number().int().min(1).max(5),
+});
+export type AssignmentQuestionGenerationItem = z.infer<
+  typeof AssignmentQuestionGenerationItemSchema
+>;
+
+export const AssignmentQuestionGenerationOutputSchema = z.object({
+  title: z.string().min(1).max(120),
+  tiers: z
+    .array(
+      z.object({
+        level: AssignmentTierLevelSchema,
+        rationaleMd: z.string().min(1).max(2000),
+        items: z.array(AssignmentQuestionGenerationItemSchema).max(10),
+      }),
+    )
+    .min(1)
+    .max(3),
+});
+export type AssignmentQuestionGenerationOutput = z.infer<
+  typeof AssignmentQuestionGenerationOutputSchema
+>;
