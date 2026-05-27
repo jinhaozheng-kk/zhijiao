@@ -2130,7 +2130,7 @@ git commit -m "feat(web): include assignments in pii governance"
 - Modify: `CLAUDE.md`
 - Modify: `docs/superpowers/specs/2026-05-27-teacher-tiered-assignments-design.md` if implementation decisions differ
 
-- [ ] **Step 1: Update CLAUDE.md Plan status**
+- [x] **Step 1: Update CLAUDE.md Plan status**
 
 Add a Plan 10 status section:
 
@@ -2143,7 +2143,7 @@ Add a Plan 10 status section:
 - WRONG/PARTIAL 回流错题本并写 AssignmentPerformance。
 ```
 
-- [ ] **Step 2: Add merge probes**
+- [x] **Step 2: Add merge probes**
 
 Add these probes to `CLAUDE.md`:
 
@@ -2155,7 +2155,7 @@ Add these probes to `CLAUDE.md`:
 51. **Assignment E2E 闭环**（Plan 10）：`pnpm.cmd --filter @zhijiao/web test:e2e -- e2e/assignment-lifecycle.spec.ts` 应全绿。
 ```
 
-- [ ] **Step 3: Run focused regression**
+- [x] **Step 3: Run focused regression**
 
 Run:
 
@@ -2169,7 +2169,7 @@ pnpm.cmd --filter @zhijiao/web test -- tests/integration/assignment-error-book-w
 
 Expected: all pass.
 
-- [ ] **Step 4: Run full verification**
+- [x] **Step 4: Run full verification**
 
 Run:
 

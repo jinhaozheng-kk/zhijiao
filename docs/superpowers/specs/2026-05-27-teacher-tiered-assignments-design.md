@@ -303,7 +303,7 @@ These are schema-level relation fields only; they do not change existing busines
 
 Plan 6 的 PII service 需要补丁：
 
-- 注销用户为 student：删除/脱敏其 `StudentAssignment`、`AssignmentAnswer.answerJson`、`AssignmentPerformance.studentUserId` 策略需明确。
+- 注销用户为 student：删除其 `StudentAssignment`（按 FK 级联 `AssignmentAnswer`）和 `AssignmentPerformance`；审计 payload 只记录计数。
 - 注销用户为 teacher：assignment 教师归属字段需要 scrub 或保留为非 PII audit 摘要；班级和作业内容是否保留按“教学资料可保留、个人归属去标识化”处理。
 - export 白名单新增 assignment/student-answer/performance 可导出摘要，禁止泄露其它学生答案。
 
@@ -467,7 +467,7 @@ Free. Only assignment teacher. `PARTIAL / WRONG` require `rootCause`. Handles er
 ### 5.2 Student APIs
 
 ```ts
-assignment.myList({ status? })
+assignment.listForStudent()
 ```
 
 Current student only.
