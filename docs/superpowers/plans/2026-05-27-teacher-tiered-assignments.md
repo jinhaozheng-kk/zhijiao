@@ -2181,7 +2181,7 @@ pnpm.cmd --filter @zhijiao/web test:e2e -- e2e/assignment-lifecycle.spec.ts
 
 Expected: all pass. If `test:e2e` requires a separate clean run, run it after typecheck/test complete.
 
-- [ ] **Step 5: Commit docs**
+- [x] **Step 5: Commit docs**
 
 ```powershell
 git add CLAUDE.md docs/superpowers/specs/2026-05-27-teacher-tiered-assignments-design.md
