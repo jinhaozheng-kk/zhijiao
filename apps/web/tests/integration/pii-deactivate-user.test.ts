@@ -4,6 +4,7 @@ import {
   deactivateUser,
   previewDeactivateUser,
 } from "@/server/lib/pii-governance";
+import { seedSubmittedAssignmentAnswer } from "./_helpers/assignment-fixtures";
 
 beforeEach(async () => {
   await resetDb();
@@ -310,6 +311,52 @@ describe("deactivateUser", () => {
     expect(dryRun.payload).toEqual(preview.payload);
     await expect(prisma.errorBookEntry.count({ where: { userId: user.id } })).resolves.toBe(1);
     await expect(prisma.opsActionLog.count()).resolves.toBe(0);
+  });
+
+  it("removes assignment submissions and performance on student deactivation", async () => {
+    const { student, assignment, assignedItem, answer, kp } =
+      await seedSubmittedAssignmentAnswer();
+    await prisma.assignmentAnswer.update({
+      where: { id: answer.id },
+      data: { teacherFeedbackMd: "private teacher feedback" },
+    });
+    await prisma.assignmentPerformance.create({
+      data: {
+        assignmentId: assignment.id,
+        studentUserId: student.id,
+        itemId: assignedItem.id,
+        gradeStatus: "WRONG",
+        kpIds: [kp.id],
+      },
+    });
+
+    const result = await deactivateUser(prisma, {
+      userId: student.id,
+      operatorId: null,
+      initiatorRef: "cli:test:operator",
+      reason: "test",
+    });
+
+    expect(result.payload.deleted).toMatchObject({
+      assignmentAnswers: 1,
+      assignmentPerformance: 1,
+      studentAssignments: 1,
+    });
+    await expect(
+      prisma.assignmentAnswer.findUnique({ where: { id: answer.id } }),
+    ).resolves.toBeNull();
+    await expect(
+      prisma.assignmentPerformance.count({
+        where: { studentUserId: student.id },
+      }),
+    ).resolves.toBe(0);
+    await expect(
+      prisma.studentAssignment.count({ where: { studentUserId: student.id } }),
+    ).resolves.toBe(0);
+    const log = await prisma.opsActionLog.findFirstOrThrow({
+      where: { kind: "DEACTIVATE_USER", targetUserId: student.id },
+    });
+    expect(JSON.stringify(log.payload)).not.toMatch(/private teacher feedback|x = 4/);
   });
 
   it("rolls back all changes if audit log write fails", async () => {

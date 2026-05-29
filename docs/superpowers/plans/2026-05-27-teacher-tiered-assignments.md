@@ -69,7 +69,7 @@ Modify:
 - Modify: `packages/db/src/test-utils.ts`
 - Test: `packages/db/prisma/migrations/<timestamp>_plan10_teacher_assignments/migration.sql`
 
-- [ ] **Step 1: Add Prisma enums and models**
+- [x] **Step 1: Add Prisma enums and models**
 
 Add the enums and models from the design spec to `packages/db/prisma/schema.prisma`. Add these back-relations to existing models:
 
@@ -95,7 +95,7 @@ model ErrorBookEntry {
 
 Use `onDelete: Restrict` for user-owned assignment relations and `onDelete: Cascade` for assignment-owned child rows.
 
-- [ ] **Step 2: Create the migration**
+- [x] **Step 2: Create the migration**
 
 Run:
 
@@ -105,7 +105,7 @@ pnpm.cmd --filter @zhijiao/db db:migrate --name plan10_teacher_assignments
 
 Expected: Prisma creates a new migration directory and applies it to the dev DB. If the wrapper script does not accept `--name`, run the repo's existing migration command documented in `README.md` and keep the generated migration name ending in `plan10_teacher_assignments`.
 
-- [ ] **Step 3: Generate Prisma client**
+- [x] **Step 3: Generate Prisma client**
 
 Run:
 
@@ -115,7 +115,7 @@ pnpm.cmd --filter @zhijiao/db db:generate
 
 Expected: Prisma client generation succeeds with no schema validation errors.
 
-- [ ] **Step 4: Add classroom seed**
+- [x] **Step 4: Add classroom seed**
 
 Create `packages/db/prisma/seed/4_classroom.ts`:
 
@@ -168,7 +168,7 @@ export async function seedClassroom(prisma: PrismaClient) {
 }
 ```
 
-- [ ] **Step 5: Wire the seed**
+- [x] **Step 5: Wire the seed**
 
 Modify `packages/db/prisma/seed/index.ts`:
 
@@ -180,7 +180,7 @@ await seedClassroom(prisma);
 
 Place it after test users, subjects, questions, and KP aliases have been seeded.
 
-- [ ] **Step 6: Update reset order**
+- [x] **Step 6: Update reset order**
 
 Modify `packages/db/src/test-utils.ts` so the truncation list starts with assignment children before parents:
 
@@ -220,7 +220,7 @@ const TABLES = [
 
 Keep any existing repo-specific tables in their current relative positions after assignment tables.
 
-- [ ] **Step 7: Verify schema**
+- [x] **Step 7: Verify schema**
 
 Run:
 
@@ -232,7 +232,14 @@ pnpm.cmd --filter @zhijiao/db exec tsx scripts/setup-test-dbs.ts
 
 Expected: all three commands complete without Prisma relation errors, and `dev-classroom-math-g8-01` exists in dev seed.
 
-- [ ] **Step 8: Commit**
+Verified 2026-05-27:
+
+- `pnpm.cmd --filter @zhijiao/db db:generate`
+- `$env:DATABASE_URL='postgresql://postgres:postgres@localhost:5432/zhijiao'; pnpm.cmd --filter @zhijiao/db db:seed`
+- `$env:DATABASE_URL='postgresql://postgres:postgres@localhost:5432/zhijiao'; $env:DATABASE_URL_TEST='postgresql://postgres:postgres@localhost:5432/zhijiao_test'; pnpm.cmd --filter @zhijiao/db exec tsx scripts/setup-test-dbs.ts`
+- `docker exec zhijiao-postgres psql -U postgres -d zhijiao -t -A -c "select c.id, c.name, count(cm.*) as members from classrooms c left join classroom_members cm on cm.classroom_id = c.id where c.id = 'dev-classroom-math-g8-01' group by c.id, c.name;"` returned `dev-classroom-math-g8-01|八年级数学 1 班|4`.
+
+- [x] **Step 8: Commit**
 
 ```powershell
 git add packages/db/prisma/schema.prisma packages/db/prisma/migrations packages/db/prisma/seed packages/db/src/test-utils.ts
@@ -251,7 +258,7 @@ git commit -m "feat(db): add assignment classroom schema"
 - Create: `packages/ai/src/prompts/assignment-question-gen/v1.md`
 - Test: `packages/ai/tests/assignment-question-generation.test.ts`
 
-- [ ] **Step 1: Add failing AI schema tests**
+- [x] **Step 1: Add failing AI schema tests**
 
 Create `packages/ai/tests/assignment-question-generation.test.ts`:
 
@@ -335,7 +342,7 @@ describe("assignment question generation schemas", () => {
 });
 ```
 
-- [ ] **Step 2: Run failing tests**
+- [x] **Step 2: Run failing tests**
 
 Run:
 
@@ -345,7 +352,7 @@ pnpm.cmd --filter @zhijiao/ai test -- tests/assignment-question-generation.test.
 
 Expected: FAIL because the schemas are not exported yet.
 
-- [ ] **Step 3: Add task kind**
+- [x] **Step 3: Add task kind**
 
 Modify `packages/ai/src/tasks.ts`:
 
@@ -372,7 +379,7 @@ export const TASK_MODEL_MAP: Record<TaskKind, string> = {
 };
 ```
 
-- [ ] **Step 4: Add schemas**
+- [x] **Step 4: Add schemas**
 
 Modify `packages/ai/src/schemas.ts`:
 
@@ -443,7 +450,7 @@ export type AssignmentQuestionGenerationOutput = z.infer<
 >;
 ```
 
-- [ ] **Step 5: Add prompt**
+- [x] **Step 5: Add prompt**
 
 Create `packages/ai/src/prompts/assignment-question-gen/v1.md`:
 
@@ -495,7 +502,7 @@ Create `packages/ai/src/prompts/assignment-question-gen/v1.md`:
 }
 ```
 
-- [ ] **Step 6: Extract audited JSON helper**
+- [x] **Step 6: Extract audited JSON helper**
 
 Modify `packages/ai/src/router.ts` by extracting the repeated JSON-call/audit loop into a private method on `AiRouter`. Keep `tutor()` returning `TutoringOutput` unchanged.
 
@@ -588,7 +595,7 @@ private async runJsonTaskWithAudit<T>(args: {
 }
 ```
 
-- [ ] **Step 7: Add router method**
+- [x] **Step 7: Add router method**
 
 Modify `packages/ai/src/router.ts` by adding `generateAssignmentQuestions` following the existing `diagnoseError` / `generateVariantGroup` pattern:
 
@@ -636,7 +643,7 @@ async generateAssignmentQuestions(
 }
 ```
 
-- [ ] **Step 8: Run tests**
+- [x] **Step 8: Run tests**
 
 Run:
 
@@ -647,7 +654,14 @@ pnpm.cmd --filter @zhijiao/ai test -- tests/router.test.ts
 
 Expected: both pass.
 
-- [ ] **Step 9: Commit**
+Verified 2026-05-27:
+
+- RED: `pnpm.cmd --filter @zhijiao/ai test -- tests/assignment-question-generation.test.ts` failed because the new schemas and router method were missing.
+- GREEN: `pnpm.cmd --filter @zhijiao/ai test -- tests/assignment-question-generation.test.ts tests/router.test.ts` passed: 2 files, 9 tests.
+- `pnpm.cmd --filter @zhijiao/ai typecheck` passed.
+- `pnpm.cmd --filter @zhijiao/ai test` passed: 6 files, 36 tests.
+
+- [x] **Step 9: Commit**
 
 ```powershell
 git add packages/ai/src packages/ai/tests
@@ -664,7 +678,7 @@ git commit -m "feat(ai): add assignment question generation"
 - Modify: `apps/web/server/trpc.ts`
 - Test: `apps/web/tests/integration/assignment-generate-billing.test.ts`
 
-- [ ] **Step 1: Add failing variable billing tests**
+- [x] **Step 1: Add failing variable billing tests**
 
 Create `apps/web/tests/integration/assignment-generate-billing.test.ts` with the first tests focused on middleware behavior:
 
@@ -730,7 +744,7 @@ describe("assignment generation billing", () => {
 
 Add helper functions inside the test file if no shared helper exists. Use existing test fixture style from nearby integration tests.
 
-- [ ] **Step 2: Run failing test**
+- [x] **Step 2: Run failing test**
 
 Run:
 
@@ -740,7 +754,7 @@ pnpm.cmd --filter @zhijiao/web test -- tests/integration/assignment-generate-bil
 
 Expected: FAIL because router and action kind do not exist yet.
 
-- [ ] **Step 3: Add billing kind**
+- [x] **Step 3: Add billing kind**
 
 Modify `packages/billing/src/pricing.ts`:
 
@@ -765,7 +779,7 @@ export const PRICING: Record<ActionKind, number> = {
 };
 ```
 
-- [ ] **Step 4: Add variable charge middleware**
+- [x] **Step 4: Add variable charge middleware**
 
 Modify `apps/web/server/trpc.ts`:
 
@@ -837,7 +851,7 @@ export const chargeVariableMiddleware = (
 
 Use the existing private helper names in `trpc.ts`. If `readClientRequestId`, `shouldCompensate`, or `errorReason` are currently local to `chargeMiddleware`, extract them above both middlewares without changing behavior.
 
-- [ ] **Step 5: Run focused billing tests**
+- [x] **Step 5: Run focused billing tests**
 
 Run:
 
@@ -847,7 +861,15 @@ pnpm.cmd --filter @zhijiao/web test -- tests/integration/assignment-generate-bil
 
 Expected: tests still fail because assignment router is not implemented. The failure should now be a missing router/procedure error, not missing pricing or middleware symbols.
 
-- [ ] **Step 6: Commit**
+Verified 2026-05-27:
+
+- RED: `pnpm.cmd --filter @zhijiao/web test -- tests/integration/assignment-generate-billing.test.ts` failed on missing `assignment.generateDraftFromCriteria`.
+- `pnpm.cmd --filter @zhijiao/web typecheck` passed.
+- `pnpm.cmd --filter @zhijiao/billing typecheck` passed.
+- `pnpm.cmd --filter @zhijiao/billing test` passed: 10 files, 38 tests.
+- Focused assignment billing test still fails as expected with `No procedure found on path "assignment,generateDraftFromCriteria"`; this is Task 4 scope.
+
+- [x] **Step 6: Commit**
 
 ```powershell
 git add packages/billing/src/pricing.ts apps/web/server/trpc.ts apps/web/tests/integration/assignment-generate-billing.test.ts
@@ -867,7 +889,7 @@ git commit -m "feat(billing): support variable assignment generation charges"
 - Modify: `apps/web/server/root.ts`
 - Test: `apps/web/tests/integration/assignment-generate-billing.test.ts`
 
-- [ ] **Step 1: Implement access helpers**
+- [x] **Step 1: Implement access helpers**
 
 Create `apps/web/server/lib/assignment-access.ts`:
 
@@ -914,7 +936,7 @@ export async function requireTeacherAssignment(
 }
 ```
 
-- [ ] **Step 2: Implement generation persistence**
+- [x] **Step 2: Implement generation persistence**
 
 Create `apps/web/server/lib/assignment-generation.ts`:
 
@@ -1008,7 +1030,7 @@ export async function persistGeneratedAssignment(
 
 If `reconcileHintsSync` expects a full PrismaClient rather than transaction client, keep the transaction write and call reconcile after the transaction per created question ids.
 
-- [ ] **Step 3: Implement assignment router generation procedures**
+- [x] **Step 3: Implement assignment router generation procedures**
 
 Create `apps/web/server/routers/assignment.ts`:
 
@@ -1098,7 +1120,7 @@ export const assignmentRouter = createTRPCRouter({
 });
 ```
 
-- [ ] **Step 4: Mount router**
+- [x] **Step 4: Mount router**
 
 Modify `apps/web/server/root.ts`:
 
@@ -1111,7 +1133,7 @@ export const appRouter = createTRPCRouter({
 });
 ```
 
-- [ ] **Step 5: Run generation billing tests**
+- [x] **Step 5: Run generation billing tests**
 
 Run:
 
@@ -1121,7 +1143,14 @@ pnpm.cmd --filter @zhijiao/web test -- tests/integration/assignment-generate-bil
 
 Expected: tests pass. Configure the test AI adapter in `assignment-generate-billing.test.ts` to return the valid output object from Task 2 before the first green run.
 
-- [ ] **Step 6: Commit**
+Verified 2026-05-27:
+
+- `pnpm.cmd --filter @zhijiao/web test -- tests/integration/assignment-generate-billing.test.ts` passed: 2 tests.
+- `pnpm.cmd --filter @zhijiao/web typecheck` passed.
+- `pnpm.cmd --filter @zhijiao/web test -- tests/integration/charged-procedure-tutor.test.ts tests/integration/variant-generate-for-entry.test.ts` passed: 15 tests.
+- `pnpm.cmd --filter @zhijiao/billing test` passed: 10 files, 38 tests.
+
+- [x] **Step 6: Commit**
 
 ```powershell
 git add apps/web/server packages/billing/src/pricing.ts apps/web/tests/integration/assignment-generate-billing.test.ts
@@ -1138,7 +1167,7 @@ git commit -m "feat(web): generate charged assignment drafts"
 - Test: `apps/web/tests/integration/assignment-state-machine.test.ts`
 - Test: `apps/web/tests/integration/assignment-permissions.test.ts`
 
-- [ ] **Step 1: Add state machine tests**
+- [x] **Step 1: Add state machine tests**
 
 Create `apps/web/tests/integration/assignment-state-machine.test.ts`:
 
@@ -1202,7 +1231,7 @@ describe("assignment state machine", () => {
 });
 ```
 
-- [ ] **Step 2: Run failing tests**
+- [x] **Step 2: Run failing tests**
 
 Run:
 
@@ -1212,7 +1241,7 @@ pnpm.cmd --filter @zhijiao/web test -- tests/integration/assignment-state-machin
 
 Expected: FAIL because `publish`, `updateDraft`, and `submit` are not implemented.
 
-- [ ] **Step 3: Add updateDraft, publish, submit**
+- [x] **Step 3: Add updateDraft, publish, submit**
 
 Modify `apps/web/server/routers/assignment.ts`:
 
@@ -1302,7 +1331,7 @@ publish: authedProcedure
 
 Add `submit` and owner validation following the same pattern; it must check assigned tier item ids before writing `AssignmentAnswer`.
 
-- [ ] **Step 4: Add permission tests**
+- [x] **Step 4: Add permission tests**
 
 Create `apps/web/tests/integration/assignment-permissions.test.ts`:
 
@@ -1334,7 +1363,7 @@ describe("assignment permissions", () => {
 });
 ```
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
 
 Run:
 
@@ -1345,10 +1374,10 @@ pnpm.cmd --filter @zhijiao/web test -- tests/integration/assignment-permissions.
 
 Expected: both pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
-git add apps/web/server/routers/assignment.ts apps/web/server/lib/assignment-access.ts apps/web/tests/integration/assignment-state-machine.test.ts apps/web/tests/integration/assignment-permissions.test.ts
+git add apps/web/server/routers/assignment.ts apps/web/tests/integration/_helpers/assignment-fixtures.ts apps/web/tests/integration/assignment-state-machine.test.ts apps/web/tests/integration/assignment-permissions.test.ts
 git commit -m "feat(web): add assignment publish and submit flow"
 ```
 
@@ -1362,7 +1391,7 @@ git commit -m "feat(web): add assignment publish and submit flow"
 - Modify: `apps/web/server/routers/assignment.ts`
 - Test: `apps/web/tests/integration/assignment-error-book-writeback.test.ts`
 
-- [ ] **Step 1: Add writeback tests**
+- [x] **Step 1: Add writeback tests**
 
 Create `apps/web/tests/integration/assignment-error-book-writeback.test.ts`:
 
@@ -1420,7 +1449,7 @@ describe("assignment grading error-book writeback", () => {
 });
 ```
 
-- [ ] **Step 2: Run failing tests**
+- [x] **Step 2: Run failing tests**
 
 Run:
 
@@ -1430,7 +1459,7 @@ pnpm.cmd --filter @zhijiao/web test -- tests/integration/assignment-error-book-w
 
 Expected: FAIL because grading writeback is not implemented.
 
-- [ ] **Step 3: Implement writeback service**
+- [x] **Step 3: Implement writeback service**
 
 Create `apps/web/server/lib/assignment-writeback.ts`:
 
@@ -1443,7 +1472,7 @@ export async function gradeAssignmentAnswer(
   args: {
     answerId: string;
     gradeStatus: "CORRECT" | "PARTIAL" | "WRONG";
-    rootCause?: "CONCEPT_CONFUSION" | "MISREADING" | "FORMULA_MISUSE" | "CALCULATION_SLIP" | "TRANSFER_GAP" | "OTHER";
+    rootCause?: "CONCEPT_CONFUSION" | "READING_ERROR" | "FORMULA_MISUSE" | "CALCULATION_SLIP" | "TRANSFER_GAP" | "OTHER";
     teacherFeedbackMd?: string;
   },
 ) {
@@ -1546,7 +1575,7 @@ export async function gradeAssignmentAnswer(
 
 Ensure `AssignmentPerformance` has the named unique constraint generated by Prisma. If Prisma's generated unique input name differs, use the generated name.
 
-- [ ] **Step 4: Wire gradeAnswer**
+- [x] **Step 4: Wire gradeAnswer**
 
 Modify `apps/web/server/routers/assignment.ts`:
 
@@ -1557,7 +1586,7 @@ gradeAnswer: authedProcedure
     gradeStatus: z.enum(["CORRECT", "PARTIAL", "WRONG"]),
     rootCause: z.enum([
       "CONCEPT_CONFUSION",
-      "MISREADING",
+      "READING_ERROR",
       "FORMULA_MISUSE",
       "CALCULATION_SLIP",
       "TRANSFER_GAP",
@@ -1571,7 +1600,7 @@ gradeAnswer: authedProcedure
   }),
 ```
 
-- [ ] **Step 5: Run writeback tests**
+- [x] **Step 5: Run writeback tests**
 
 Run:
 
@@ -1581,7 +1610,7 @@ pnpm.cmd --filter @zhijiao/web test -- tests/integration/assignment-error-book-w
 
 Expected: pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add apps/web/server/lib/assignment-writeback.ts apps/web/server/routers/assignment.ts apps/web/tests/integration/assignment-error-book-writeback.test.ts
@@ -1603,7 +1632,7 @@ git commit -m "feat(web): write assignment grading back to error book"
 - Create: `apps/web/app/teacher/assignments/[assignmentId]/page.tsx`
 - Create: `apps/web/app/teacher/assignments/[assignmentId]/grading-panel.tsx`
 
-- [ ] **Step 1: Add teacher dashboard**
+- [x] **Step 1: Add teacher dashboard**
 
 Modify `apps/web/app/teacher/page.tsx`:
 
@@ -1642,7 +1671,7 @@ export default function TeacherPage() {
 }
 ```
 
-- [ ] **Step 2: Add generation form**
+- [x] **Step 2: Add generation form**
 
 Create `generation-form.tsx` with tRPC mutation and visible cost:
 
@@ -1745,7 +1774,7 @@ export default async function NewAssignmentPage({
 }
 ```
 
-- [ ] **Step 3: Add draft editor and teacher detail**
+- [x] **Step 3: Add draft editor and teacher detail**
 
 Implement pages with dense, operational layouts:
 
@@ -1762,7 +1791,7 @@ export default function AssignmentEditPage({ params }: { params: { assignmentId:
 
 `DraftEditor` must call `assignment.updateDraft` and `assignment.publish`, show state conflict messages, and not render publish as successful until the mutation returns.
 
-- [ ] **Step 4: Run typecheck**
+- [x] **Step 4: Run typecheck**
 
 Run:
 
@@ -1772,7 +1801,7 @@ pnpm.cmd --filter @zhijiao/web typecheck
 
 Expected: pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add apps/web/app/teacher
@@ -1793,7 +1822,7 @@ git commit -m "feat(web): add teacher assignment workflow UI"
 - Create: `apps/web/app/api/e2e-hooks/assignment/route.ts`
 - Test: `apps/web/e2e/assignment-lifecycle.spec.ts`
 
-- [ ] **Step 1: Add student list**
+- [x] **Step 1: Add student list**
 
 Create `apps/web/app/assignments/page.tsx`:
 
@@ -1813,7 +1842,7 @@ export default function AssignmentsPage() {
 }
 ```
 
-- [ ] **Step 2: Add submit form**
+- [x] **Step 2: Add submit form**
 
 Create `submit-form.tsx`:
 
@@ -1865,7 +1894,7 @@ export function SubmitForm({ studentAssignmentId, items }: {
 
 Choice controls can be added in the same component by checking `item.type` and rendering radio/checkbox inputs. Keep text fallback for calculation/proof/essay.
 
-- [ ] **Step 3: Add deterministic E2E hook**
+- [x] **Step 3: Add deterministic E2E hook**
 
 Create `apps/web/app/api/e2e-hooks/assignment/route.ts`:
 
@@ -1950,7 +1979,7 @@ export async function POST() {
 }
 ```
 
-- [ ] **Step 4: Add lifecycle E2E**
+- [x] **Step 4: Add lifecycle E2E**
 
 Create `apps/web/e2e/assignment-lifecycle.spec.ts`:
 
@@ -1978,7 +2007,7 @@ test("teacher generates assignment, student submits, teacher grades", async ({ p
 });
 ```
 
-- [ ] **Step 5: Run E2E**
+- [x] **Step 5: Run E2E**
 
 Run:
 
@@ -1988,7 +2017,7 @@ pnpm.cmd --filter @zhijiao/web test:e2e -- e2e/assignment-lifecycle.spec.ts
 
 Expected: pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add apps/web/app/assignments apps/web/app/api/e2e-hooks/assignment/route.ts apps/web/e2e/assignment-lifecycle.spec.ts
@@ -2005,7 +2034,7 @@ git commit -m "feat(web): add student assignment workflow"
 - Modify: `apps/web/tests/integration/pii-deactivate-user.test.ts`
 - Modify: `apps/web/tests/integration/pii-export-user-data.test.ts`
 
-- [ ] **Step 1: Add PII tests for assignment data**
+- [x] **Step 1: Add PII tests for assignment data**
 
 Extend `pii-deactivate-user.test.ts`:
 
@@ -2031,7 +2060,7 @@ it("scrubs assignment answers and performance on student deactivation", async ()
 });
 ```
 
-- [ ] **Step 2: Run failing PII test**
+- [x] **Step 2: Run failing PII test**
 
 Run:
 
@@ -2041,7 +2070,7 @@ pnpm.cmd --filter @zhijiao/web test -- tests/integration/pii-deactivate-user.tes
 
 Expected: FAIL because assignment data is not handled yet.
 
-- [ ] **Step 3: Patch PII service**
+- [x] **Step 3: Patch PII service**
 
 Modify `apps/web/server/lib/pii-governance.ts` in the student deactivation path:
 
@@ -2073,7 +2102,7 @@ assignmentPerformance: assignmentPerformance.count,
 studentAssignments: studentAssignments.count,
 ```
 
-- [ ] **Step 4: Run PII tests**
+- [x] **Step 4: Run PII tests**
 
 Run:
 
@@ -2085,7 +2114,7 @@ pnpm.cmd --filter @zhijiao/web test -- tests/unit/pii-ops-action-log-payload.tes
 
 Expected: pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add apps/web/server/lib/pii-governance.ts apps/web/tests/integration/pii-deactivate-user.test.ts apps/web/tests/integration/pii-export-user-data.test.ts apps/web/tests/unit/pii-ops-action-log-payload.test.ts
@@ -2101,7 +2130,7 @@ git commit -m "feat(web): include assignments in pii governance"
 - Modify: `CLAUDE.md`
 - Modify: `docs/superpowers/specs/2026-05-27-teacher-tiered-assignments-design.md` if implementation decisions differ
 
-- [ ] **Step 1: Update CLAUDE.md Plan status**
+- [x] **Step 1: Update CLAUDE.md Plan status**
 
 Add a Plan 10 status section:
 
@@ -2114,7 +2143,7 @@ Add a Plan 10 status section:
 - WRONG/PARTIAL 回流错题本并写 AssignmentPerformance。
 ```
 
-- [ ] **Step 2: Add merge probes**
+- [x] **Step 2: Add merge probes**
 
 Add these probes to `CLAUDE.md`:
 
@@ -2126,7 +2155,7 @@ Add these probes to `CLAUDE.md`:
 51. **Assignment E2E 闭环**（Plan 10）：`pnpm.cmd --filter @zhijiao/web test:e2e -- e2e/assignment-lifecycle.spec.ts` 应全绿。
 ```
 
-- [ ] **Step 3: Run focused regression**
+- [x] **Step 3: Run focused regression**
 
 Run:
 
@@ -2140,7 +2169,7 @@ pnpm.cmd --filter @zhijiao/web test -- tests/integration/assignment-error-book-w
 
 Expected: all pass.
 
-- [ ] **Step 4: Run full verification**
+- [x] **Step 4: Run full verification**
 
 Run:
 
@@ -2152,7 +2181,7 @@ pnpm.cmd --filter @zhijiao/web test:e2e -- e2e/assignment-lifecycle.spec.ts
 
 Expected: all pass. If `test:e2e` requires a separate clean run, run it after typecheck/test complete.
 
-- [ ] **Step 5: Commit docs**
+- [x] **Step 5: Commit docs**
 
 ```powershell
 git add CLAUDE.md docs/superpowers/specs/2026-05-27-teacher-tiered-assignments-design.md

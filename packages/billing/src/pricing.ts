@@ -4,7 +4,8 @@ export type ActionKind =
   | "LESSON_PLAN_GEN"
   | "PPT_GEN"
   | "VARIANT_GROUP_GEN"
-  | "ERROR_ANALYSIS";
+  | "ERROR_ANALYSIS"
+  | "ASSIGNMENT_QUESTION_GEN";
 
 export const PRICING: Record<ActionKind, number> = {
   TUTOR_ASK: 1,
@@ -13,6 +14,7 @@ export const PRICING: Record<ActionKind, number> = {
   PPT_GEN: 5,
   VARIANT_GROUP_GEN: 3,
   ERROR_ANALYSIS: 1,
+  ASSIGNMENT_QUESTION_GEN: 1,
 };
 
 export function priceOf(kind: ActionKind): number {

@@ -43,6 +43,27 @@ const DEFAULT_VARIANT_GENERATION = {
 
 // Plan 9: kpReconcile 默认 mock —— 返回空数组（router 视作 "漏返" → retry → PARSE_FAILED）。
 // 真实测试场景必须通过 `respondWith` 注入具体返值。
+const DEFAULT_ASSIGNMENT_QUESTION_GENERATION = {
+  title: "Linear equations tiered practice",
+  tiers: [
+    {
+      level: "BASIC",
+      rationaleMd: "Consolidate the core equation-solving structure.",
+      items: [
+        {
+          type: "CALCULATION",
+          stemMd: "Solve 2x + 5 = 13.",
+          answerMd: "x = 4",
+          solutionMd: "Move 5 to the right side, then divide by 2.",
+          rubricMd: "Can isolate the unknown with correct inverse operations.",
+          knowledgePointHints: ["linear equations"],
+          difficulty: 2,
+        },
+      ],
+    },
+  ],
+};
+
 const DEFAULT_KP_RECONCILIATION: unknown = [];
 
 function pickDefault(req: AdapterRequest): unknown {
@@ -53,6 +74,9 @@ function pickDefault(req: AdapterRequest): unknown {
   if (sys.includes("错因分析助手")) return DEFAULT_ERROR_ANALYSIS;
   if (sys.includes("举一反三变式生成助手")) return DEFAULT_VARIANT_GENERATION;
   if (sys.includes("知识点结构化的匹配助手")) return DEFAULT_KP_RECONCILIATION;
+  if (sys.includes("assignment question generation assistant")) {
+    return DEFAULT_ASSIGNMENT_QUESTION_GENERATION;
+  }
   return DEFAULT_TUTORING;
 }
 

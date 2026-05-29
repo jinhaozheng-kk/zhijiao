@@ -89,6 +89,15 @@
 - **Plan 8**（答疑题面持久化 + ErrorAnalysisCard 接入答疑闭环：tutor.ask 接受自由输入并 upsert USER_ADHOC Question + 返 questionId + TutorForm 接 ErrorAnalysisCard）—— 见 `docs/superpowers/plans/2026-05-25-tutor-question-bank-and-error-card-integration.md`，spec 在 `docs/superpowers/specs/2026-05-25-tutor-question-bank-and-error-card-integration-design.md`
 - **Plan 9**（知识点 reconciler：hint→KP 结构化映射 + KpReconcileMatch 审计队列 + CLI 异步 LLM/review）—— 见 `docs/superpowers/plans/2026-05-25-kp-reconciler.md`，spec 在 `docs/superpowers/specs/2026-05-25-kp-reconciler-design.md`
 - **Plan 12**（VariantItem 升格成独立 Question：VARIANT_GENERATED Question + variant question KP link + backfill CLI + owner-only access）—— 见 `docs/superpowers/plans/2026-05-27-variant-question-promotion.md`，spec 在 `docs/superpowers/specs/2026-05-27-variant-question-promotion-design.md`
+- **Plan 10**（教师端分层作业 + AI 出题系统：seeded classroom、变量计费、AI 草稿、发布/提交/批改状态机、错题本回流、AssignmentPerformance、教师/学生 UI、E2E、PII 补丁）—— 见 `docs/superpowers/plans/2026-05-27-teacher-tiered-assignments.md`，spec 在 `docs/superpowers/specs/2026-05-27-teacher-tiered-assignments-design.md`
+
+**教师分层作业现状**（Plan 10）：
+- `Classroom` / `ClassroomMember` / assignment lifecycle schema 已落地；当前只 seed 测试班级，不做 roster 管理 UI。
+- `ASSIGNMENT_QUESTION_GEN` 按生成题量扣教师钱包；跨班级 / 不存在 classroom 不写 DEBIT。
+- AI 生成题进入 `Assignment` DRAFT；教师整份审核、保存标题、发布；发布后内容快照锁定。
+- 学生只看到自己的 `StudentAssignment` tier；只能提交 assigned tier item，重复提交返回状态冲突。
+- 教师人工批改；`WRONG` / `PARTIAL` 要 root cause，写回错题本并 upsert `AssignmentPerformance`；全部答案批改后 `StudentAssignment` 进入 `GRADED`。
+- `/teacher`、`/teacher/classes/...`、`/teacher/assignments/...` 和 `/assignments` 学生端闭环已可用；E2E hook `/api/e2e-hooks/assignment` 仅 `E2E_TEST_HOOKS=1` 开启。
 
 **计费现状**：
 - `packages/billing` 新建：ensureWallet / chargeForAction（predicate-on-update + idemKey 防重，原子化）/ compensate（写 COMPENSATION ledger + refId 指回 DEBIT）/ applyWechatPayNotify（P2002 idemKey 重读 → ALREADY_PAID；P2002 transactionId 重读 → DUPLICATE_TRANSACTION_ID；spec §4.1 状态机；FAILED→PAID 拒绝走 TERMINAL_STATE_CONFLICT）/ expireStaleOrders / adminAdjust（OPS 调账；负 delta 也走 predicate-on-update 防透支 → InsufficientBalanceForAdjustError）/ sumMonthlyTopupCents（Asia/Shanghai 自然月 + CREATED+PENDING by createdAt + PAID by paidAt）
@@ -165,8 +174,8 @@
 
 **PII 治理现状**（Plan 6）：
 - OPS CLI：`user:deactivate <userId> [--reason TEXT] [--dry-run]` / `user:export <userId> --out <path.json>` / `pii:gc-sweep [--bucket short|medium|orphan|all] [--dry-run]`；全部走 shared service，不引入 apps/web 内置 cron
-- 注销：User 行 soft-delete 作 tombstone；硬删 `ErrorBookEntry`（级联 `VariantGroup`/`VariantItem`）和用户 `USER_ADHOC Question`；删除 `AuthIdentity` + PHONE/GLOBAL 对应 `OtpRequest`；scrub Session / TopupOrder / ModelCall / KpAlias / KpReconcileMatch PII；Plan 12 后额外 scrub `VARIANT_GENERATED Question.createdByUserId=null` 但保留 Question 行；财务金额、订单号、ledger 保留
-- 导出：`exportUserData` 只输出白名单 JSON；`AuthIdentity.providerUserId` 仅 masked；显式排除 `rawBody` / `requestJson` / `responseJson` / `ipCreated` / `userAgent` / 本地 outPath
+- 注销：User 行 soft-delete 作 tombstone；硬删 `ErrorBookEntry`（级联 `VariantGroup`/`VariantItem`）和用户 `USER_ADHOC Question`；删除 `AuthIdentity` + PHONE/GLOBAL 对应 `OtpRequest`；scrub Session / TopupOrder / ModelCall / KpAlias / KpReconcileMatch PII；Plan 12 后额外 scrub `VARIANT_GENERATED Question.createdByUserId=null` 但保留 Question 行；Plan 10 后删除该学生的 `StudentAssignment`（级联 `AssignmentAnswer`）和 `AssignmentPerformance`，payload 只记录计数；财务金额、订单号、ledger 保留
+- 导出：`exportUserData` 只输出白名单 JSON；`AuthIdentity.providerUserId` 仅 masked；显式排除 `rawBody` / `requestJson` / `responseJson` / `ipCreated` / `userAgent` / 本地 outPath；Plan 10 后包含本人 `StudentAssignment`、`AssignmentAnswer`、`AssignmentPerformance` 白名单数据，不导出其它学生答案
 - GC：short bucket 删除过期 OTP/Session；medium bucket scrub `WechatPayEvent.rawBody` 与 `TopupOrder.ipCreated/userAgent`；orphan bucket 删除过期未支付且无 ledger 引用的订单。外部 scheduler 配方在 `docs/ops/pii-scheduling.md`
 - Auth guard：`USER_DEACTIVATED` 已进入 auth errors；`createContext` 对 deleted user 返回 `auth=null`，refresh route 清 cookies 并 401；注销后同手机号可重新注册新 User
 - `OpsActionLog.payload` 只能写非 PII 摘要；新增 payload guard test 守门。业务代码不得直接 `prisma.user.delete()`，注销统一走 `deactivateUser`
@@ -242,12 +251,17 @@ pnpm --filter @zhijiao/web  test -- tests/integration/auth-register-race.test.ts
 44. **Promoted variant KP link 不污染 parent**（Plan 12 R2/R5）：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/kp-reconcile-sync-variant-promoted.test.ts` 应全绿，且断言 `KpReconcileMatch.questionId === QuestionKPLink.questionId === VariantItem.questionId`
 45. **VARIANT_GENERATED owner-only**（Plan 12 §6）：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/variant-question-access-owner-only.test.ts` 应全绿；cross-user 返回 `NOT_FOUND / QUESTION_NOT_FOUND` 且不写 DEBIT
 46. **Backfill CLI smoke**（Plan 12 §4）：`pnpm.cmd --filter @zhijiao/web variant:backfill-questions --dry-run` 应 exit 0；脚本不得 import `server/lib/question.js` 或 `server-only`
+47. **Assignment 变量计费不越权扣费**（Plan 10）：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/assignment-generate-billing.test.ts` 应全绿；跨班级 / 不存在 classroom 不写 DEBIT。
+48. **Assignment 权限不泄露存在性**（Plan 10）：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/assignment-permissions.test.ts` 应全绿；跨教师 / 跨学生返回 `NOT_FOUND` 而非 `FORBIDDEN`。
+49. **Assignment 状态机锁定发布快照**（Plan 10）：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/assignment-state-machine.test.ts` 应全绿；发布后 `updateDraft` 返回 `ASSIGNMENT_STATE_CHANGED`。
+50. **Assignment 批改回流错题本**（Plan 10）：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/assignment-error-book-writeback.test.ts` 应全绿；`WRONG` / `PARTIAL` 写回，`CORRECT` 不写回。
+51. **Assignment PII 治理**（Plan 10）：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/pii-deactivate-user.test.ts tests/integration/pii-export-user-data.test.ts tests/unit/pii-ops-action-log-payload.test.ts` 应全绿；注销删除学生作业提交/表现，导出只含本人白名单数据。
+52. **Assignment E2E 闭环**（Plan 10）：`pnpm.cmd --filter @zhijiao/web test:e2e -- e2e/assignment-lifecycle.spec.ts` 应全绿。
 
-**下一步候选 Plan**（Plan 4 + Plan 6 + Plan 8 + Plan 9 + Plan 12 已落地）：
+**下一步候选 Plan**（Plan 4 + Plan 6 + Plan 8 + Plan 9 + Plan 10 + Plan 12 已落地）：
 - Plan 5: 真接阿里云 SMS + 微信公众号（ICP 备案通过后；**且 Plan 2 Hardening 必须先 ship**；替换 `RealSmsAdapter` / `RealWechatH5Adapter` 的 stub 实现）
 - Plan 7: 真接微信支付 V3 API（需 ICP 备案 + 商户号 + APIv3 + 商户证书；激活 `RealWechatPayAdapter.unifiedOrder` + `verifyNotify`）—— **Plan 3 prod ship prereq**
 - Plan 14: 未成年人特殊保护 / PIPL 完版（<14 监护人代办、数据副本/删除请求 SLA 完整化、通用 PII 扫描与运营 SOP）
-- Plan 10: 教师端"分层作业"基于错题本扩展（教师可看班级错题热度图，按错因 / KP 分类布置分层作业 —— **Plan 9 接通后**有 KP id 数据可用）
 - Plan 11: 学情画像 / 趋势报告（学生掌握度 + 薄弱点 + 趋势画像；家长简版报告 —— **Plan 9 接通后**有 KP id 数据可用）
 - Plan 12 cleanup: `VariantItem.questionId NOT NULL` + 下线 nullable reconcile 分支 + 处理历史 `VARIANT_TO_PARENT_NEEDS_REVIEW` 行
 - Plan 15: USER_ADHOC × PUBLISHED canonical dedup / 题库去重 / PUBLISHED 复用 / 统计归并（Plan 8 §6.2 punt）

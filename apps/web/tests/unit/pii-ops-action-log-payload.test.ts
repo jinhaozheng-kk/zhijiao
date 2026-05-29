@@ -34,6 +34,9 @@ describe("OpsActionLog payload guardrails", () => {
         variantGroups: 1,
         variantItems: 1,
         userAdhocQuestions: 1,
+        assignmentAnswers: 1,
+        assignmentPerformance: 1,
+        studentAssignments: 1,
       },
       dryRun: false,
     });
@@ -50,6 +53,9 @@ describe("OpsActionLog payload guardrails", () => {
         errorBookEntries: 1,
         userAdhocQuestions: 1,
         modelCalls: 1,
+        studentAssignments: 1,
+        assignmentAnswers: 1,
+        assignmentPerformance: 1,
       },
     });
   });
