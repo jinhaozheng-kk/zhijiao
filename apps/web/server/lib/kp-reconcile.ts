@@ -72,8 +72,17 @@ async function loadSubjectCandidates(
   const kpByNormalized = new Map<string, string>();
   const kpNameCounts = new Map<string, number>();
   const kpNameByNormalized = new Map<string, string>();
+
+  // Plan 13 Finding C: 容器节点(被任意 KP 当 parentId)永不进 EXACT 池。
+  const parentIds = new Set<string>();
   for (const kp of kps) {
-    kpById.set(kp.id, kp);
+    if (kp.parentId) parentIds.add(kp.parentId);
+  }
+  const isLeaf = (kp: KnowledgePoint) => !parentIds.has(kp.id);
+
+  for (const kp of kps) {
+    kpById.set(kp.id, kp); // kpById 仍含全部节点（ALIAS 命中后查 subject 用）
+    if (!isLeaf(kp)) continue; // 容器不进 name/code EXACT 池
     const normalizedName = normalizeKpHint(kp.name);
     kpNameCounts.set(normalizedName, (kpNameCounts.get(normalizedName) ?? 0) + 1);
     kpNameByNormalized.set(normalizedName, kp.id);
