@@ -90,6 +90,20 @@
 - **Plan 9**（知识点 reconciler：hint→KP 结构化映射 + KpReconcileMatch 审计队列 + CLI 异步 LLM/review）—— 见 `docs/superpowers/plans/2026-05-25-kp-reconciler.md`，spec 在 `docs/superpowers/specs/2026-05-25-kp-reconciler-design.md`
 - **Plan 12**（VariantItem 升格成独立 Question：VARIANT_GENERATED Question + variant question KP link + backfill CLI + owner-only access）—— 见 `docs/superpowers/plans/2026-05-27-variant-question-promotion.md`，spec 在 `docs/superpowers/specs/2026-05-27-variant-question-promotion-design.md`
 - **Plan 10**（教师端分层作业 + AI 出题系统：seeded classroom、变量计费、AI 草稿、发布/提交/批改状态机、错题本回流、AssignmentPerformance、教师/学生 UI、E2E、PII 补丁）—— 见 `docs/superpowers/plans/2026-05-27-teacher-tiered-assignments.md`，spec 在 `docs/superpowers/specs/2026-05-27-teacher-tiered-assignments-design.md`
+- **Plan 11**（学情画像 / 趋势 + 家长绑定：`packages/analytics` 纯核 + 只读查询壳、KP 掌握度三档 + 数据不足态、学生付费 AI 学习建议、5min 缓存纯 TTL、学生发码/家长绑定 FamilyLink、三端画像 UI、PII 覆盖 FamilyLink、E2E）—— 见 `docs/superpowers/plans/2026-05-29-learning-portrait-and-trends.md`，spec 在 `docs/superpowers/specs/2026-05-29-learning-portrait-and-trends-design.md`
+
+**学情画像现状**（Plan 11）：
+- 新建 `packages/analytics`：`core.ts` 纯函数（`aggregateMastery` / `aggregateClassDiagnosis` / `scoreOf` / `decayWeight` / `tierOf`，零 runtime dep，**不**依赖 redis/ai/server-only）+ `queries.ts` 只读 Prisma 聚合（`profileForStudent` / `classDiagnosis`）。掌握度主源是 `AssignmentPerformance.kpIds`（绕开稀疏的 QuestionKPLink）；时间衰减半衰期 30 天；`UNGRADED` 行被过滤不计。
+- 掌握度三档 + 数据不足态：`weightedSampleSize < 1.0 → INSUFFICIENT_DATA(score=null)`；否则 `score<0.5 FOCUS / <0.8 PROGRESSING / 否则 SOLID`。**合规**：数据不足 KP 绝不渲染成 `0% 红块`；`FOCUS` 措辞用"重点巩固方向"、配色用蓝（`bg-sky-100`，聚焦）非红（失败）。色块措辞常量在 `apps/web/lib/mastery-copy.ts`。
+- `analytics.profile.mine`（本人完整画像）/ `profile.get`（家长→`familyView` 剥离子集 / 教师→完整 profile / 无关系→`NOT_FOUND`，经 `requireProfileAccess`）/ `profile.generateAdvice`（付费 `LEARNING_ADVICE_GEN` 1 credit，链 `authed→chargeMiddleware`，AI 输出合规扫描走 Plan 4 白名单不补偿）/ `classroom.diagnosis`（经 `requireTeacherClassroom`）。`studentUserId`/`classroomId` 用 `z.string().min(1)` **不是** `.cuid()`——seeded dev/E2E id 非 cuid，access helper 才是真正的门禁。
+- `requireProfileAccess`（`apps/web/server/lib/profile-access.ts`）：self/parent(ACTIVE FamilyLink)/teacher(共享 classroom)/无关系→`NOT_FOUND(PROFILE_NOT_ACCESSIBLE)`，绝不用 FORBIDDEN（与 `validateEntryOwnership`/`validateQuestionAccess` 同款存在性侧信道防御）。REVOKED link 视同无权。
+- 家长简版 `familyView`（`learning-projection.ts`）：剥掉每-KP 分数/overallScore，只给 SOLID/PROGRESSING/FOCUS 三档计数 + 知识点名。
+- 缓存：`learning-cache.ts` 纯 5min TTL（`ANALYTICS_TTL_SEC=300`），无主动失效；JSON-safe 直接 `JSON.stringify`，损坏缓存丢弃重算。已知设计代价：`generateAdvice` 数据不足早退发生在 charge **之后**→ 产生 `DEBIT+COMPENSATION` 配对（净额不变），MVP 接受。
+- family-link：学生 `family.createInviteCode`（数据主体持发起权，Redis 15min TTL 单次码）→ 家长 `family.bindByCode`（upsert：复活 REVOKED / 幂等 ACTIVE，单次用尽 del，自绑拒绝）/ `listMyChildren`（仅 ACTIVE）/ `revoke`（任一方可撤，非双方→`NOT_FOUND`）。`FamilyLink` 两 FK `onDelete:Restrict` + `@@unique([parentUserId, studentUserId])`。
+- UI：学生 `/portrait`（掌握度色块 + 时间窗 + 付费 AdviceCard）、`/family-link`（发码）；家长 `/parent`（绑定 + 子女列表）、`/parent/children/[childId]`（familyView 三档计数）；教师班级页嵌"班级学情诊断" + `/teacher/students/[studentId]` 单生画像。
+- AI：`LEARNING_ADVICE` taskKind（qwen-plus）+ `generateLearningAdvice`（复用 `runJsonTaskWithAudit`，prompt `learning-advice/v1.md` 方法论导向、无提分/分数/通过/恐吓措辞）。`MockAdapter` 加 `学习顾问` 关键词默认返值，E2E/集成走 mock 不需注入。
+- PII（扩 Plan 6）：注销事务删该用户作 parent/student 的全部 `FamilyLink`（payload 只记 `familyLinks` 计数）；导出含本人 `familyLinks`（`role`/`counterpartUserId`/`status`，不含对方 PII）；payload guard 禁词集加 `parent_user_id`/`student_user_id`/`counterpartUserId`。
+- E2E 专用 seed 用户：`dev-student-04`(13800000008) 发码方、`dev-parent-02`(13800000009) 绑定方（与 `learning-portrait.spec` 用的 `dev-student-03`(007) 隔离，避免并行 worker 抢同手机号 OTP）。E2E hook `/api/e2e-hooks/analytics` 仅 `E2E_TEST_HOOKS=1` 开启。
 
 **教师分层作业现状**（Plan 10）：
 - `Classroom` / `ClassroomMember` / assignment lifecycle schema 已落地；当前只 seed 测试班级，不做 roster 管理 UI。
@@ -257,12 +271,18 @@ pnpm --filter @zhijiao/web  test -- tests/integration/auth-register-race.test.ts
 50. **Assignment 批改回流错题本**（Plan 10）：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/assignment-error-book-writeback.test.ts` 应全绿；`WRONG` / `PARTIAL` 写回，`CORRECT` 不写回。
 51. **Assignment PII 治理**（Plan 10）：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/pii-deactivate-user.test.ts tests/integration/pii-export-user-data.test.ts tests/unit/pii-ops-action-log-payload.test.ts` 应全绿；注销删除学生作业提交/表现，导出只含本人白名单数据。
 52. **Assignment E2E 闭环**（Plan 10）：`pnpm.cmd --filter @zhijiao/web test:e2e -- e2e/assignment-lifecycle.spec.ts` 应全绿。
+53. **analytics 包零基础设施依赖**（Plan 11 §8.1）：`grep -rn "ioredis\|@zhijiao/ai\|server-only" packages/analytics/src` 应 0 命中（纯计算包，redis/ai/projection/access 全留在 apps/web）。
+54. **数据不足不渲染 0% / 不进 mastery**（Plan 11 §8.2）：`pnpm.cmd --filter @zhijiao/analytics test -- tests/core.test.ts` 应全绿，覆盖 `weightedSampleSize<1 → INSUFFICIENT_DATA, score=null`。色块用蓝 `bg-sky-100` 非红。
+55. **requireProfileAccess 无权返 NOT_FOUND 不 FORBIDDEN**（Plan 11 §8.3）：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/profile-access.test.ts` 应全绿（self/parent/teacher/stranger + REVOKED 失效 5 例）。
+56. **analytics router 三视图 + 付费建议**（Plan 11）：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/analytics-router.test.ts` 应全绿；家长得 `view`、教师得 `profile`、stranger `NOT_FOUND`、非教师 diagnosis `NOT_FOUND`、generateAdvice 扣 1 credit。**id 用 `z.string().min(1)` 不是 `.cuid()`**（seeded id 非 cuid）。
+57. **family-link 发码/绑定/单次用尽/自绑拒绝/撤销失效**（Plan 11 §8.5）：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/family-router.test.ts` 应全绿（5 例）。`FamilyLink` 两 FK `ON DELETE RESTRICT` + `@@unique([parent,student])`：`docker exec zhijiao-postgres psql -U postgres -d zhijiao -c "\d family_links"` 核对。
+58. **PII 覆盖 FamilyLink**（Plan 11 §8.6）：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/pii-deactivate-user.test.ts tests/integration/pii-export-user-data.test.ts tests/unit/pii-ops-action-log-payload.test.ts` 应全绿；注销删双向 link、导出含本人 link（不含对方 PII）、payload 禁词集含 `parent_user_id`/`student_user_id`/`counterpartUserId`。
+59. **Plan 11 E2E**（§8）：`pnpm.cmd --filter @zhijiao/web test:e2e -- e2e/learning-portrait.spec.ts e2e/family-link.spec.ts` 应 2/2 passed。**注**：全量 `test:e2e` 会因 per-IP OTP burst 限频（`RULE_OTP_SEND_IP` capacity=10 / `failMode:close`）在 login 处零散失败——pre-existing（红线 #28），按 spec 分批跑可绿，非 Plan 11 回归。
 
-**下一步候选 Plan**（Plan 4 + Plan 6 + Plan 8 + Plan 9 + Plan 10 + Plan 12 已落地）：
+**下一步候选 Plan**（Plan 4 + Plan 6 + Plan 8 + Plan 9 + Plan 10 + Plan 11 + Plan 12 已落地）：
 - Plan 5: 真接阿里云 SMS + 微信公众号（ICP 备案通过后；**且 Plan 2 Hardening 必须先 ship**；替换 `RealSmsAdapter` / `RealWechatH5Adapter` 的 stub 实现）
 - Plan 7: 真接微信支付 V3 API（需 ICP 备案 + 商户号 + APIv3 + 商户证书；激活 `RealWechatPayAdapter.unifiedOrder` + `verifyNotify`）—— **Plan 3 prod ship prereq**
 - Plan 14: 未成年人特殊保护 / PIPL 完版（<14 监护人代办、数据副本/删除请求 SLA 完整化、通用 PII 扫描与运营 SOP）
-- Plan 11: 学情画像 / 趋势报告（学生掌握度 + 薄弱点 + 趋势画像；家长简版报告 —— **Plan 9 接通后**有 KP id 数据可用）
 - Plan 12 cleanup: `VariantItem.questionId NOT NULL` + 下线 nullable reconcile 分支 + 处理历史 `VARIANT_TO_PARENT_NEEDS_REVIEW` 行
 - Plan 15: USER_ADHOC × PUBLISHED canonical dedup / 题库去重 / PUBLISHED 复用 / 统计归并（Plan 8 §6.2 punt）
 - Plan 13: KP 树扩充（small / middle / high school math KP curation；当前 seed 仅 4 个 math KP，alias 表长得慢，Plan 9 上线一段时间后 UNMATCHED → DROPPED 比例高）
