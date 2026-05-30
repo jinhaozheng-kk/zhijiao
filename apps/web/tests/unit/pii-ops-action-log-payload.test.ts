@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 const FORBIDDEN_TEXT =
-  /(?:\b1[3-9]\d{9}\b|openid|unionid|wx_|rawBody|stemMd|actualAnswerMd|requestJson|responseJson|ipCreated|userAgent|outPath|[A-Za-z]:\\|\/tmp\/)/i;
+  /(?:\b1[3-9]\d{9}\b|openid|unionid|wx_|rawBody|stemMd|actualAnswerMd|requestJson|responseJson|ipCreated|userAgent|outPath|parent_user_id|student_user_id|counterpartUserId|[A-Za-z]:\\|\/tmp\/)/i;
 
 const ROOT_KEYS: Record<string, string[]> = {
   DEACTIVATE_USER: ["deleted", "dryRun", "scrubbed"],
@@ -37,6 +37,7 @@ describe("OpsActionLog payload guardrails", () => {
         assignmentAnswers: 1,
         assignmentPerformance: 1,
         studentAssignments: 1,
+        familyLinks: 1,
       },
       dryRun: false,
     });
@@ -99,6 +100,14 @@ describe("OpsActionLog payload guardrails", () => {
     expect(() =>
       assertPayloadSafe("GC_SWEEP_MEDIUM", {
         results: [{ table: "wechat_pay_events", rawBody: "<xml>wx_secret</xml>" }],
+      }),
+    ).toThrow();
+    // Plan 11: family-link counterpart ids must never leak into payload.
+    expect(() =>
+      assertPayloadSafe("DEACTIVATE_USER", {
+        scrubbed: {},
+        deleted: { familyLinks: 1, parent_user_id: "ckxyz" },
+        dryRun: false,
       }),
     ).toThrow();
   });

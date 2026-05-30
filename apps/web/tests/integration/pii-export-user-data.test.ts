@@ -24,6 +24,13 @@ async function seedExportFixture() {
   const teacher = await prisma.user.create({
     data: { name: "Teacher", persona: "TEACHER", isMinor: false },
   });
+  const parent = await prisma.user.create({
+    data: { name: "Parent", persona: "PARENT", isMinor: false },
+  });
+  // Plan 11: user (student) bound to parent.
+  await prisma.familyLink.create({
+    data: { parentUserId: parent.id, studentUserId: user.id, status: "ACTIVE" },
+  });
   const question = await prisma.question.create({
     data: {
       subjectId: subject.id,
@@ -192,12 +199,12 @@ async function seedExportFixture() {
       userId: user.id,
     },
   });
-  return { user, wallet, userAdhoc, studentAssignment, assignmentAnswer, assignmentPerformance };
+  return { user, parent, wallet, userAdhoc, studentAssignment, assignmentAnswer, assignmentPerformance };
 }
 
 describe("exportUserData", () => {
   it("exports whitelisted user data and excludes internal PII fields", async () => {
-    const { user, wallet, userAdhoc, studentAssignment, assignmentAnswer, assignmentPerformance } =
+    const { user, parent, wallet, userAdhoc, studentAssignment, assignmentAnswer, assignmentPerformance } =
       await seedExportFixture();
 
     const result = await exportUserData(prisma, user.id);
@@ -223,6 +230,13 @@ describe("exportUserData", () => {
         credits: 50,
         status: "PAID",
         transactionId: "tx-export",
+      }),
+    ]);
+    expect(result.familyLinks).toEqual([
+      expect.objectContaining({
+        role: "student",
+        counterpartUserId: parent.id,
+        status: "ACTIVE",
       }),
     ]);
     expect(result.errorBookEntries).toHaveLength(1);
