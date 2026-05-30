@@ -22,6 +22,8 @@ export interface DeactivatePayload {
     assignmentPerformance: number;
     studentAssignments: number;
     familyLinks: number;
+    guardianConsentsAsChild: number;
+    guardianConsentsAsGuardian: number;
   };
   dryRun: boolean;
 }
@@ -41,6 +43,7 @@ export interface UserDataExport {
     persona: string;
     gradeLevel: string | null;
     isMinor: boolean;
+    birthYear: number | null;
     createdAt: Date;
     deletedAt: Date | null;
     deactivationReason: string | null;
@@ -136,6 +139,13 @@ export interface UserDataExport {
     status: string;
     createdAt: Date;
   }>;
+  guardianConsents: Array<{
+    consentScope: string;
+    method: string;
+    consentedAt: Date;
+    revokedAt: Date | null;
+    guardianUserId: string;
+  }>;
 }
 
 export type SweepBucket = "short" | "medium" | "orphan";
@@ -209,6 +219,7 @@ export async function exportUserData(
       persona: true,
       gradeLevel: true,
       isMinor: true,
+      birthYear: true,
       createdAt: true,
       deletedAt: true,
       deactivationReason: true,
@@ -229,6 +240,7 @@ export async function exportUserData(
     assignmentAnswers,
     assignmentPerformance,
     familyLinks,
+    guardianConsents,
   ] = await Promise.all([
     prisma.authIdentity.findMany({
       where: { userId },
@@ -361,6 +373,11 @@ export async function exportUserData(
       orderBy: { createdAt: "asc" },
       select: { id: true, parentUserId: true, studentUserId: true, status: true, createdAt: true },
     }),
+    prisma.guardianConsent.findMany({
+      where: { childUserId: userId },
+      orderBy: { createdAt: "asc" },
+      select: { guardianUserId: true, consentScope: true, method: true, consentedAt: true, revokedAt: true },
+    }),
   ]);
 
   return {
@@ -373,6 +390,7 @@ export async function exportUserData(
       persona: user.persona,
       gradeLevel: user.gradeLevel,
       isMinor: user.isMinor,
+      birthYear: user.birthYear,
       createdAt: user.createdAt,
       deletedAt: user.deletedAt,
       deactivationReason: user.deactivationReason,
@@ -401,6 +419,13 @@ export async function exportUserData(
       counterpartUserId: l.parentUserId === userId ? l.studentUserId : l.parentUserId,
       status: l.status,
       createdAt: l.createdAt,
+    })),
+    guardianConsents: guardianConsents.map((c) => ({
+      consentScope: c.consentScope,
+      method: c.method,
+      consentedAt: c.consentedAt,
+      revokedAt: c.revokedAt,
+      guardianUserId: maskProviderUserId("USER", c.guardianUserId),
     })),
   };
 }
@@ -611,11 +636,37 @@ export async function deactivateUser(
       where: { OR: [{ parentUserId: args.userId }, { studentUserId: args.userId }] },
     });
 
+    // Plan 14a：监护人同意。先处理 guardian 侧（删 consent 后受影响 child 失去全部有效 consent → 回 PENDING），再删本人作 child 的行。
+    const guardianOfChildren = await tx.guardianConsent.findMany({
+      where: { guardianUserId: args.userId, revokedAt: null },
+      select: { childUserId: true },
+    });
+    const consentsAsGuardian = await tx.guardianConsent.deleteMany({
+      where: { guardianUserId: args.userId },
+    });
+    const affectedChildIds = [...new Set(guardianOfChildren.map((g) => g.childUserId))];
+    for (const childId of affectedChildIds) {
+      if (childId === args.userId) continue;
+      const remaining = await tx.guardianConsent.count({
+        where: { childUserId: childId, revokedAt: null },
+      });
+      if (remaining === 0) {
+        await tx.user.updateMany({
+          where: { id: childId, guardianConsentStatus: "GRANTED" },
+          data: { guardianConsentStatus: "PENDING" },
+        });
+      }
+    }
+    const consentsAsChild = await tx.guardianConsent.deleteMany({
+      where: { childUserId: args.userId },
+    });
+
     await tx.user.update({
       where: { id: args.userId },
       data: {
         name: null,
         avatarUrl: null,
+        birthYear: null,
         deletedAt: now,
         deactivationReason: args.reason ?? null,
       },
@@ -638,6 +689,8 @@ export async function deactivateUser(
         assignmentPerformance: assignmentPerformance.count,
         studentAssignments: studentAssignments.count,
         familyLinks: familyLinks.count,
+        guardianConsentsAsChild: consentsAsChild.count,
+        guardianConsentsAsGuardian: consentsAsGuardian.count,
       },
       dryRun: false,
     };
@@ -702,6 +755,8 @@ async function buildDeactivatePlan(
       assignmentPerformance: 0,
       studentAssignments: 0,
       familyLinks: 0,
+      guardianConsentsAsChild: 0,
+      guardianConsentsAsGuardian: 0,
     },
     dryRun: false,
   };
@@ -748,6 +803,8 @@ async function buildDeactivatePlan(
     assignmentPerformance,
     studentAssignments,
     familyLinks,
+    guardianConsentsAsChild,
+    guardianConsentsAsGuardian,
   ] = await Promise.all([
     prisma.errorBookEntry.count({ where: { userId } }),
     entryIds.length ? prisma.variantGroup.count({ where: { entryId: { in: entryIds } } }) : 0,
@@ -771,6 +828,8 @@ async function buildDeactivatePlan(
     prisma.familyLink.count({
       where: { OR: [{ parentUserId: userId }, { studentUserId: userId }] },
     }),
+    prisma.guardianConsent.count({ where: { childUserId: userId } }),
+    prisma.guardianConsent.count({ where: { guardianUserId: userId } }),
   ]);
 
   return {
@@ -796,6 +855,8 @@ async function buildDeactivatePlan(
         assignmentPerformance,
         studentAssignments,
         familyLinks,
+        guardianConsentsAsChild,
+        guardianConsentsAsGuardian,
       },
       dryRun: false,
     },

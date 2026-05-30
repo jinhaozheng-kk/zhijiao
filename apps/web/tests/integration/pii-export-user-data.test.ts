@@ -17,7 +17,9 @@ async function seedExportFixture() {
       avatarUrl: "https://example.test/a.png",
       persona: "STUDENT",
       gradeLevel: "G8",
-      isMinor: false,
+      isMinor: true,
+      birthYear: 2015,
+      guardianConsentStatus: "GRANTED",
     },
   });
   const subject = await prisma.subject.create({ data: { code: "math", name: "Math" } });
@@ -30,6 +32,15 @@ async function seedExportFixture() {
   // Plan 11: user (student) bound to parent.
   await prisma.familyLink.create({
     data: { parentUserId: parent.id, studentUserId: user.id, status: "ACTIVE" },
+  });
+  // Plan 14a: user (child) has a guardian consent granted by parent.
+  await prisma.guardianConsent.create({
+    data: {
+      childUserId: user.id,
+      guardianUserId: parent.id,
+      consentScope: "BASIC",
+      method: "WECHAT",
+    },
   });
   const question = await prisma.question.create({
     data: {
@@ -215,8 +226,17 @@ describe("exportUserData", () => {
       avatarUrl: "https://example.test/a.png",
       persona: "STUDENT",
       gradeLevel: "G8",
-      isMinor: false,
+      isMinor: true,
     });
+    expect(result.user.birthYear).toBe(2015);
+    expect(result.guardianConsents).toHaveLength(1);
+    expect(result.guardianConsents[0]).toMatchObject({
+      consentScope: "BASIC",
+      method: "WECHAT",
+    });
+    const maskedGuardian = result.guardianConsents[0]!.guardianUserId;
+    expect(maskedGuardian).toMatch(/\*\*\*\*/);
+    expect(maskedGuardian).not.toBe(parent.id);
     expect(result.authIdentities.map((i) => i.providerUserIdMasked)).toEqual([
       "138****0000",
       "ope****xyz",
