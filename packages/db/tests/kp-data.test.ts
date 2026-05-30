@@ -63,3 +63,11 @@ describe("validateKpData", () => {
     );
   });
 });
+
+import { mathKpRoots } from "../prisma/seed/kp-data/index.js";
+
+describe("real seed data", () => {
+  it("mathKpRoots 通过 validateKpData", () => {
+    expect(() => validateKpData(mathKpRoots)).not.toThrow();
+  });
+});
