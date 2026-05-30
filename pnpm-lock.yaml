@@ -44,6 +44,9 @@ importers:
       '@zhijiao/ai':
         specifier: workspace:*
         version: link:../../packages/ai
+      '@zhijiao/analytics':
+        specifier: workspace:*
+        version: link:../../packages/analytics
       '@zhijiao/auth':
         specifier: workspace:*
         version: link:../../packages/auth
