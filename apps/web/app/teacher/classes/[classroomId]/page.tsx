@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { prisma } from "@zhijiao/db";
+import { ClassDiagnosis } from "./class-diagnosis";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +42,14 @@ export default async function TeacherClassPage({
           Generate Assignment
         </Link>
       </div>
+
+      <section className="mt-6 rounded border bg-white p-4">
+        <h2 className="font-medium">班级学情诊断</h2>
+        <p className="mt-1 text-sm text-slate-600">基于近 90 天作业批改的知识点掌握分布，蓝色为建议优先讲评方向。</p>
+        <div className="mt-3">
+          <ClassDiagnosis classroomId={classroom.id} />
+        </div>
+      </section>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_320px]">
         <section className="overflow-hidden rounded border bg-white">
@@ -103,7 +112,14 @@ export default async function TeacherClassPage({
             <h2 className="font-medium">Students</h2>
             <ul className="mt-3 space-y-2 text-sm text-slate-700">
               {students.slice(0, 10).map((member) => (
-                <li key={member.userId}>{member.user.name ?? member.userId}</li>
+                <li key={member.userId}>
+                  <Link
+                    href={`/teacher/students/${member.userId}`}
+                    className="text-emerald-700 hover:underline"
+                  >
+                    {member.user.name ?? member.userId}
+                  </Link>
+                </li>
               ))}
             </ul>
           </section>
