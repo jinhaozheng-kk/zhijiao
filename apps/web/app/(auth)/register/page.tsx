@@ -11,7 +11,9 @@ export default function RegisterPage() {
   const router = useRouter();
   const [persona, setPersona] = useState<Persona | null>(null);
   const [grade, setGrade] = useState<GradeLevel | null>(null);
+  const [birthYear, setBirthYear] = useState<number | null>(null);
   const [name, setName] = useState("");
+  const currentYear = new Date().getFullYear();
 
   const info = trpc.auth.registerInfo.useQuery(undefined, { retry: false });
   const register = trpc.auth.register.useMutation({
@@ -26,10 +28,26 @@ export default function RegisterPage() {
       <h1 className="text-2xl font-bold">完善注册信息</h1>
       <PersonaPicker value={persona} onChange={setPersona} />
       {persona === "STUDENT" && <GradePicker value={grade} onChange={setGrade} />}
+      {persona === "STUDENT" && (
+        <label className="block space-y-1">
+          <span className="text-sm text-slate-700">出生年份</span>
+          <input
+            type="number"
+            inputMode="numeric"
+            min={1990}
+            max={currentYear}
+            value={birthYear ?? ""}
+            onChange={(e) => setBirthYear(e.target.value ? Number(e.target.value) : null)}
+            placeholder="例如 2013"
+            className="border rounded px-3 py-2 w-full"
+            data-testid="register-birthyear"
+          />
+        </label>
+      )}
       <input value={name} onChange={(e) => setName(e.target.value)} placeholder="昵称（可选）" className="border rounded px-3 py-2 w-full" />
       <button
-        disabled={!persona || (persona === "STUDENT" && !grade) || register.isPending}
-        onClick={() => register.mutate({ persona: persona!, gradeLevel: grade ?? undefined, name: name || undefined })}
+        disabled={!persona || (persona === "STUDENT" && (!grade || !birthYear)) || register.isPending}
+        onClick={() => register.mutate({ persona: persona!, gradeLevel: grade ?? undefined, birthYear: birthYear ?? undefined, name: name || undefined })}
         className="w-full rounded bg-slate-900 text-white py-2 disabled:opacity-50"
         data-testid="register-submit"
       >

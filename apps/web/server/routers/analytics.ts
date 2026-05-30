@@ -1,7 +1,7 @@
 import "server-only";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { authedProcedure, chargeMiddleware, router } from "../trpc.js";
+import { authedProcedure, consentGatedProcedure, chargeMiddleware, router } from "../trpc.js";
 import { profileForStudent, classDiagnosis } from "@zhijiao/analytics";
 import {
   getCachedJson,
@@ -20,7 +20,7 @@ const WindowSchema = z.enum(["D30", "D90", "ALL"]).default("D90");
 export const analyticsRouter = router({
   profile: router({
     // 学生本人完整画像
-    mine: authedProcedure
+    mine: consentGatedProcedure
       .input(z.object({ window: WindowSchema }))
       .query(async ({ ctx, input }) => {
         const profile = await getCachedJson(
@@ -32,7 +32,7 @@ export const analyticsRouter = router({
       }),
 
     // 家长/教师查指定学生：access helper 决定可见性 + 投影
-    get: authedProcedure
+    get: consentGatedProcedure
       // min(1) not cuid(): seeded dev/E2E user ids are not cuids; requireProfileAccess is the real guard.
       .input(z.object({ studentUserId: z.string().min(1), window: WindowSchema }))
       .query(async ({ ctx, input }) => {
@@ -98,7 +98,7 @@ export const analyticsRouter = router({
   }),
 
   classroom: router({
-    diagnosis: authedProcedure
+    diagnosis: consentGatedProcedure
       // min(1) not cuid(): seeded dev/E2E classroom ids are not cuids; requireTeacherClassroom is the real guard.
       .input(z.object({ classroomId: z.string().min(1), window: WindowSchema }))
       .query(async ({ ctx, input }) => {

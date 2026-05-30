@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 const FORBIDDEN_TEXT =
-  /(?:\b1[3-9]\d{9}\b|openid|unionid|wx_|rawBody|stemMd|actualAnswerMd|requestJson|responseJson|ipCreated|userAgent|outPath|parent_user_id|student_user_id|counterpartUserId|[A-Za-z]:\\|\/tmp\/)/i;
+  /(?:\b1[3-9]\d{9}\b|openid|unionid|wx_|rawBody|stemMd|actualAnswerMd|requestJson|responseJson|ipCreated|userAgent|outPath|parent_user_id|student_user_id|counterpartUserId|birth_year|birthYear|guardian_user_id|child_user_id|[A-Za-z]:\\|\/tmp\/)/i;
 
 const ROOT_KEYS: Record<string, string[]> = {
   DEACTIVATE_USER: ["deleted", "dryRun", "scrubbed"],
@@ -38,6 +38,8 @@ describe("OpsActionLog payload guardrails", () => {
         assignmentPerformance: 1,
         studentAssignments: 1,
         familyLinks: 1,
+        guardianConsentsAsChild: 1,
+        guardianConsentsAsGuardian: 1,
       },
       dryRun: false,
     });
@@ -107,6 +109,21 @@ describe("OpsActionLog payload guardrails", () => {
       assertPayloadSafe("DEACTIVATE_USER", {
         scrubbed: {},
         deleted: { familyLinks: 1, parent_user_id: "ckxyz" },
+        dryRun: false,
+      }),
+    ).toThrow();
+    // Plan 14a: guardian-consent ids and birth year must never leak into payload.
+    expect(() =>
+      assertPayloadSafe("DEACTIVATE_USER", {
+        scrubbed: {},
+        deleted: { guardianConsentsAsChild: 1, guardian_user_id: "ckxyz" },
+        dryRun: false,
+      }),
+    ).toThrow();
+    expect(() =>
+      assertPayloadSafe("DEACTIVATE_USER", {
+        scrubbed: { birthYear: 2015 },
+        deleted: {},
         dryRun: false,
       }),
     ).toThrow();

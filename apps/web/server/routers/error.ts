@@ -3,6 +3,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import {
   authedProcedure,
+  consentGatedProcedure,
   chargeMiddleware,
   validateEntryOwnership,
   validateQuestionAccess,
@@ -142,7 +143,7 @@ export const errorRouter = router({
   //
   // DELETED 不返回：与 partial unique idx 一致（DELETED 终态、与新 ACTIVE 共存），
   // 卡片应把 DELETED 后的同题视作"还没诊断"，重新走付费 CTA。
-  findEntryForQuestion: authedProcedure
+  findEntryForQuestion: consentGatedProcedure
     .input(z.object({ questionId: z.string().cuid() }))
     .query(async ({ ctx, input }) => {
       const entry = await ctx.db.errorBookEntry.findFirst({
@@ -172,7 +173,7 @@ export const errorRouter = router({
   // status: "ARCHIVED". The zod enum deliberately omits "DELETED" so any
   // client (legit or hostile) probing for deleted entries gets BAD_REQUEST,
   // never a leaked row.
-  list: authedProcedure
+  list: consentGatedProcedure
     .input(
       z.object({
         status: z.enum(["ACTIVE", "ARCHIVED"]).optional(),
@@ -205,7 +206,7 @@ export const errorRouter = router({
   // validateEntryOwnership covers all three NOT_FOUND cases (missing / cross-user
   // / DELETED) with a single ENTRY_NOT_FOUND so client UX is uniform and there's
   // no existence side-channel.
-  getById: authedProcedure
+  getById: consentGatedProcedure
     .use(validateEntryOwnership)
     .input(z.object({ entryId: z.string().cuid() }))
     .query(async ({ ctx }) => {
@@ -227,7 +228,7 @@ export const errorRouter = router({
   // render "下次复习 +Xd". When dueToday is non-empty, nextReviewAt = null
   // (frontend renders the list). When the user has no ACTIVE entries at all,
   // both are empty/null (frontend renders the "no errors to review" copy).
-  dueForReview: authedProcedure
+  dueForReview: consentGatedProcedure
     .input(z.object({ limit: z.number().int().min(1).max(50).default(20) }))
     .query(async ({ ctx, input }) => {
       const now = new Date();
@@ -254,7 +255,7 @@ export const errorRouter = router({
   // Bumps the entry along the fixed 5-step interval ladder. ACTIVE-only by
   // design: ARCHIVED entries explicitly opted out of the review queue, and
   // DELETED is filtered by validateEntryOwnership.
-  markReviewed: authedProcedure
+  markReviewed: consentGatedProcedure
     .use(validateEntryOwnership)
     .input(z.object({ entryId: z.string().cuid() }))
     .mutation(async ({ ctx }) => {
@@ -288,7 +289,7 @@ export const errorRouter = router({
   // unarchive (archived: false) we set nextReviewAt = now + 1d to put the
   // entry back in the review queue at the front (not its historical
   // schedule, which could be stale by many weeks).
-  archive: authedProcedure
+  archive: consentGatedProcedure
     .use(validateEntryOwnership)
     .input(z.object({ entryId: z.string().cuid(), archived: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
@@ -323,7 +324,7 @@ export const errorRouter = router({
   // keyword in some positions; the router key is "delete" (string literal
   // in the object) and the named export is `deleteEntry` to avoid surprises
   // for direct importers.
-  delete: authedProcedure
+  delete: consentGatedProcedure
     .use(validateEntryOwnership)
     .input(z.object({ entryId: z.string().cuid() }))
     .mutation(async ({ ctx }) => {

@@ -133,6 +133,7 @@ export function makeCtx(
       persona: "STUDENT" as const,
       roles: [] as import("@zhijiao/domain").Role[],
       isMinor: overrides.isMinor ?? false,
+      guardianConsentStatus: "NOT_REQUIRED" as const,
     },
     authError: null,
     ip: "127.0.0.1",

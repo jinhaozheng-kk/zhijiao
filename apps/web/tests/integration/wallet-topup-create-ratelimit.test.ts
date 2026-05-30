@@ -20,6 +20,7 @@ function makeCtx(opts: {
       persona: "STUDENT" as const,
       roles: [] as import("@zhijiao/domain").Role[],
       isMinor: false,
+      guardianConsentStatus: "NOT_REQUIRED" as const,
     },
     authError: null,
     ip: opts.ip ?? "127.0.0.1",

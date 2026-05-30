@@ -20,9 +20,10 @@ export const familyRouter = router({
     return { code, expiresInSec: INVITE_TTL_SEC };
   }),
 
-  // 家长绑定
+  // 家长绑定。Plan 14a：<14 child（guardianConsentStatus=PENDING）必须勾选监护人同意
+  // 才能绑定，且同事务写 GuardianConsent 审计行 + 激活（GRANTED）。
   bindByCode: authedProcedure
-    .input(z.object({ code: z.string().min(4).max(16) }))
+    .input(z.object({ code: z.string().min(4).max(16), guardianConsent: z.boolean().optional() }))
     .mutation(async ({ ctx, input }) => {
       const studentUserId = await ctx.redis.get(inviteKey(input.code));
       if (!studentUserId) {
@@ -31,18 +32,56 @@ export const familyRouter = router({
       if (studentUserId === ctx.auth.userId) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "不能绑定自己", cause: { reason: "CANNOT_BIND_SELF" } });
       }
-      // upsert：复活 REVOKED / 幂等 ACTIVE
-      await ctx.db.familyLink.upsert({
-        where: { parentUserId_studentUserId: { parentUserId: ctx.auth.userId, studentUserId } },
-        update: { status: "ACTIVE", revokedAt: null },
-        create: { parentUserId: ctx.auth.userId, studentUserId, status: "ACTIVE" },
-      });
-      await ctx.redis.del(inviteKey(input.code)); // 单次用尽
-      const student = await ctx.db.user.findUnique({
+      const child = await ctx.db.user.findUnique({
         where: { id: studentUserId },
-        select: { id: true, name: true, gradeLevel: true },
+        select: { id: true, name: true, gradeLevel: true, guardianConsentStatus: true },
       });
-      return { studentUserId, name: student?.name ?? null, gradeLevel: student?.gradeLevel ?? null };
+      if (!child) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "邀请码无效或已过期", cause: { reason: "INVITE_INVALID" } });
+      }
+      // <14 child（PENDING 或已 GRANTED）每个监护人绑定都需记录其同意；NOT_REQUIRED（≥14/成年）不需。
+      const needsConsent = child.guardianConsentStatus !== "NOT_REQUIRED";
+      if (needsConsent && input.guardianConsent !== true) {
+        // 同意未提供 —— 不消费邀请码（家长可阅读声明后带 guardianConsent:true 重试）
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "请阅读并确认监护人同意声明",
+          cause: { reason: "GUARDIAN_CONSENT_NOT_PROVIDED" },
+        });
+      }
+
+      await ctx.db.$transaction(async (tx) => {
+        // upsert：复活 REVOKED / 幂等 ACTIVE
+        await tx.familyLink.upsert({
+          where: { parentUserId_studentUserId: { parentUserId: ctx.auth.userId, studentUserId } },
+          update: { status: "ACTIVE", revokedAt: null },
+          create: { parentUserId: ctx.auth.userId, studentUserId, status: "ACTIVE" },
+        });
+        if (needsConsent) {
+          // 幂等：同一 (child, guardian) 已有有效 consent 则不重复写
+          const existing = await tx.guardianConsent.findFirst({
+            where: { childUserId: studentUserId, guardianUserId: ctx.auth.userId, revokedAt: null },
+            select: { id: true },
+          });
+          if (!existing) {
+            await tx.guardianConsent.create({
+              data: {
+                childUserId: studentUserId,
+                guardianUserId: ctx.auth.userId,
+                consentScope: "FULL_SERVICE",
+                method: "FAMILY_LINK_BIND",
+              },
+            });
+          }
+          await tx.user.update({
+            where: { id: studentUserId },
+            data: { guardianConsentStatus: "GRANTED" },
+          });
+        }
+      });
+
+      await ctx.redis.del(inviteKey(input.code)); // 单次用尽
+      return { studentUserId, name: child.name ?? null, gradeLevel: child.gradeLevel ?? null };
     }),
 
   listMyChildren: authedProcedure.query(async ({ ctx }) => {
@@ -69,12 +108,30 @@ export const familyRouter = router({
       if (!link || (link.parentUserId !== ctx.auth.userId && link.studentUserId !== ctx.auth.userId)) {
         throw new TRPCError({ code: "NOT_FOUND", message: "绑定不存在", cause: { reason: "LINK_NOT_FOUND" } });
       }
-      if (link.status === "ACTIVE") {
-        await ctx.db.familyLink.update({
-          where: { id: link.id },
-          data: { status: "REVOKED", revokedAt: new Date() },
+      await ctx.db.$transaction(async (tx) => {
+        if (link.status === "ACTIVE") {
+          await tx.familyLink.update({
+            where: { id: link.id },
+            data: { status: "REVOKED", revokedAt: new Date() },
+          });
+        }
+        // Plan 14a：撤回该 (parent, child) 的有效监护人同意；若 child 失去全部有效 consent → 回 PENDING（重新硬门禁）。
+        await tx.guardianConsent.updateMany({
+          where: { childUserId: link.studentUserId, guardianUserId: link.parentUserId, revokedAt: null },
+          data: { revokedAt: new Date() },
         });
-      }
+        const remaining = await tx.guardianConsent.count({
+          where: { childUserId: link.studentUserId, revokedAt: null },
+        });
+        const childRow = await tx.user.findUnique({
+          where: { id: link.studentUserId }, select: { guardianConsentStatus: true },
+        });
+        if (remaining === 0 && childRow?.guardianConsentStatus === "GRANTED") {
+          await tx.user.update({
+            where: { id: link.studentUserId }, data: { guardianConsentStatus: "PENDING" },
+          });
+        }
+      });
       return { ok: true as const };
     }),
 });

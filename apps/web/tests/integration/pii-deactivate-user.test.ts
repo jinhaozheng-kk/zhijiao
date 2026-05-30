@@ -386,6 +386,91 @@ describe("deactivateUser", () => {
     await expect(prisma.opsActionLog.count()).resolves.toBe(0);
   });
 
+  it("deletes guardian consents where user is the child and scrubs birthYear", async () => {
+    const guardian = await prisma.user.create({
+      data: { name: "Guardian", persona: "PARENT", isMinor: false },
+    });
+    const child = await prisma.user.create({
+      data: {
+        name: "Child",
+        persona: "STUDENT",
+        isMinor: true,
+        birthYear: 2015,
+        guardianConsentStatus: "GRANTED",
+      },
+    });
+    await prisma.guardianConsent.create({
+      data: {
+        childUserId: child.id,
+        guardianUserId: guardian.id,
+        consentScope: "BASIC",
+        method: "WECHAT",
+      },
+    });
+
+    const result = await deactivateUser(prisma, {
+      userId: child.id,
+      operatorId: null,
+      initiatorRef: "cli:test:operator",
+      reason: "child requested",
+    });
+
+    expect(result.payload.deleted).toMatchObject({
+      guardianConsentsAsChild: 1,
+      guardianConsentsAsGuardian: 0,
+    });
+    await expect(
+      prisma.guardianConsent.count({ where: { childUserId: child.id } }),
+    ).resolves.toBe(0);
+    await expect(
+      prisma.user.findUnique({ where: { id: child.id } }),
+    ).resolves.toMatchObject({ birthYear: null });
+  });
+
+  it("deletes guardian consents and restores child to PENDING when the guardian is deactivated", async () => {
+    const guardian = await prisma.user.create({
+      data: { name: "Guardian", persona: "PARENT", isMinor: false, birthYear: 1985 },
+    });
+    const child = await prisma.user.create({
+      data: {
+        name: "Child",
+        persona: "STUDENT",
+        isMinor: true,
+        birthYear: 2015,
+        guardianConsentStatus: "GRANTED",
+      },
+    });
+    await prisma.guardianConsent.create({
+      data: {
+        childUserId: child.id,
+        guardianUserId: guardian.id,
+        consentScope: "BASIC",
+        method: "WECHAT",
+      },
+    });
+
+    const result = await deactivateUser(prisma, {
+      userId: guardian.id,
+      operatorId: null,
+      initiatorRef: "cli:test:operator",
+      reason: "guardian requested",
+    });
+
+    expect(result.payload.deleted).toMatchObject({
+      guardianConsentsAsChild: 0,
+      guardianConsentsAsGuardian: 1,
+    });
+    await expect(
+      prisma.guardianConsent.count({ where: { guardianUserId: guardian.id } }),
+    ).resolves.toBe(0);
+    await expect(
+      prisma.user.findUnique({ where: { id: child.id } }),
+    ).resolves.toMatchObject({ guardianConsentStatus: "PENDING" });
+    await expect(
+      prisma.user.findUnique({ where: { id: guardian.id } }),
+    ).resolves.toMatchObject({ birthYear: null });
+  });
+
   it("throws for unknown user id", async () => {
     await expect(
       deactivateUser(prisma, {

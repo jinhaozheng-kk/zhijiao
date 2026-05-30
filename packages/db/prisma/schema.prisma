@@ -53,6 +53,8 @@ model User {
   persona     Persona     @default(STUDENT)
   gradeLevel  GradeLevel? @map("grade_level")
   isMinor     Boolean     @default(true) @map("is_minor")
+  birthYear            Int?                   @map("birth_year")
+  guardianConsentStatus GuardianConsentStatus @default(NOT_REQUIRED) @map("guardian_consent_status")
   deletedAt   DateTime?   @map("deleted_at")
   deactivationReason String? @map("deactivation_reason")
   createdAt   DateTime    @default(now()) @map("created_at")
@@ -69,6 +71,8 @@ model User {
   studentAssignments   StudentAssignment[] @relation("StudentAssignments")
   parentLinks          FamilyLink[]        @relation("ParentLinks")     // Plan 11
   studentLinks         FamilyLink[]        @relation("StudentLinks")    // Plan 11
+  childConsents       GuardianConsent[]  @relation("ChildConsents")
+  guardianConsents    GuardianConsent[]  @relation("GuardianConsents")
   createdKpAliases    KpAlias[]          @relation("KpAliasCreator")    // Plan 9
   reviewedKpMatches   KpReconcileMatch[] @relation("KpReconcileReviewer") // Plan 9
   initiatedOpsActions OpsActionLog[]     @relation("OpsActionInitiator")
@@ -816,6 +820,12 @@ enum FamilyLinkStatus {
   REVOKED
 }
 
+enum GuardianConsentStatus {
+  NOT_REQUIRED
+  PENDING
+  GRANTED
+}
+
 model FamilyLink {
   id            String           @id @default(cuid())
   parentUserId  String           @map("parent_user_id")
@@ -832,4 +842,22 @@ model FamilyLink {
   @@index([studentUserId, status])
   @@index([parentUserId, status])
   @@map("family_links")
+}
+
+model GuardianConsent {
+  id             String    @id @default(cuid())
+  childUserId    String    @map("child_user_id")
+  guardianUserId String    @map("guardian_user_id")
+  consentScope   String    @map("consent_scope")
+  method         String
+  consentedAt    DateTime  @default(now()) @map("consented_at")
+  revokedAt      DateTime? @map("revoked_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  child    User @relation("ChildConsents",    fields: [childUserId],    references: [id], onDelete: Cascade)
+  guardian User @relation("GuardianConsents", fields: [guardianUserId], references: [id], onDelete: Cascade)
+
+  @@index([childUserId])
+  @@index([guardianUserId])
+  @@map("guardian_consents")
 }

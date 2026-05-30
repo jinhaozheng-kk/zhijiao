@@ -14,6 +14,7 @@ import { router, publicProcedure, authedProcedure } from "../trpc.js";
 import { appendSetCookie } from "../cookie-utils.js";
 import { issueSessionAndCookies, findUserByPhone } from "../auth-service.js";
 import { deriveIsMinor, type Persona } from "@zhijiao/domain";
+import { initialConsentStatus } from "../lib/consent.js";
 import { Prisma, SessionRevokeReason } from "@prisma/client";
 import { env } from "../env.js";
 
@@ -22,6 +23,7 @@ const PhoneSchema = z.string().regex(/^1\d{10}$/, "手机号格式不正确（11
 const RegisterInput = z.object({
   persona: z.enum(["STUDENT", "TEACHER", "PARENT"]),
   gradeLevel: z.enum(["G5","G6","G7","G8","G9","G10","G11","G12"]).optional().nullable(),
+  birthYear: z.number().int().min(1990).max(new Date().getFullYear()).optional().nullable(),
   name: z.string().min(1).max(40).optional(),
 });
 
@@ -139,7 +141,13 @@ export const authRouter = router({
         toTRPCError("REGISTER_GRADE_REQUIRED", "BAD_REQUEST");
       }
 
+      if (input.persona === "STUDENT" && input.birthYear == null) {
+        // Plan 14a：STUDENT 必填出生年份（推导 <14 监护人同意门禁）。同 gradeLevel 表单错误：不清 cookie。
+        toTRPCError("REGISTER_BIRTHYEAR_REQUIRED", "BAD_REQUEST");
+      }
+
       const isMinor = deriveIsMinor(input.persona as Persona, input.gradeLevel ?? null);
+      const guardianConsentStatus = initialConsentStatus(input.persona as Persona, input.birthYear ?? null);
 
       try {
         const userId = await ctx.db.$transaction(async (tx) => {
@@ -147,7 +155,9 @@ export const authRouter = router({
             data: {
               persona: input.persona,
               gradeLevel: input.gradeLevel ?? undefined,
+              birthYear: input.birthYear ?? undefined,
               isMinor,
+              guardianConsentStatus,
               name: input.name ?? payload!.profile?.nickname ?? null,
               identities: {
                 create: [{

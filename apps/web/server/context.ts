@@ -21,7 +21,10 @@ export type AuthError =
 // stable so already-issued tokens keep working; createContext pays one
 // indexed PK lookup that already happens for session revocation (see
 // isSessionRevoked) to also pull isMinor at no extra round-trip.
-export type AuthCtx = AccessClaims & { isMinor: boolean };
+export type AuthCtx = AccessClaims & {
+  isMinor: boolean;
+  guardianConsentStatus: import("@prisma/client").GuardianConsentStatus;
+};
 
 export type Ctx = {
   db: typeof prisma;
@@ -92,12 +95,16 @@ export async function createContext({ req, resHeaders }: FetchCreateContextFnOpt
         // unknown account top up freely.
         const user = await prisma.user.findUnique({
           where: { id: v.claims.userId },
-          select: { isMinor: true, deletedAt: true },
+          select: { isMinor: true, deletedAt: true, guardianConsentStatus: true },
         });
         if (user?.deletedAt != null) {
           authError = "USER_DEACTIVATED";
         } else {
-          auth = { ...v.claims, isMinor: user?.isMinor ?? true };
+          auth = {
+            ...v.claims,
+            isMinor: user?.isMinor ?? true,
+            guardianConsentStatus: user?.guardianConsentStatus ?? "NOT_REQUIRED",
+          };
         }
       }
     } else {

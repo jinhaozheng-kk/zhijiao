@@ -92,6 +92,7 @@
 - **Plan 10**（教师端分层作业 + AI 出题系统：seeded classroom、变量计费、AI 草稿、发布/提交/批改状态机、错题本回流、AssignmentPerformance、教师/学生 UI、E2E、PII 补丁）—— 见 `docs/superpowers/plans/2026-05-27-teacher-tiered-assignments.md`，spec 在 `docs/superpowers/specs/2026-05-27-teacher-tiered-assignments-design.md`
 - **Plan 11**（学情画像 / 趋势 + 家长绑定：`packages/analytics` 纯核 + 只读查询壳、KP 掌握度三档 + 数据不足态、学生付费 AI 学习建议、5min 缓存纯 TTL、学生发码/家长绑定 FamilyLink、三端画像 UI、PII 覆盖 FamilyLink、E2E）—— 见 `docs/superpowers/plans/2026-05-29-learning-portrait-and-trends.md`，spec 在 `docs/superpowers/specs/2026-05-29-learning-portrait-and-trends-design.md`
 - **Plan 13**（KP 树扩充：全学段单 math subject 4 层树 学段→领域→主题→叶子、分学段手写数据文件 + validateKpData 全局 code/alias 唯一校验、通用 seedSubjectKpTree loader、reconciler leaf-only EXACT 守卫、现有 4 KP 实迁 code 不变）—— 见 `docs/superpowers/plans/2026-05-30-kp-tree-expansion.md`，spec 在 `docs/superpowers/specs/2026-05-30-kp-tree-expansion-design.md`
+- **Plan 14a**（未成年人监护人同意 <14 硬门禁：birthYear 自报 + isUnder14 保守判龄、guardianConsentStatus 承重字段进 ctx.auth、GuardianConsent 审计表、requireGuardianConsent 中间件 + chargedProcedure/consentGatedProcedure 双门禁、复用 FamilyLink bindByCode 写同意、revoke 回 PENDING、PII 覆盖、注册/家长端 UI）—— 见 `docs/superpowers/plans/2026-05-30-minor-guardian-consent.md`，spec 在 `docs/superpowers/specs/2026-05-30-minor-guardian-consent-design.md`
 
 **学情画像现状**（Plan 11）：
 - 新建 `packages/analytics`：`core.ts` 纯函数（`aggregateMastery` / `aggregateClassDiagnosis` / `scoreOf` / `decayWeight` / `tierOf`，零 runtime dep，**不**依赖 redis/ai/server-only）+ `queries.ts` 只读 Prisma 聚合（`profileForStudent` / `classDiagnosis`）。掌握度主源是 `AssignmentPerformance.kpIds`（绕开稀疏的 QuestionKPLink）；时间衰减半衰期 30 天；`UNGRADED` 行被过滤不计。
@@ -194,6 +195,16 @@
 - `VARIANT_GENERATED` 与 `USER_ADHOC` 同为 owner-only；注销时 scrub `createdByUserId=null`，Question 行保留作统计样本。
 - 历史 `VARIANT_TO_PARENT_NEEDS_REVIEW` 行升级为 LINKED + 补 QuestionKPLink 显式 punt 到 cleanup plan。
 
+**未成年同意现状**（Plan 14a）：
+- `<14` 判定：`User.birthYear`（自报年份，STUDENT 注册必填）→ `isUnder14(birthYear)`（`apps/web/server/lib/consent.ts` 纯函数，保守 `当前年−birthYear ≤ 14` 宁可多触发）。`User.guardianConsentStatus`（`NOT_REQUIRED`/`PENDING`/`GRANTED`，默认 NOT_REQUIRED）是承重字段，进 `ctx.auth`（与 isMinor 同查询，不进 JWT）。
+- 硬门禁：`requireGuardianConsent` 中间件（`assertConsentOk` 纯函数判定）拦 `PENDING` → `FORBIDDEN/GUARDIAN_CONSENT_REQUIRED`。**双覆盖**：折进 `chargedProcedure`（所有付费动作一处覆盖）+ `consentGatedProcedure`（非付费数据 router：error/analytics/assignment 读写）。**白名单**：`auth.*` / `family.*`（同意流程本身）继续裸 `authedProcedure`。
+- 同意获取（复用 Plan 11 FamilyLink）：`<14` child（`guardianConsentStatus !== "NOT_REQUIRED"`）经 `family.bindByCode({ code, guardianConsent:true })` 由家长（PARENT 账号）勾选同意 → 同事务写 `GuardianConsent`（method=`FAMILY_LINK_BIND`，scope=`FULL_SERVICE`）+ 激活 child `GRANTED`。每个监护人各记一行（多监护人累积）；`needsConsent` 按 `!== NOT_REQUIRED` 不是 `=== PENDING`，否则第二监护人对已 GRANTED child 不记同意。
+- 撤回：`family.revoke`（任一方可撤，沿用 Plan 11）同事务写 `GuardianConsent.revokedAt` + 若 child 失去全部有效 consent → 回 `PENDING`（重新门禁）。child `GRANTED` 当存在 ≥1 个 `revokedAt=null` consent。
+- UX：edge `middleware.ts` 读不到 DB 状态（不进 JWT），故 enforcement 全在 tRPC 层；客户端 `providers.tsx` 的 `QueryCache/MutationCache onError` 捕获 `GUARDIAN_CONSENT_REQUIRED` → 跳 `/guardian-consent`（童发码引导页）。注册表单（STUDENT 出生年份）与家长端绑定（监护人同意勾选框）均已接 UI。
+- PII（扩 Plan 6）：注销 child 删其 consent + payload 计数；注销 guardian 删其作 guardian 的 consent + 受影响 child 失去全部有效 consent 回 PENDING；导出含本人 consent（guardian id masked）+ birthYear；注销 scrub `birthYear=null`；payload guard 禁词加 `birth_year`/`birthYear`/`guardian_user_id`/`child_user_id`。
+- 两默认（已确认）：既有无 birthYear 用户 grandfather（NOT_REQUIRED 不硬锁）；birthYear 仅 STUDENT 必填，TEACHER/PARENT 视为成年。
+- E2E seed：`dev-student-05`(13800000010, birthYear 2015→PENDING) 发码、`dev-parent-03`(13800000011) 绑定，专给 `guardian-consent.spec.ts`。
+
 **PII 治理现状**（Plan 6）：
 - OPS CLI：`user:deactivate <userId> [--reason TEXT] [--dry-run]` / `user:export <userId> --out <path.json>` / `pii:gc-sweep [--bucket short|medium|orphan|all] [--dry-run]`；全部走 shared service，不引入 apps/web 内置 cron
 - 注销：User 行 soft-delete 作 tombstone；硬删 `ErrorBookEntry`（级联 `VariantGroup`/`VariantItem`）和用户 `USER_ADHOC Question`；删除 `AuthIdentity` + PHONE/GLOBAL 对应 `OtpRequest`；scrub Session / TopupOrder / ModelCall / KpAlias / KpReconcileMatch PII；Plan 12 后额外 scrub `VARIANT_GENERATED Question.createdByUserId=null` 但保留 Question 行；Plan 10 后删除该学生的 `StudentAssignment`（级联 `AssignmentAnswer`）和 `AssignmentPerformance`，payload 只记录计数；财务金额、订单号、ledger 保留
@@ -289,10 +300,15 @@ pnpm --filter @zhijiao/web  test -- tests/integration/auth-register-race.test.ts
 60. **validateKpData 在 seed 入口运行**（Plan 13）：`Select-String -Path packages/db/prisma/seed/0_curriculum.ts -Pattern "validateKpData"` 应命中；坏数据（重复 code/alias、容器带 alias）`db:seed` 立即 throw。
 61. **reconciler leaf-only 守卫**（Plan 13）：`Select-String -Path apps/web/server/lib/kp-reconcile.ts -Pattern "isLeaf|parentIds"` 应命中；`pnpm.cmd --filter @zhijiao/web test -- tests/integration/kp-reconcile-leaf-only.test.ts` 应 2/2 绿。
 62. **KP data 校验单测**（Plan 13）：`pnpm.cmd --filter @zhijiao/db test -- tests/kp-data.test.ts tests/kp-seed.test.ts` 应全绿（纯校验 + seed 幂等/实迁）。
+63. **监护人同意门禁在付费 + 数据 procedure 生效**（Plan 14a）：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/guardian-consent-gate.test.ts tests/integration/guardian-consent-router.test.ts` 应全绿；PENDING 调受保护 procedure → `FORBIDDEN/GUARDIAN_CONSENT_REQUIRED`，`auth.*`/`family.*` 白名单放行。`Select-String -Path apps/web/server/trpc.ts -Pattern "requireGuardianConsent"` 在 `chargedProcedure` 与 `consentGatedProcedure` 两处命中。
+64. **bind <14 必带 consent 才写行**（Plan 14a）：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/family-guardian-consent.test.ts` 应全绿（5 例：缺 consent 拒 + 写行激活 + ≥14 回归 + 撤回回 PENDING + 多监护人）。`needsConsent` 判定用 `!== "NOT_REQUIRED"` 不是 `=== "PENDING"`。
+65. **PII 覆盖 GuardianConsent + birthYear**（Plan 14a）：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/pii-deactivate-user.test.ts tests/integration/pii-export-user-data.test.ts tests/unit/pii-ops-action-log-payload.test.ts` 应全绿；注销删双向 consent + guardian 侧回 PENDING + scrub birthYear、导出含本人 consent（guardian masked）、payload 禁词加 `birth_year`/`guardian_user_id`/`child_user_id`。
+66. **Plan 14a E2E**（§8）：`pnpm.cmd --filter @zhijiao/web test:e2e -- e2e/guardian-consent.spec.ts` 应 1 passed（<14 门禁跳转→家长勾选同意绑定→解禁闭环）。注：注册表单 STUDENT 必填出生年份、家长端绑定必带监护人同意勾选框——两处 UI 仅此 E2E 覆盖。OTP burst flake 同红线 #28。
 
-**下一步候选 Plan**（Plan 4 + Plan 6 + Plan 8 + Plan 9 + Plan 10 + Plan 11 + Plan 12 + Plan 13 已落地）：
+**下一步候选 Plan**（Plan 4 + Plan 6 + Plan 8 + Plan 9 + Plan 10 + Plan 11 + Plan 12 + Plan 13 + Plan 14a 已落地）：
 - Plan 5: 真接阿里云 SMS + 微信公众号（ICP 备案通过后；**且 Plan 2 Hardening 必须先 ship**；替换 `RealSmsAdapter` / `RealWechatH5Adapter` 的 stub 实现）
 - Plan 7: 真接微信支付 V3 API（需 ICP 备案 + 商户号 + APIv3 + 商户证书；激活 `RealWechatPayAdapter.unifiedOrder` + `verifyNotify`）—— **Plan 3 prod ship prereq**
-- Plan 14: 未成年人特殊保护 / PIPL 完版（<14 监护人代办、数据副本/删除请求 SLA 完整化、通用 PII 扫描与运营 SOP）
+- Plan 14b: DSAR 数据主体请求 + SLA（用户侧数据副本/删除请求入口、SLA 追踪、OPS 工作流；复用 Plan 6 export/deactivate 原语）
+- Plan 14c: 通用 PII 扫描器（手机号/身份证 regex 扫描，接答疑输入/题面/模型输出落库前；Plan 8 punt）
 - Plan 12 cleanup: `VariantItem.questionId NOT NULL` + 下线 nullable reconcile 分支 + 处理历史 `VARIANT_TO_PARENT_NEEDS_REVIEW` 行
 - Plan 15: USER_ADHOC × PUBLISHED canonical dedup / 题库去重 / PUBLISHED 复用 / 统计归并（Plan 8 §6.2 punt）
