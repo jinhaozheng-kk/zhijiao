@@ -67,6 +67,8 @@ model User {
   classroomMemberships ClassroomMember[]
   teacherAssignments   Assignment[]        @relation("TeacherAssignments")
   studentAssignments   StudentAssignment[] @relation("StudentAssignments")
+  parentLinks          FamilyLink[]        @relation("ParentLinks")     // Plan 11
+  studentLinks         FamilyLink[]        @relation("StudentLinks")    // Plan 11
   createdKpAliases    KpAlias[]          @relation("KpAliasCreator")    // Plan 9
   reviewedKpMatches   KpReconcileMatch[] @relation("KpReconcileReviewer") // Plan 9
   initiatedOpsActions OpsActionLog[]     @relation("OpsActionInitiator")
@@ -805,4 +807,29 @@ model OpsActionLog {
   @@index([kind, createdAt])
   @@index([targetUserId])
   @@map("ops_action_logs")
+}
+
+// === Plan 11: Family Link (学生发码 / 家长绑定) ===
+
+enum FamilyLinkStatus {
+  ACTIVE
+  REVOKED
+}
+
+model FamilyLink {
+  id            String           @id @default(cuid())
+  parentUserId  String           @map("parent_user_id")
+  studentUserId String           @map("student_user_id")
+  status        FamilyLinkStatus @default(ACTIVE)
+  createdAt     DateTime         @default(now()) @map("created_at")
+  revokedAt     DateTime?        @map("revoked_at")
+
+  // onDelete: Restrict — 与 ErrorBookEntry 同款安全默认；注销由 Plan 6 service 显式删
+  parent        User @relation("ParentLinks",  fields: [parentUserId],  references: [id], onDelete: Restrict)
+  student       User @relation("StudentLinks", fields: [studentUserId], references: [id], onDelete: Restrict)
+
+  @@unique([parentUserId, studentUserId])
+  @@index([studentUserId, status])
+  @@index([parentUserId, status])
+  @@map("family_links")
 }

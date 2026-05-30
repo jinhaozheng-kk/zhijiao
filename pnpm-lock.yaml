@@ -44,6 +44,9 @@ importers:
       '@zhijiao/ai':
         specifier: workspace:*
         version: link:../../packages/ai
+      '@zhijiao/analytics':
+        specifier: workspace:*
+        version: link:../../packages/analytics
       '@zhijiao/auth':
         specifier: workspace:*
         version: link:../../packages/auth
@@ -136,6 +139,22 @@ importers:
         specifier: ^3.23.0
         version: 3.25.76
     devDependencies:
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.3
+      vitest:
+        specifier: ^1.6.0
+        version: 1.6.1(@types/node@20.19.41)
+
+  packages/analytics:
+    dependencies:
+      '@prisma/client':
+        specifier: ^5.18.0
+        version: 5.22.0(prisma@5.22.0)
+    devDependencies:
+      '@types/node':
+        specifier: ^20.0.0
+        version: 20.19.41
       typescript:
         specifier: ^5.4.0
         version: 5.9.3

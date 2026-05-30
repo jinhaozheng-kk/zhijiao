@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@zhijiao/ai":            "workspace:*",
+    "@zhijiao/analytics":     "workspace:*",
     "@zhijiao/auth":          "workspace:*",
     "@zhijiao/billing":       "workspace:*",
     "@zhijiao/db":            "workspace:*",

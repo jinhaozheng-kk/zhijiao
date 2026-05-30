@@ -205,6 +205,10 @@ async function seedDeactivateFixture() {
       providerUserId: "13900000000",
     },
   });
+  // Plan 11: user is both a student (otherUser is parent) and a parent (otherUser is child).
+  await prisma.familyLink.create({
+    data: { parentUserId: otherUser.id, studentUserId: user.id, status: "ACTIVE" },
+  });
   return { user, otherUser, entry, group, wallet, userAdhocQuestion };
 }
 
@@ -225,6 +229,7 @@ describe("deactivateUser", () => {
       variantGroups: 1,
       variantItems: 1,
       userAdhocQuestions: 1,
+      familyLinks: 1,
     });
     expect(result.payload.scrubbed).toMatchObject({
       authIdentities: 2,
@@ -262,6 +267,9 @@ describe("deactivateUser", () => {
     await expect(prisma.modelCall.count({ where: { userId: null } })).resolves.toBe(1);
     await expect(prisma.kpAlias.count({ where: { createdByUserId: null } })).resolves.toBe(1);
     await expect(prisma.kpReconcileMatch.count({ where: { reviewedByUserId: null } })).resolves.toBe(1);
+    await expect(
+      prisma.familyLink.count({ where: { OR: [{ parentUserId: user.id }, { studentUserId: user.id }] } }),
+    ).resolves.toBe(0);
 
     await expect(prisma.user.findUnique({ where: { id: user.id } })).resolves.toMatchObject({
       name: null,

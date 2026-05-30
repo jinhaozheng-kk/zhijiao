@@ -66,6 +66,18 @@ const DEFAULT_ASSIGNMENT_QUESTION_GENERATION = {
 
 const DEFAULT_KP_RECONCILIATION: unknown = [];
 
+// Plan 11: learning-advice 默认 mock —— schema 合法、措辞合规。
+const DEFAULT_LEARNING_ADVICE = {
+  summaryMd: "你最近在方程类题目上稳步推进，错题集中在少数知识点，方向很清晰。",
+  suggestions: [
+    {
+      focusKp: "因式分解",
+      methodMd: "先识别公因式，再判断能否套用平方差/完全平方公式；做完回看一步是否可逆验证。",
+    },
+  ],
+  encouragementMd: "按自己的节奏一步步来，你已经在进步。",
+};
+
 function pickDefault(req: AdapterRequest): unknown {
   // System prompts are defined verbatim in router.ts; match on Chinese
   // 助手 suffix keyword to dispatch.
@@ -77,6 +89,7 @@ function pickDefault(req: AdapterRequest): unknown {
   if (sys.includes("assignment question generation assistant")) {
     return DEFAULT_ASSIGNMENT_QUESTION_GENERATION;
   }
+  if (sys.includes("学习顾问")) return DEFAULT_LEARNING_ADVICE;
   return DEFAULT_TUTORING;
 }
 

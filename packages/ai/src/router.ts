@@ -21,6 +21,9 @@ import {
   KpReconciliationInputSchema,
   KpReconciliationOutputSchema,
   type KpReconciliationOutput,
+  LearningAdviceInputSchema,
+  LearningAdviceOutputSchema,
+  type LearningAdviceOutput,
 } from "./schemas.js";
 import { loadPrompt, ensurePromptInDb } from "./registry.js";
 import { writeAudit } from "./audit.js";
@@ -75,6 +78,15 @@ function scanAssignmentQuestionGenerationForForbidden(
         ...item.knowledgePointHints,
       ]),
     ]),
+  ].join("\n");
+  return findForbidden(corpus);
+}
+
+function scanLearningAdviceForForbidden(out: LearningAdviceOutput): string[] {
+  const corpus = [
+    out.summaryMd,
+    out.encouragementMd,
+    ...out.suggestions.flatMap((s) => [s.focusKp, s.methodMd]),
   ].join("\n");
   return findForbidden(corpus);
 }
@@ -587,6 +599,58 @@ export class AiRouter {
       request,
       schema: AssignmentQuestionGenerationOutputSchema,
       scanForbidden: scanAssignmentQuestionGenerationForForbidden,
+    });
+  }
+
+  // Plan 11: analytics.profile.generateAdvice backing call.
+  // KP mastery → 可迁移学习方法建议；合规扫描走 AI 输出（白名单不补偿在 router 层处理）。
+  async generateLearningAdvice(
+    input: unknown,
+  ): Promise<LearningAdviceOutput & { modelCallId: string }> {
+    const parsed = LearningAdviceInputSchema.parse(input);
+    const taskKind: TaskKind = "LEARNING_ADVICE";
+    const prompt = await loadPrompt(
+      "learning-advice",
+      this.opts.promptVersion ?? "v1",
+    );
+    const promptTemplateId = await ensurePromptInDb(this.opts.prisma, prompt);
+
+    const focusRendered =
+      parsed.focusAreas
+        .map(
+          (f) =>
+            `- ${f.kpName}（参考掌握度=${f.score === null ? "数据不足" : f.score}）`,
+        )
+        .join("\n") || "（暂无）";
+    const strengthsRendered =
+      parsed.strengths.map((s) => `- ${s}`).join("\n") || "（暂无）";
+
+    const userContent = prompt.interpolate({
+      studentGrade: parsed.studentGrade ?? "G8",
+      focusAreas: focusRendered,
+      strengths: strengthsRendered,
+    });
+
+    const model = this.opts.modelOverride ?? TASK_MODEL_MAP[taskKind];
+    const request = {
+      model,
+      messages: [
+        {
+          role: "system" as const,
+          content: "你是面向中国 K12、强调方法论的学习顾问。",
+        },
+        { role: "user" as const, content: userContent },
+      ],
+      responseFormat: "json_object" as const,
+      temperature: 0.4,
+    };
+
+    return this.runJsonTaskWithAudit({
+      taskKind,
+      promptTemplateId,
+      request,
+      schema: LearningAdviceOutputSchema,
+      scanForbidden: scanLearningAdviceForForbidden,
     });
   }
 

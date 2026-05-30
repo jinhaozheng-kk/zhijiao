@@ -6,7 +6,8 @@ export type TaskKind =
   | "PAPER_GEN"
   | "FORECAST_PAPER_GEN"
   | "EMBEDDING"
-  | "KP_RECONCILE";             // Plan 9: kp:reconcile-pending CLI (hint→kp id LLM mapping)
+  | "KP_RECONCILE"              // Plan 9: kp:reconcile-pending CLI (hint→kp id LLM mapping)
+  | "LEARNING_ADVICE";          // Plan 11: analytics.profile.generateAdvice (KP mastery → study method advice)
 
 // spec §1.2 决定的初稿 task→model 映射（router 中可调）
 export const TASK_MODEL_MAP: Record<TaskKind, string> = {
@@ -18,4 +19,5 @@ export const TASK_MODEL_MAP: Record<TaskKind, string> = {
   FORECAST_PAPER_GEN:  "qwen-max",
   EMBEDDING:           "text-embedding-v2",
   KP_RECONCILE:        "qwen-plus",        // Plan 9: 候选集小、JSON 输出，plus 足够
+  LEARNING_ADVICE:     "qwen-plus",        // Plan 11: 方法论建议，JSON 输出，plus 足够
 };

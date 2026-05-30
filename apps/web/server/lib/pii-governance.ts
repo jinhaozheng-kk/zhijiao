@@ -21,6 +21,7 @@ export interface DeactivatePayload {
     assignmentAnswers: number;
     assignmentPerformance: number;
     studentAssignments: number;
+    familyLinks: number;
   };
   dryRun: boolean;
 }
@@ -128,6 +129,13 @@ export interface UserDataExport {
     kpIds: string[];
     createdAt: Date;
   }>;
+  familyLinks: Array<{
+    id: string;
+    role: "parent" | "student";
+    counterpartUserId: string;
+    status: string;
+    createdAt: Date;
+  }>;
 }
 
 export type SweepBucket = "short" | "medium" | "orphan";
@@ -220,6 +228,7 @@ export async function exportUserData(
     studentAssignments,
     assignmentAnswers,
     assignmentPerformance,
+    familyLinks,
   ] = await Promise.all([
     prisma.authIdentity.findMany({
       where: { userId },
@@ -347,6 +356,11 @@ export async function exportUserData(
         createdAt: true,
       },
     }),
+    prisma.familyLink.findMany({
+      where: { OR: [{ parentUserId: userId }, { studentUserId: userId }] },
+      orderBy: { createdAt: "asc" },
+      select: { id: true, parentUserId: true, studentUserId: true, status: true, createdAt: true },
+    }),
   ]);
 
   return {
@@ -381,6 +395,13 @@ export async function exportUserData(
     studentAssignments,
     assignmentAnswers,
     assignmentPerformance,
+    familyLinks: familyLinks.map((l) => ({
+      id: l.id,
+      role: l.parentUserId === userId ? ("parent" as const) : ("student" as const),
+      counterpartUserId: l.parentUserId === userId ? l.studentUserId : l.parentUserId,
+      status: l.status,
+      createdAt: l.createdAt,
+    })),
   };
 }
 
@@ -586,6 +607,9 @@ export async function deactivateUser(
     const studentAssignments = await tx.studentAssignment.deleteMany({
       where: { studentUserId: args.userId },
     });
+    const familyLinks = await tx.familyLink.deleteMany({
+      where: { OR: [{ parentUserId: args.userId }, { studentUserId: args.userId }] },
+    });
 
     await tx.user.update({
       where: { id: args.userId },
@@ -613,6 +637,7 @@ export async function deactivateUser(
         assignmentAnswers,
         assignmentPerformance: assignmentPerformance.count,
         studentAssignments: studentAssignments.count,
+        familyLinks: familyLinks.count,
       },
       dryRun: false,
     };
@@ -676,6 +701,7 @@ async function buildDeactivatePlan(
       assignmentAnswers: 0,
       assignmentPerformance: 0,
       studentAssignments: 0,
+      familyLinks: 0,
     },
     dryRun: false,
   };
@@ -721,6 +747,7 @@ async function buildDeactivatePlan(
     assignmentAnswers,
     assignmentPerformance,
     studentAssignments,
+    familyLinks,
   ] = await Promise.all([
     prisma.errorBookEntry.count({ where: { userId } }),
     entryIds.length ? prisma.variantGroup.count({ where: { entryId: { in: entryIds } } }) : 0,
@@ -741,6 +768,9 @@ async function buildDeactivatePlan(
     }),
     prisma.assignmentPerformance.count({ where: { studentUserId: userId } }),
     prisma.studentAssignment.count({ where: { studentUserId: userId } }),
+    prisma.familyLink.count({
+      where: { OR: [{ parentUserId: userId }, { studentUserId: userId }] },
+    }),
   ]);
 
   return {
@@ -765,6 +795,7 @@ async function buildDeactivatePlan(
         assignmentAnswers,
         assignmentPerformance,
         studentAssignments,
+        familyLinks,
       },
       dryRun: false,
     },

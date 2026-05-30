@@ -11,6 +11,8 @@ describe("priceOf", () => {
     expect(priceOf("VARIANT_GROUP_GEN")).toBe(3));
   it("ERROR_ANALYSIS = 1", () =>
     expect(priceOf("ERROR_ANALYSIS")).toBe(1));
+  it("LEARNING_ADVICE_GEN = 1", () =>
+    expect(priceOf("LEARNING_ADVICE_GEN")).toBe(1));
   it("unknown kind throws", () => {
     expect(() => priceOf("NOPE" as ActionKind)).toThrow(/Unknown action kind/);
   });

@@ -203,3 +203,23 @@ export const AssignmentQuestionGenerationOutputSchema = z.object({
 export type AssignmentQuestionGenerationOutput = z.infer<
   typeof AssignmentQuestionGenerationOutputSchema
 >;
+
+// Plan 11: LEARNING_ADVICE 的输入与输出契约
+export const LearningAdviceInputSchema = z.object({
+  studentGrade: z.string().optional(),
+  focusAreas: z
+    .array(z.object({ kpName: z.string(), score: z.number().nullable() }))
+    .max(10),
+  strengths: z.array(z.string()).max(10),
+});
+export type LearningAdviceInput = z.infer<typeof LearningAdviceInputSchema>;
+
+export const LearningAdviceOutputSchema = z.object({
+  summaryMd: z.string(),
+  suggestions: z
+    .array(z.object({ focusKp: z.string(), methodMd: z.string() }))
+    .min(1)
+    .max(5),
+  encouragementMd: z.string(),
+});
+export type LearningAdviceOutput = z.infer<typeof LearningAdviceOutputSchema>;
