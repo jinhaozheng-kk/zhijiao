@@ -41,9 +41,9 @@ describe("auth.register 红线 #1 race-safe", () => {
     const nonce = await startRegisterFlow(phone);
 
     const callA = createCaller(makeCtx({ "__Host-zj_register_token": nonce }))
-      .auth.register({ persona: "STUDENT", gradeLevel: "G8" });
+      .auth.register({ persona: "STUDENT", gradeLevel: "G8", birthYear: 2010 });
     const callB = createCaller(makeCtx({ "__Host-zj_register_token": nonce }))
-      .auth.register({ persona: "STUDENT", gradeLevel: "G8" });
+      .auth.register({ persona: "STUDENT", gradeLevel: "G8", birthYear: 2010 });
     const results = await Promise.allSettled([callA, callB]);
     const ok = results.filter((r) => r.status === "fulfilled");
     const fail = results.filter((r) => r.status === "rejected");
@@ -68,7 +68,7 @@ describe("auth.register 红线 #1 race-safe", () => {
 
     // 改完字段重交应成功
     const ctxOk = makeCtx({ "__Host-zj_register_token": nonce });
-    const r = await createCaller(ctxOk).auth.register({ persona: "STUDENT", gradeLevel: "G7" });
+    const r = await createCaller(ctxOk).auth.register({ persona: "STUDENT", gradeLevel: "G7", birthYear: 2010 });
     expect(r.user.persona).toBe("STUDENT");
   });
 });
