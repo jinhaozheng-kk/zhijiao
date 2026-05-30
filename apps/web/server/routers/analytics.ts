@@ -33,7 +33,8 @@ export const analyticsRouter = router({
 
     // 家长/教师查指定学生：access helper 决定可见性 + 投影
     get: authedProcedure
-      .input(z.object({ studentUserId: z.string().cuid(), window: WindowSchema }))
+      // min(1) not cuid(): seeded dev/E2E user ids are not cuids; requireProfileAccess is the real guard.
+      .input(z.object({ studentUserId: z.string().min(1), window: WindowSchema }))
       .query(async ({ ctx, input }) => {
         const rel = await requireProfileAccess(ctx.db, ctx.auth.userId, input.studentUserId);
         const profile = await getCachedJson(
@@ -98,7 +99,8 @@ export const analyticsRouter = router({
 
   classroom: router({
     diagnosis: authedProcedure
-      .input(z.object({ classroomId: z.string().cuid(), window: WindowSchema }))
+      // min(1) not cuid(): seeded dev/E2E classroom ids are not cuids; requireTeacherClassroom is the real guard.
+      .input(z.object({ classroomId: z.string().min(1), window: WindowSchema }))
       .query(async ({ ctx, input }) => {
         await requireTeacherClassroom(ctx.db, ctx.auth.userId, input.classroomId);
         const diagnosis = await getCachedJson(
