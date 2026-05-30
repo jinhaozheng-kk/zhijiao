@@ -4,6 +4,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import {
   authedProcedure,
+  consentGatedProcedure,
   chargeVariableMiddleware,
   router,
 } from "../trpc.js";
@@ -128,7 +129,7 @@ export const assignmentRouter = router({
       return { assignmentId: assignment.id };
     }),
 
-  updateDraft: authedProcedure
+  updateDraft: consentGatedProcedure
     .input(
       z.object({
         assignmentId: z.string().cuid(),
@@ -154,7 +155,7 @@ export const assignmentRouter = router({
       });
     }),
 
-  publish: authedProcedure
+  publish: consentGatedProcedure
     .input(z.object({ assignmentId: z.string().cuid() }))
     .mutation(async ({ ctx, input }) => {
       const assignment = await requireTeacherAssignment(
@@ -221,7 +222,7 @@ export const assignmentRouter = router({
       });
     }),
 
-  getForStudent: authedProcedure
+  getForStudent: consentGatedProcedure
     .input(z.object({ studentAssignmentId: z.string().cuid() }))
     .query(async ({ ctx, input }) => {
       const studentAssignment = await ctx.db.studentAssignment.findUnique({
@@ -245,7 +246,7 @@ export const assignmentRouter = router({
       return { studentAssignment };
     }),
 
-  listForStudent: authedProcedure.query(async ({ ctx }) => {
+  listForStudent: consentGatedProcedure.query(async ({ ctx }) => {
     const assignments = await ctx.db.studentAssignment.findMany({
       where: { studentUserId: ctx.auth.userId },
       orderBy: { createdAt: "desc" },
@@ -257,7 +258,7 @@ export const assignmentRouter = router({
     return { assignments };
   }),
 
-  submit: authedProcedure
+  submit: consentGatedProcedure
     .input(
       z.object({
         studentAssignmentId: z.string().cuid(),
@@ -335,7 +336,7 @@ export const assignmentRouter = router({
       });
     }),
 
-  gradeAnswer: authedProcedure
+  gradeAnswer: consentGatedProcedure
     .input(
       z.object({
         answerId: z.string().cuid(),
