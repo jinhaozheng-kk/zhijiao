@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { PrismaClient } from "@prisma/client";
 import { ModelCallStatus } from "@prisma/client";
-import { findForbidden } from "@zhijiao/domain";
+import { findForbidden, redactPii } from "@zhijiao/domain";
 import type { ModelAdapter } from "./adapters/types.js";
 import { TASK_MODEL_MAP, type TaskKind } from "./tasks.js";
 import {
@@ -123,6 +123,9 @@ export class AiRouter {
     while (parseAttempts < 3) {
       try {
         response = await this.opts.adapter.call(args.request);
+        // Plan 14c：AI 原始响应在 parse + 持久化前脱敏（一处覆盖所有 AI 任务）。
+        // 占位符不含引号/括号，落在 JSON 字符串值内仍合法。
+        response.content = redactPii(response.content).redacted;
         const json = JSON.parse(response.content);
         const validated = args.schema.parse(json);
 
