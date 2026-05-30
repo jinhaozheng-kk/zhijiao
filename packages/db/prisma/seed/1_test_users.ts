@@ -1,4 +1,4 @@
-import { PrismaClient, Role, Persona, AuthProvider, GradeLevel } from "@prisma/client";
+import { PrismaClient, Role, Persona, AuthProvider, GradeLevel, GuardianConsentStatus } from "@prisma/client";
 
 type SeedUser = {
   id: string;
@@ -8,6 +8,8 @@ type SeedUser = {
   gradeLevel: GradeLevel | null;
   isMinor: boolean;
   roles: Role[];
+  birthYear?: number | null;
+  guardianConsentStatus?: GuardianConsentStatus;
 };
 
 export async function seedTestUsers(prisma: PrismaClient) {
@@ -21,6 +23,8 @@ export async function seedTestUsers(prisma: PrismaClient) {
     { id: "dev-student-03", phone: "13800000007", name: "测试学生 03", persona: Persona.STUDENT, gradeLevel: GradeLevel.G8, isMinor: true,  roles: [] },
     { id: "dev-student-04", phone: "13800000008", name: "测试学生 04", persona: Persona.STUDENT, gradeLevel: GradeLevel.G8, isMinor: true,  roles: [] },  // Plan 11: 专给 family-link.spec.ts 用（发码方）
     { id: "dev-parent-02",  phone: "13800000009", name: "测试家长 02", persona: Persona.PARENT,  gradeLevel: null,          isMinor: false, roles: [] },  // Plan 11: 专给 family-link.spec.ts 用（绑定方）
+    { id: "dev-student-05", phone: "13800000010", name: "测试学生 05", persona: Persona.STUDENT, gradeLevel: GradeLevel.G7, isMinor: true,  roles: [], birthYear: 2015, guardianConsentStatus: GuardianConsentStatus.PENDING },  // Plan 14a: <14 待监护人同意，专给 guardian-consent.spec.ts（发码方）
+    { id: "dev-parent-03",  phone: "13800000011", name: "测试家长 03", persona: Persona.PARENT,  gradeLevel: null,          isMinor: false, roles: [] },  // Plan 14a: 专给 guardian-consent.spec.ts（绑定方）
   ];
 
   for (const u of users) {
@@ -32,6 +36,8 @@ export async function seedTestUsers(prisma: PrismaClient) {
         persona: u.persona,
         gradeLevel: u.gradeLevel ?? undefined,
         isMinor: u.isMinor,
+        birthYear: u.birthYear ?? undefined,
+        guardianConsentStatus: u.guardianConsentStatus ?? undefined,
         roles: { create: u.roles.map((role) => ({ role })) },
         identities: {
           create: [
@@ -48,6 +54,8 @@ export async function seedTestUsers(prisma: PrismaClient) {
         persona: u.persona,
         gradeLevel: u.gradeLevel ?? null,
         isMinor: u.isMinor,
+        birthYear: u.birthYear ?? null,
+        guardianConsentStatus: u.guardianConsentStatus ?? "NOT_REQUIRED",
       },
     });
 
