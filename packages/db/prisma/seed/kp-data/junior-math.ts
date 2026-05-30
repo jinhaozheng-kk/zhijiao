@@ -33,6 +33,86 @@ export const juniorMath: KpNode = {
             },
           ],
         },
+        {
+          code: "math-jh-alg-rational",
+          name: "有理数",
+          children: [
+            { code: "math-jh-alg-rational-axis", name: "有理数与数轴", difficulty: 1, aliases: ["有理数", "数轴"] },
+            { code: "math-jh-alg-rational-abs", name: "相反数与绝对值", difficulty: 1, aliases: ["绝对值", "相反数"] },
+            { code: "math-jh-alg-rational-ops", name: "有理数的运算", difficulty: 2, aliases: ["有理数运算"] },
+            { code: "math-jh-alg-rational-sci", name: "科学记数法与近似数", difficulty: 2, aliases: ["科学记数法"] },
+          ],
+        },
+        {
+          code: "math-jh-alg-real",
+          name: "实数",
+          children: [
+            { code: "math-jh-alg-real-root", name: "平方根与立方根", difficulty: 2, aliases: ["平方根", "立方根", "算术平方根"] },
+            { code: "math-jh-alg-real-ops", name: "实数及其运算", difficulty: 2, aliases: ["实数"] },
+            { code: "math-jh-alg-real-radical", name: "二次根式", difficulty: 3, aliases: ["二次根式"] },
+          ],
+        },
+        {
+          code: "math-jh-alg-poly",
+          name: "整式与因式分解",
+          children: [
+            { code: "math-jh-alg-poly-addsub", name: "整式的加减", difficulty: 2, aliases: ["整式加减", "合并同类项"] },
+            { code: "math-jh-alg-poly-muldiv", name: "幂的运算与整式乘除", difficulty: 3, aliases: ["整式乘法", "幂的运算", "同底数幂"] },
+            { code: "math-jh-alg-poly-formula", name: "乘法公式", difficulty: 3, aliases: ["乘法公式", "完全平方公式", "平方差公式"] },
+            { code: "math-jh-alg-poly-factor", name: "因式分解", difficulty: 3, aliases: ["因式分解"] },
+          ],
+        },
+        {
+          code: "math-jh-alg-fraction",
+          name: "分式",
+          children: [
+            { code: "math-jh-alg-fraction-basic", name: "分式的概念与性质", difficulty: 2, aliases: ["分式"] },
+            { code: "math-jh-alg-fraction-ops", name: "分式的运算", difficulty: 3, aliases: ["分式运算"] },
+            { code: "math-jh-alg-fraction-eq", name: "分式方程", difficulty: 3, aliases: ["分式方程"] },
+          ],
+        },
+        {
+          code: "math-jh-alg-quad-eq",
+          name: "一元二次方程",
+          children: [
+            { code: "math-jh-alg-quad-eq-solve", name: "一元二次方程的解法", difficulty: 3, aliases: ["一元二次方程", "配方法", "求根公式"] },
+            { code: "math-jh-alg-quad-eq-discriminant", name: "根的判别式与根与系数关系", difficulty: 4, aliases: ["判别式", "韦达定理", "根与系数关系"] },
+            { code: "math-jh-alg-quad-eq-apply", name: "一元二次方程的应用", difficulty: 4, aliases: ["一元二次方程应用"] },
+          ],
+        },
+        {
+          code: "math-jh-alg-inequality",
+          name: "不等式",
+          children: [
+            { code: "math-jh-alg-inequality-linear", name: "一元一次不等式（组）", difficulty: 3, aliases: ["一元一次不等式", "不等式组"] },
+            { code: "math-jh-alg-inequality-apply", name: "不等式的应用", difficulty: 3, aliases: ["不等式应用"] },
+          ],
+        },
+        {
+          code: "math-jh-alg-linear-fn",
+          name: "一次函数",
+          children: [
+            { code: "math-jh-alg-linear-fn-prop", name: "一次函数的图象与性质", difficulty: 3, aliases: ["一次函数", "正比例函数"] },
+            { code: "math-jh-alg-linear-fn-apply", name: "一次函数的应用", difficulty: 3, aliases: ["一次函数应用"] },
+          ],
+        },
+        {
+          code: "math-jh-alg-inverse-fn",
+          name: "反比例函数",
+          children: [
+            { code: "math-jh-alg-inverse-fn-prop", name: "反比例函数的图象与性质", difficulty: 3, aliases: ["反比例函数"] },
+            { code: "math-jh-alg-inverse-fn-apply", name: "反比例函数的应用", difficulty: 4, aliases: ["反比例函数应用"] },
+          ],
+        },
+        {
+          code: "math-jh-alg-quad-fn",
+          name: "二次函数",
+          children: [
+            { code: "math-jh-alg-quad-fn-prop", name: "二次函数的图象与性质", difficulty: 4, aliases: ["二次函数"] },
+            { code: "math-jh-alg-quad-fn-eq", name: "二次函数与一元二次方程", difficulty: 4, aliases: ["二次函数与方程"] },
+            { code: "math-jh-alg-quad-fn-apply", name: "二次函数的应用", difficulty: 4, aliases: ["二次函数应用"] },
+          ],
+        },
       ],
     },
     {
@@ -111,6 +191,44 @@ export const juniorMath: KpNode = {
         },
       ],
     },
-    // TODO(用户按课标手写)：统计与概率 / 综合与实践 等领域与主题。
+    {
+      code: "math-jh-stat",
+      name: "统计与概率",
+      children: [
+        {
+          code: "math-jh-stat-statistics",
+          name: "统计",
+          children: [
+            { code: "math-jh-stat-statistics-collect", name: "数据的收集整理与描述", difficulty: 2, aliases: ["统计图", "频数分布"] },
+            { code: "math-jh-stat-statistics-average", name: "平均数、中位数与众数", difficulty: 2, aliases: ["平均数", "中位数", "众数"] },
+            { code: "math-jh-stat-statistics-variance", name: "方差与标准差", difficulty: 3, aliases: ["方差", "标准差"] },
+          ],
+        },
+        {
+          code: "math-jh-stat-probability",
+          name: "概率",
+          children: [
+            { code: "math-jh-stat-probability-event", name: "随机事件与概率", difficulty: 2, aliases: ["随机事件", "概率"] },
+            { code: "math-jh-stat-probability-enumerate", name: "用列举法求概率", difficulty: 3, aliases: ["列举法", "树状图求概率"] },
+            { code: "math-jh-stat-probability-frequency", name: "用频率估计概率", difficulty: 3, aliases: ["频率估计概率"] },
+          ],
+        },
+      ],
+    },
+    {
+      code: "math-jh-prac",
+      name: "综合与实践",
+      // 课标"综合与实践"为项目式 / 跨学科活动，极少作为单题考点 KP；此处仅保结构完整，
+      // 不是 reconciler 主要匹配目标。
+      children: [
+        {
+          code: "math-jh-prac-topic",
+          name: "综合与实践",
+          children: [
+            { code: "math-jh-prac-modeling", name: "数学建模与探究活动", difficulty: 3, aliases: ["数学建模"] },
+          ],
+        },
+      ],
+    },
   ],
 };
