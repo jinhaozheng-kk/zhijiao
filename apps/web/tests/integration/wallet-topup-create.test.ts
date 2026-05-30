@@ -16,6 +16,7 @@ function makeCtx(userId: string, isMinor = false) {
       persona: "STUDENT" as const,
       roles: [] as import("@zhijiao/domain").Role[],
       isMinor,
+      guardianConsentStatus: "NOT_REQUIRED" as const,
     },
     authError: null,
     ip: "127.0.0.1",

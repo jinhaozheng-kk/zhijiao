@@ -13,6 +13,7 @@ import {
   priceOf,
   type ActionKind,
 } from "@zhijiao/billing";
+import type { GuardianConsentStatus } from "@prisma/client";
 import { logger } from "./logger.js";
 import type { Ctx } from "./context.js";
 
@@ -40,6 +41,29 @@ export const authedProcedure = t.procedure.use(({ ctx, next }) => {
   }
   return next({ ctx: { ...ctx, auth: ctx.auth } });
 });
+
+// <14 监护人同意硬门禁判定（抽成纯函数便于单测）。
+export function assertConsentOk(status: GuardianConsentStatus): void {
+  if (status === "PENDING") {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "需监护人同意后才能使用",
+      cause: { reason: "GUARDIAN_CONSENT_REQUIRED" },
+    });
+  }
+}
+
+// 必须挂在 authedProcedure 之后（依赖 ctx.auth）。
+export const requireGuardianConsent = t.middleware(({ ctx, next }) => {
+  if (!ctx.auth) {
+    throw new TRPCError({ code: "UNAUTHORIZED", message: "请先登录", cause: { reason: ctx.authError ?? "NO_SESSION" } });
+  }
+  assertConsentOk(ctx.auth.guardianConsentStatus);
+  return next({ ctx: { ...ctx, auth: ctx.auth } });
+});
+
+// 受同意门禁保护的 authed procedure（数据读写用它；白名单 auth/family 继续用 authedProcedure）。
+export const consentGatedProcedure = authedProcedure.use(requireGuardianConsent);
 
 export const permissionProcedure = (perm: Permission) =>
   authedProcedure.use(({ ctx, next }) => {
@@ -252,7 +276,7 @@ export const chargeMiddleware = (kind: ActionKind) =>
 // (tutor.ask, wallet.* etc.). Zero behavior diff vs the inline Plan 3
 // implementation — chargeMiddleware was extracted verbatim.
 export const chargedProcedure = (kind: ActionKind) =>
-  authedProcedure.use(chargeMiddleware(kind));
+  authedProcedure.use(requireGuardianConsent).use(chargeMiddleware(kind));
 
 // Plan 10: charge by generated question count, not by a fixed action cost.
 // Compose after auth and assignment/classroom access validation so invalid

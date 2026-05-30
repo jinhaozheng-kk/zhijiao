@@ -30,6 +30,7 @@ function makeCtx(userId: string) {
       persona: "STUDENT" as const,
       roles: [] as Role[],
       isMinor: false,
+      guardianConsentStatus: "NOT_REQUIRED" as const,
     },
     authError: null,
     ip: "127.0.0.1",
