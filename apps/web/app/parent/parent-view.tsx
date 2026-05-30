@@ -5,11 +5,13 @@ import { trpc } from "@/lib/trpc-client";
 
 export function ParentView() {
   const [code, setCode] = useState("");
+  const [consent, setConsent] = useState(false);
   const utils = trpc.useUtils();
   const children = trpc.family.listMyChildren.useQuery();
   const bind = trpc.family.bindByCode.useMutation({
     onSuccess: () => {
       setCode("");
+      setConsent(false);
       utils.family.listMyChildren.invalidate();
     },
   });
@@ -28,7 +30,7 @@ export function ParentView() {
             data-testid="input-invite-code"
           />
           <button
-            onClick={() => bind.mutate({ code })}
+            onClick={() => bind.mutate({ code, guardianConsent: consent })}
             disabled={bind.isPending || code.length < 4}
             className="rounded bg-slate-900 px-4 py-2 text-sm text-white disabled:opacity-50"
             data-testid="btn-bind"
@@ -36,6 +38,18 @@ export function ParentView() {
             绑定
           </button>
         </div>
+        <label className="mt-3 flex items-start gap-2 text-sm text-slate-700">
+          <input
+            type="checkbox"
+            checked={consent}
+            onChange={(e) => setConsent(e.target.checked)}
+            className="mt-1"
+            data-testid="guardian-consent-checkbox"
+          />
+          <span>
+            我确认是该未成年人的监护人，已知悉其学习数据将用于提供 AI 答疑、错题本与学情服务，并同意其使用本平台。若孩子未满 14 周岁，须勾选本项方可激活账号；同意可随时撤回。
+          </span>
+        </label>
         {bind.error && <p className="mt-2 text-sm text-red-600" data-testid="bind-error">{bind.error.message}</p>}
       </section>
 
