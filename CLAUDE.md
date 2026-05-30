@@ -91,6 +91,7 @@
 - **Plan 12**（VariantItem 升格成独立 Question：VARIANT_GENERATED Question + variant question KP link + backfill CLI + owner-only access）—— 见 `docs/superpowers/plans/2026-05-27-variant-question-promotion.md`，spec 在 `docs/superpowers/specs/2026-05-27-variant-question-promotion-design.md`
 - **Plan 10**（教师端分层作业 + AI 出题系统：seeded classroom、变量计费、AI 草稿、发布/提交/批改状态机、错题本回流、AssignmentPerformance、教师/学生 UI、E2E、PII 补丁）—— 见 `docs/superpowers/plans/2026-05-27-teacher-tiered-assignments.md`，spec 在 `docs/superpowers/specs/2026-05-27-teacher-tiered-assignments-design.md`
 - **Plan 11**（学情画像 / 趋势 + 家长绑定：`packages/analytics` 纯核 + 只读查询壳、KP 掌握度三档 + 数据不足态、学生付费 AI 学习建议、5min 缓存纯 TTL、学生发码/家长绑定 FamilyLink、三端画像 UI、PII 覆盖 FamilyLink、E2E）—— 见 `docs/superpowers/plans/2026-05-29-learning-portrait-and-trends.md`，spec 在 `docs/superpowers/specs/2026-05-29-learning-portrait-and-trends-design.md`
+- **Plan 13**（KP 树扩充：全学段单 math subject 4 层树 学段→领域→主题→叶子、分学段手写数据文件 + validateKpData 全局 code/alias 唯一校验、通用 seedSubjectKpTree loader、reconciler leaf-only EXACT 守卫、现有 4 KP 实迁 code 不变）—— 见 `docs/superpowers/plans/2026-05-30-kp-tree-expansion.md`，spec 在 `docs/superpowers/specs/2026-05-30-kp-tree-expansion-design.md`
 
 **学情画像现状**（Plan 11）：
 - 新建 `packages/analytics`：`core.ts` 纯函数（`aggregateMastery` / `aggregateClassDiagnosis` / `scoreOf` / `decayWeight` / `tierOf`，零 runtime dep，**不**依赖 redis/ai/server-only）+ `queries.ts` 只读 Prisma 聚合（`profileForStudent` / `classDiagnosis`）。掌握度主源是 `AssignmentPerformance.kpIds`（绕开稀疏的 QuestionKPLink）；时间衰减半衰期 30 天；`UNGRADED` 行被过滤不计。
@@ -177,7 +178,14 @@
 - Web `/ops/kp-reconcile` 页面（等真有 OPS / 教师角色）
 - CLI 暴露 LINKED→REJECTED 反悔入口（只 export `unlinkIfOrphan` helper，文档化清理 SQL）
 - cron 自动跑 `kp:reconcile-pending`（成本不可见，暂手动）
-- KP 树扩充（独立 plan）
+
+**KP 树现状**（Plan 13）：
+- 单 `math` subject 4 层树（学段 L1 / 领域 L2 / 主题 L3 / KP 叶子 L4），全部 `KnowledgePoint` 行靠 `parentId` 连，无 schema migration。
+- 数据真源：`packages/db/prisma/seed/kp-data/{junior,primary,senior}-math.ts`（叶子内联 aliases）+ `index.ts` 聚合 `mathKpRoots`；`types.ts` 纯 `validateKpData`（全局 code 唯一 / alias 唯一 / alias 只挂叶子，命中即 throw）。
+- `0_curriculum.ts` 通用 `seedSubjectKpTree` 深度优先 upsert（按 `subjectId_code` 幂等，容器 difficulty 取 default 3）；seed 入口先跑 `validateKpData`。`3_kp_aliases.ts` 改为消费 `collectLeafAliases(mathKpRoots)` 单一真源（`update:{kpId}` 安全因校验已防跨 KP 冲突）。
+- reconciler `loadSubjectCandidates` 仅叶子进 name/code EXACT 池（容器永不命中 → 不污染 Plan 11 按 kpId 聚合的掌握度）；`kpById` 仍含全部节点供 ALIAS cross-subject 防御。
+- 现有 4 KP（`math-g8-linear-eq*`）code 保留不变、实迁挂到 `初中→数与代数` 下；初中做全做透为后续数据迭代，小学/高中当前为样本骨架（用户按课标手写扩）。
+- 设计取舍（不拆 subject）：跨学段同名节点（"函数"）无法 EXACT/ALIAS 自动匹配是**正确保守行为**（落 UNMATCHED 等 LLM/人工），首发初中-only 下代价≈0。
 
 **VariantItem 升格现状**（Plan 12）：
 - `VariantItem.questionId` 是 nullable 过渡字段，指向 `Question(source="VARIANT_GENERATED")`；新生成变式同事务双写 Question + VariantItem。
@@ -278,11 +286,13 @@ pnpm --filter @zhijiao/web  test -- tests/integration/auth-register-race.test.ts
 57. **family-link 发码/绑定/单次用尽/自绑拒绝/撤销失效**（Plan 11 §8.5）：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/family-router.test.ts` 应全绿（5 例）。`FamilyLink` 两 FK `ON DELETE RESTRICT` + `@@unique([parent,student])`：`docker exec zhijiao-postgres psql -U postgres -d zhijiao -c "\d family_links"` 核对。
 58. **PII 覆盖 FamilyLink**（Plan 11 §8.6）：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/pii-deactivate-user.test.ts tests/integration/pii-export-user-data.test.ts tests/unit/pii-ops-action-log-payload.test.ts` 应全绿；注销删双向 link、导出含本人 link（不含对方 PII）、payload 禁词集含 `parent_user_id`/`student_user_id`/`counterpartUserId`。
 59. **Plan 11 E2E**（§8）：`pnpm.cmd --filter @zhijiao/web test:e2e -- e2e/learning-portrait.spec.ts e2e/family-link.spec.ts` 应 2/2 passed。**注**：全量 `test:e2e` 会因 per-IP OTP burst 限频（`RULE_OTP_SEND_IP` capacity=10 / `failMode:close`）在 login 处零散失败——pre-existing（红线 #28），按 spec 分批跑可绿，非 Plan 11 回归。
+60. **validateKpData 在 seed 入口运行**（Plan 13）：`Select-String -Path packages/db/prisma/seed/0_curriculum.ts -Pattern "validateKpData"` 应命中；坏数据（重复 code/alias、容器带 alias）`db:seed` 立即 throw。
+61. **reconciler leaf-only 守卫**（Plan 13）：`Select-String -Path apps/web/server/lib/kp-reconcile.ts -Pattern "isLeaf|parentIds"` 应命中；`pnpm.cmd --filter @zhijiao/web test -- tests/integration/kp-reconcile-leaf-only.test.ts` 应 2/2 绿。
+62. **KP data 校验单测**（Plan 13）：`pnpm.cmd --filter @zhijiao/db test -- tests/kp-data.test.ts tests/kp-seed.test.ts` 应全绿（纯校验 + seed 幂等/实迁）。
 
-**下一步候选 Plan**（Plan 4 + Plan 6 + Plan 8 + Plan 9 + Plan 10 + Plan 11 + Plan 12 已落地）：
+**下一步候选 Plan**（Plan 4 + Plan 6 + Plan 8 + Plan 9 + Plan 10 + Plan 11 + Plan 12 + Plan 13 已落地）：
 - Plan 5: 真接阿里云 SMS + 微信公众号（ICP 备案通过后；**且 Plan 2 Hardening 必须先 ship**；替换 `RealSmsAdapter` / `RealWechatH5Adapter` 的 stub 实现）
 - Plan 7: 真接微信支付 V3 API（需 ICP 备案 + 商户号 + APIv3 + 商户证书；激活 `RealWechatPayAdapter.unifiedOrder` + `verifyNotify`）—— **Plan 3 prod ship prereq**
 - Plan 14: 未成年人特殊保护 / PIPL 完版（<14 监护人代办、数据副本/删除请求 SLA 完整化、通用 PII 扫描与运营 SOP）
 - Plan 12 cleanup: `VariantItem.questionId NOT NULL` + 下线 nullable reconcile 分支 + 处理历史 `VARIANT_TO_PARENT_NEEDS_REVIEW` 行
 - Plan 15: USER_ADHOC × PUBLISHED canonical dedup / 题库去重 / PUBLISHED 复用 / 统计归并（Plan 8 §6.2 punt）
-- Plan 13: KP 树扩充（small / middle / high school math KP curation；当前 seed 仅 4 个 math KP，alias 表长得慢，Plan 9 上线一段时间后 UNMATCHED → DROPPED 比例高）
