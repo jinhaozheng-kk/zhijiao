@@ -36,4 +36,9 @@ export {
   type AssignmentQuestionGenerationInput,
   type AssignmentQuestionGenerationItem,
   type AssignmentQuestionGenerationOutput,
+  // Plan 11:
+  LearningAdviceInputSchema,
+  LearningAdviceOutputSchema,
+  type LearningAdviceInput,
+  type LearningAdviceOutput,
 } from "./schemas.js";
