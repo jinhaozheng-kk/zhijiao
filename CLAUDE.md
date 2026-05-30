@@ -184,7 +184,7 @@
 - 数据真源：`packages/db/prisma/seed/kp-data/{junior,primary,senior}-math.ts`（叶子内联 aliases）+ `index.ts` 聚合 `mathKpRoots`；`types.ts` 纯 `validateKpData`（全局 code 唯一 / alias 唯一 / alias 只挂叶子，命中即 throw）。
 - `0_curriculum.ts` 通用 `seedSubjectKpTree` 深度优先 upsert（按 `subjectId_code` 幂等，容器 difficulty 取 default 3）；seed 入口先跑 `validateKpData`。`3_kp_aliases.ts` 改为消费 `collectLeafAliases(mathKpRoots)` 单一真源（`update:{kpId}` 安全因校验已防跨 KP 冲突）。
 - reconciler `loadSubjectCandidates` 仅叶子进 name/code EXACT 池（容器永不命中 → 不污染 Plan 11 按 kpId 聚合的掌握度）；`kpById` 仍含全部节点供 ALIAS cross-subject 防御。
-- 现有 4 KP（`math-g8-linear-eq*`）code 保留不变、实迁挂到 `初中→数与代数` 下；初中做全做透为后续数据迭代，小学/高中当前为样本骨架（用户按课标手写扩）。
+- 现有 4 KP（`math-g8-linear-eq*`）code 保留不变、实迁挂到 `初中→数与代数` 下。**全学段已做透（树 185 KP）**：小学（义教课标四领域）/ 初中（数与代数·图形与几何·统计与概率·综合与实践全覆盖）/ 高中（普高课标四主线 + 预备知识）。仅初中"综合与实践"与小学/高中同名领域留极少占位。后续扩树 = 往 `kp-data/*.ts` 加 `KpNode` 节点即被校验/seed/匹配，不需新 plan。
 - 设计取舍（不拆 subject）：跨学段同名节点（"函数"）无法 EXACT/ALIAS 自动匹配是**正确保守行为**（落 UNMATCHED 等 LLM/人工），首发初中-only 下代价≈0。
 
 **VariantItem 升格现状**（Plan 12）：
