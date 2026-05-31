@@ -7,6 +7,7 @@ import {
   router,
 } from "../trpc.js";
 import { TutoringInputSchema, ComplianceRejectedError } from "@zhijiao/ai";
+import { redactPii } from "@zhijiao/domain";
 import { TRPCError } from "@trpc/server";
 import { getAiRouter } from "@/lib/ai-client";
 import { upsertUserAdhocQuestion } from "../lib/question.js";
@@ -27,6 +28,13 @@ export const tutorRouter = router({
     .input(TutorAskInputSchema)
     .mutation(async ({ ctx, input }) => {
       const { clientRequestId: _clientRequestId, ...aiInput } = input;
+      // Plan 14c：题面在喂 AI + 落库前脱敏（手机号/身份证）。脱敏后的 stem 同时
+      // 喂 AI 与 upsert，确保模型与持久化都拿不到原始 PII。
+      const { redacted: redactedStem, hits: piiHits } = redactPii(input.questionStem);
+      if (piiHits.phone > 0 || piiHits.idCard > 0) {
+        logger.info({ event: "pii_redacted_input", source: "TUTOR_ASK", hits: piiHits });
+      }
+      aiInput.questionStem = redactedStem;
       let ai;
       try {
         ai = await getAiRouter(ctx.auth.userId).tutor(aiInput);
@@ -56,7 +64,7 @@ export const tutorRouter = router({
       // 的 doc：tx 内 P2002 catch 后无法在同 tx 重读（Postgres 25P02 tx aborted）。
       const question = await upsertUserAdhocQuestion(ctx.db, {
         userId: ctx.auth.userId,
-        stemMd: input.questionStem,
+        stemMd: redactedStem,
       });
 
       // Plan 9: AI 给的 knowledgePoints 走 reconcile（exact/alias sync 命中即 LINKED
