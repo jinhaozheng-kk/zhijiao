@@ -94,6 +94,7 @@
 - **Plan 13**（KP 树扩充：全学段单 math subject 4 层树 学段→领域→主题→叶子、分学段手写数据文件 + validateKpData 全局 code/alias 唯一校验、通用 seedSubjectKpTree loader、reconciler leaf-only EXACT 守卫、现有 4 KP 实迁 code 不变）—— 见 `docs/superpowers/plans/2026-05-30-kp-tree-expansion.md`，spec 在 `docs/superpowers/specs/2026-05-30-kp-tree-expansion-design.md`
 - **Plan 14a**（未成年人监护人同意 <14 硬门禁：birthYear 自报 + isUnder14 保守判龄、guardianConsentStatus 承重字段进 ctx.auth、GuardianConsent 审计表、requireGuardianConsent 中间件 + chargedProcedure/consentGatedProcedure 双门禁、复用 FamilyLink bindByCode 写同意、revoke 回 PENDING、PII 覆盖、注册/家长端 UI）—— 见 `docs/superpowers/plans/2026-05-30-minor-guardian-consent.md`，spec 在 `docs/superpowers/specs/2026-05-30-minor-guardian-consent-design.md`
 - **Plan 14c**（通用 PII 扫描器·落库前脱敏：`packages/domain/src/pii.ts` 纯核 scanPii/redactPii 手机号 + 身份证 MOD-11、全占位掩码只返计数、输入侧 tutor.ask/error.diagnose body 喂 AI+落库前脱敏、输出侧 router.ts 全部 5 处 parse+persist 咽喉脱敏）—— 见 `docs/superpowers/plans/2026-05-31-pii-scanner.md`，spec 在 `docs/superpowers/specs/2026-05-31-pii-scanner-design.md`
+- **Plan 14b**（DSAR 数据主体请求 + SLA：`DsarRequest` 工单表、数据副本自助导出 + 注销 OPS-CLI 履行的 hybrid 模型、`<14` 注销经绑定监护人站内审批、OTP 重验 + `verifyOtp` purpose 隔离、export fail-CLOSE 限频、REJECTED 回显理由、15 工作日/30 自然日封顶 SLA、`dsar.*` 监护人门禁白名单、PII 扩展 scrub reason + 悬挂收口 + export 段 schemaVersion 2026-05-31）—— 见 `docs/superpowers/plans/2026-05-31-dsar-data-subject-requests.md`，spec 在 `docs/superpowers/specs/2026-05-31-dsar-data-subject-requests-design.md`
 
 **学情画像现状**（Plan 11）：
 - 新建 `packages/analytics`：`core.ts` 纯函数（`aggregateMastery` / `aggregateClassDiagnosis` / `scoreOf` / `decayWeight` / `tierOf`，零 runtime dep，**不**依赖 redis/ai/server-only）+ `queries.ts` 只读 Prisma 聚合（`profileForStudent` / `classDiagnosis`）。掌握度主源是 `AssignmentPerformance.kpIds`（绕开稀疏的 QuestionKPLink）；时间衰减半衰期 30 天；`UNGRADED` 行被过滤不计。
@@ -212,6 +213,15 @@
 - 输出侧：`packages/ai/src/router.ts` 在 adapter 返回后、`JSON.parse(response.content)` 前 `response.content = redactPii(...).redacted`。注意 **5 处** parse+persist 站点都要脱敏：`runJsonTaskWithAudit`（learningAdvice/assignment 等）+ tutor/errorAnalysis/variant/kpReconcile 各自的 inline 重试循环（这 4 个不走 runJsonTaskWithAudit，是 plan 的错误假设，实现时补齐）。占位符不含引号/括号，落在 JSON 字符串值内仍合法。
 - 边界：纯文本变换不抛错、不阻断、不额外计费、不回扫存量数据；MOD-11 测试号必须真有效（`440524198001010013` 年 1980 有效；plan 原列 `...188...` 年 1880 被 `(?:19|20)` 正则拒收已修正）。
 
+**DSAR 现状**（Plan 14b）：
+- `DsarRequest` 工单表（type `EXPORT`/`DELETION`，status `AWAITING_GUARDIAN`/`PENDING`/`COMPLETED`/`REJECTED`/`CANCELED`）为数据主体请求真源，区别于运营发起的 `OpsActionLog`。partial unique idx `dsar_one_open_deletion_idx`（raw SQL）保证一个用户至多一条未结 DELETION。service 在 `apps/web/server/lib/dsar.ts`（**不带 `import "server-only"`** —— 被 tsx CLI import，server-only default 会 throw），被 `dsar` router 与 CLI 共用。
+- **hybrid 履行**：EXPORT 自助即时（`exportMine` → `$transaction` 内 `exportUserData` + 记 COMPLETED 工单 → 浏览器 Blob 下载）；DELETION 工单化（成年 OTP 重验 → `PENDING`；`<14` → `AWAITING_GUARDIAN` 须绑定监护人 `approveChildDeletion` 站内审批转 `PENDING`；无绑定监护人 → `DSAR_GUARDIAN_REQUIRED` 引导人工渠道）。OPS CLI `dsar:list/fulfill/reject` 履行。
+- **合规红线**：`dsar.*` 全裸 `authedProcedure`（监护人门禁白名单，否则 PENDING-consent `<14` 连导出/注销都做不了）。REJECTED 经 `myRequests.rejectionReason` 回显理由（PIPL 第 50 条第 2 款）。SLA `dueAtFor = min(15 工作日, +30 自然日)`。
+- **安全**：`RULE_DSAR_EXPORT` **fail-CLOSE** cap 2/天（全量 PII 导出高敏，Redis 挂宁可拒不放任 dump）；`RULE_DSAR_VERIFY_PH` 专用桶；`verifyOtp(...,purpose)` 隔离（LOGIN 码不能授权注销）；`fulfillDeletion` 未成年闸门凭 `guardianApprovedByUserId` 数据可验证（非 CLI 荣誉旗标）+ live `isMinor` 复核。
+- **关键实现坑**：`fulfillDeletion` **不**嵌套 `$transaction`（`deactivateUser` 自带交互事务，Prisma 5 不可嵌套）；且 `deactivateUser` 事务内已把 open DELETION 翻 COMPLETED（悬挂收口），故 `fulfillDeletion` 顺序调用后只 `findUnique` 断言终态 COMPLETED，不再 predicate-on-update（否则误报 concurrently-resolved）。入口 `status!==PENDING` 守卫挡顺序双 fulfill。
+- **PII（扩 Plan 6）**：注销 scrub 本人 `DsarRequest.reason=null` **保留行**（SLA 审计证据）+ 悬挂 open DELETION 收口 COMPLETED；`payload.scrubbed.dsarRequests` 计数；export 加 `dsarRequests` 段（无 reason/resolutionNote 自由文本）+ `schemaVersion` 升 `2026-05-31`；payload 守词加 `dsar_reason`/`resolution_note`。
+- 无手机号（WeChat-only）→ `DSAR_NO_PHONE` 走人工渠道。UI 在 `/account/privacy`（persona-neutral，`middleware.ts` PROTECTED_PREFIXES + matcher 加 `/account`）+ 家长 `/parent/children/[childId]` 审批块。E2E 用独占成年 seed `dev-student-06`(13800000012)。**显式未做**：PIPL 第 46 条更正权、完成态 SMS 通知、服务端导出落盘副本。
+
 **PII 治理现状**（Plan 6）：
 - OPS CLI：`user:deactivate <userId> [--reason TEXT] [--dry-run]` / `user:export <userId> --out <path.json>` / `pii:gc-sweep [--bucket short|medium|orphan|all] [--dry-run]`；全部走 shared service，不引入 apps/web 内置 cron
 - 注销：User 行 soft-delete 作 tombstone；硬删 `ErrorBookEntry`（级联 `VariantGroup`/`VariantItem`）和用户 `USER_ADHOC Question`；删除 `AuthIdentity` + PHONE/GLOBAL 对应 `OtpRequest`；scrub Session / TopupOrder / ModelCall / KpAlias / KpReconcileMatch PII；Plan 12 后额外 scrub `VARIANT_GENERATED Question.createdByUserId=null` 但保留 Question 行；Plan 10 后删除该学生的 `StudentAssignment`（级联 `AssignmentAnswer`）和 `AssignmentPerformance`，payload 只记录计数；财务金额、订单号、ledger 保留
@@ -320,10 +330,13 @@ pnpm --filter @zhijiao/web  test -- tests/integration/auth-register-race.test.ts
 67. **PII 核单测 + 不返原值**（Plan 14c）：`pnpm.cmd --filter @zhijiao/domain test -- tests/pii.test.ts` 应全绿；`redactPii`/`scanPii` 返回结构不含命中的原始 PII 子串。MOD-11 测试号若改样例必须用真有效号（如 `440524198001010013`），不改算法迁就坏样例。
 68. **输入脱敏在 AI 前**（Plan 14c）：`Select-String -Path apps/web/server/routers/tutor.ts,apps/web/server/routers/error.ts -Pattern "redactPii"` 命中；`pnpm.cmd --filter @zhijiao/web test -- tests/integration/pii-redaction-input.test.ts` 应全绿（tutor stem + error actualAnswerMd 落库与喂 AI 均脱敏）。
 69. **输出脱敏在 AI 咽喉**（Plan 14c）：`Select-String -Path packages/ai/src/router.ts -Pattern "redactPii"` 应命中 **5 处**且每处都在紧邻的 `JSON.parse(response.content)` 之前（runJsonTaskWithAudit + tutor/errorAnalysis/variant/kpReconcile 各自 inline 循环）；`pnpm.cmd --filter @zhijiao/ai test -- tests/pii-redaction.test.ts` 应全绿（含 inline-loop 路径）。
+70. **`dsar.*` 监护人门禁白名单**（Plan 14b）：`Select-String -Path apps/web/server/routers/dsar.ts -Pattern "consentGatedProcedure"` 应 0 命中（全裸 `authedProcedure`）；`pnpm.cmd --filter @zhijiao/web test -- tests/integration/dsar-router.test.ts` 应全绿（含 `<14` PENDING-consent 仍可发起 + AWAITING_GUARDIAN + 监护人 approveChildDeletion + 幂等 + 无手机号 DSAR_NO_PHONE，12 测例）。
+71. **dsar service 无 server-only**（Plan 14b）：`Select-String -Path apps/web/server/lib/dsar.ts -Pattern "server-only"` 应 0 命中（被 tsx CLI import，server-only default 会 throw）；`pnpm.cmd --filter @zhijiao/web dsar:list --status all` 应 exit 0 打印 JSON（证明 tsx 不报 server-only）。
+72. **export fail-CLOSE + 未成年数据闸门**（Plan 14b）：`Select-String packages/auth/src/ratelimit/rules.ts -Pattern "RULE_DSAR_EXPORT.*close"` 命中；`pnpm.cmd --filter @zhijiao/web test -- tests/integration/dsar-cli.test.ts` 应全绿（含"未成年 PENDING 无 guardianApprovedByUserId → 拒"/"有则放行"/"AWAITING_GUARDIAN 不可 fulfill"/二次 fulfill 守卫，7 测例）。
+73. **verifyOtp purpose 隔离**（Plan 14b）：`pnpm.cmd --filter @zhijiao/auth test -- tests/otp-purpose.test.ts` 应全绿（LOGIN 码不能用 DSAR purpose 验、不传 purpose 零回归）。`fulfillDeletion` **不**得包 `prisma.$transaction`（`deactivateUser` 自带交互事务，嵌套会 throw）—— `Select-String apps/web/server/lib/dsar.ts -Pattern "\$transaction" -Context 0,8` 在 fulfillDeletion 段应 0 命中。
 
-**下一步候选 Plan**（Plan 4 + Plan 6 + Plan 8 + Plan 9 + Plan 10 + Plan 11 + Plan 12 + Plan 13 + Plan 14a + Plan 14c 已落地）：
+**下一步候选 Plan**（Plan 4 + Plan 6 + Plan 8 + Plan 9 + Plan 10 + Plan 11 + Plan 12 + Plan 13 + Plan 14a + Plan 14b + Plan 14c 已落地）：
 - Plan 5: 真接阿里云 SMS + 微信公众号（ICP 备案通过后；**且 Plan 2 Hardening 必须先 ship**；替换 `RealSmsAdapter` / `RealWechatH5Adapter` 的 stub 实现）
 - Plan 7: 真接微信支付 V3 API（需 ICP 备案 + 商户号 + APIv3 + 商户证书；激活 `RealWechatPayAdapter.unifiedOrder` + `verifyNotify`）—— **Plan 3 prod ship prereq**
-- Plan 14b: DSAR 数据主体请求 + SLA（用户侧数据副本/删除请求入口、SLA 追踪、OPS 工作流；复用 Plan 6 export/deactivate 原语）
 - Plan 12 cleanup: `VariantItem.questionId NOT NULL` + 下线 nullable reconcile 分支 + 处理历史 `VARIANT_TO_PARENT_NEEDS_REVIEW` 行
 - Plan 15: USER_ADHOC × PUBLISHED canonical dedup / 题库去重 / PUBLISHED 复用 / 统计归并（Plan 8 §6.2 punt）
