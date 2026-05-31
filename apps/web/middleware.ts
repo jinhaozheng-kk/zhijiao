@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-const PROTECTED_PREFIXES = ["/profile", "/error-book", "/teacher", "/parent", "/admin"];
+const PROTECTED_PREFIXES = ["/profile", "/error-book", "/teacher", "/parent", "/admin", "/account"];
 
 export function middleware(req: NextRequest) {
   const hasAt = req.cookies.has("__Host-zj_at");
@@ -15,5 +15,5 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/profile/:path*", "/error-book/:path*", "/teacher/:path*", "/parent/:path*", "/admin/:path*"],
+  matcher: ["/profile/:path*", "/error-book/:path*", "/teacher/:path*", "/parent/:path*", "/admin/:path*", "/account/:path*"],
 };
