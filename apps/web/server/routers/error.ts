@@ -10,6 +10,7 @@ import {
   router,
 } from "../trpc.js";
 import { ComplianceRejectedError } from "@zhijiao/ai";
+import { redactPii } from "@zhijiao/domain";
 import { getAiRouter } from "@/lib/ai-client";
 import {
   upsertEntryOnDiagnose,
@@ -59,13 +60,19 @@ export const errorRouter = router({
         select: { gradeLevel: true },
       });
 
+      // Plan 14c：学生自由作答在喂 AI + 落库前脱敏（手机号/身份证）。脱敏一次复用，
+      // 确保模型与 ErrorBookEntry.actualAnswerMd 都拿不到原始 PII。
+      const redactedActualAnswer = input.actualAnswerMd
+        ? redactPii(input.actualAnswerMd).redacted
+        : null;
+
       const aiRouter = getAiRouter(ctx.auth.userId);
       let ai;
       try {
         ai = await aiRouter.diagnoseError({
           stemMd: question.stemMd,
           correctAnswerMd: question.answer?.contentMd ?? null,
-          actualAnswerMd: input.actualAnswerMd ?? null,
+          actualAnswerMd: redactedActualAnswer,
           studentGrade: user?.gradeLevel ?? null,
         });
       } catch (e) {
@@ -97,7 +104,7 @@ export const errorRouter = router({
         ai,
         debitLedgerId: ctx.debit.ledgerId,
         modelCallId: ai.modelCallId,
-        actualAnswerMd: input.actualAnswerMd ?? null,
+        actualAnswerMd: redactedActualAnswer,
       });
 
       // Plan 9: AI 给的 suggestedKnowledgePoints 走 reconcile（exact/alias sync 命中
