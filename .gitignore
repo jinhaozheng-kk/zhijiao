@@ -46,6 +46,7 @@ coverage/
 test-results/
 test-results-*/
 playwright-report/
+tour-shots/
 
 # Prisma
 prisma/migrations/dev/
