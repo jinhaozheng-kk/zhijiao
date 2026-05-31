@@ -7,6 +7,9 @@ test("微信首次登录 → need_register → 完成注册", async ({ page }) =
   await page.waitForURL("**/register**");
   await page.getByTestId("persona-STUDENT").click();
   await page.getByTestId("grade-picker").selectOption("G7");
+  // Plan 14a: STUDENT 注册必填出生年份，否则提交按钮禁用。用成年年份避免触发
+  // <14 监护人同意门禁（本测试只验证落到学生首页）。
+  await page.getByTestId("register-birthyear").fill("2005");
   await page.getByTestId("register-submit").click();
   await page.waitForURL((u) => u.pathname === "/");
   await expect(page).toHaveURL(/\/$/);
