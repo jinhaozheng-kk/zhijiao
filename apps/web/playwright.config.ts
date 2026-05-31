@@ -15,6 +15,14 @@ export default defineConfig({
   globalSetup: "./e2e/global-setup.ts",
   globalTeardown: "./e2e/global-teardown.ts",
   fullyParallel: false,
+  // Serial execution. The whole suite logs in from 127.0.0.1, and OTP send is
+  // rate-limited per IP (RULE_OTP_SEND_IP: capacity 10, refill 1 token / 6s,
+  // fail-closed). With parallel workers the refilled tokens get grabbed across
+  // workers and a retrying login can starve past its backoff window. Running
+  // serially keeps logins spaced so the bucket refills between them; combined
+  // with the staggered retry in e2e/helpers/login.ts the full suite is green in
+  // one shot (and faster than the parallel run, which burned time on backoffs).
+  workers: 1,
   retries: 0,
   reporter: [["list"]],
   use: {

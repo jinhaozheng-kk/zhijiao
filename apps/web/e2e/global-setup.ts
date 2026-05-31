@@ -65,6 +65,26 @@ async function resetE2eDb(): Promise<void> {
   await prisma.$disconnect();
 }
 
+// Rate-limit token buckets (packages/auth/src/ratelimit/rules.ts) live in Redis
+// and persist across runs. A prior E2E run drains the per-IP OTP bucket
+// (RULE_OTP_SEND_IP: capacity 10, refill 1 token / 6s, fail-closed); the next
+// run would then start depleted and flake at login. Clear the rate-limit keys
+// so every run begins with full buckets. Targeted DEL (not flushdb) to avoid
+// nuking unrelated keys on the shared dev Redis.
+async function resetE2eRateLimits(): Promise<void> {
+  const url = process.env.REDIS_URL ?? "redis://localhost:6379";
+  const { default: Redis } = await import("ioredis");
+  const redis = new Redis(url);
+  try {
+    for (const pattern of ["otp:send:*", "otp:verify:*", "register:*", "refresh:*"]) {
+      const keys = await redis.keys(pattern);
+      if (keys.length) await redis.del(...keys);
+    }
+  } finally {
+    await redis.quit();
+  }
+}
+
 function seedE2eDb(): void {
   execSync(`${PNPM_BIN} --filter @zhijiao/db db:seed`, {
     cwd: WORKSPACE_ROOT,
@@ -76,6 +96,7 @@ function seedE2eDb(): void {
 export default async function globalSetup(): Promise<void> {
   clearStaleState();
   await resetE2eDb();
+  await resetE2eRateLimits();
   seedE2eDb();
 
   // 单串命令，shell: true 走 cmd.exe /c。spawn 返回的是 cmd.exe 的 PID；teardown 用
