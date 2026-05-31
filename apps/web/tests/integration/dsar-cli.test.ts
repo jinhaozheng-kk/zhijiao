@@ -25,6 +25,14 @@ describe("dsar CLI service", () => {
     expect((await prisma.dsarRequest.findUniqueOrThrow({ where: { id: requestId } })).status).toBe("COMPLETED");
     expect((await prisma.user.findUniqueOrThrow({ where: { id: userId } })).deletedAt).not.toBeNull();
   });
+  it("用户已是 tombstone(deletedAt 已设)仍能把 PENDING 工单收口 COMPLETED(不抛)", async () => {
+    // deactivateUser alreadyDeactivated 早退不动 DSAR 行 → fulfillDeletion 幂等兜底关单。
+    const { userId, requestId } = await seedPending();
+    await prisma.user.update({ where: { id: userId }, data: { deletedAt: new Date() } });
+    const r = await fulfillDeletion(prisma, { requestId, operatorId: null, initiatorRef: "cli:test:op" });
+    expect(r.dryRun).toBe(false);
+    expect((await prisma.dsarRequest.findUniqueOrThrow({ where: { id: requestId } })).status).toBe("COMPLETED");
+  });
   it("AWAITING_GUARDIAN 不可 fulfill", async () => {
     const { requestId } = await seedPending({ isMinor: true, status: "AWAITING_GUARDIAN" });
     await expect(fulfillDeletion(prisma, { requestId, operatorId: null, initiatorRef: "cli:test:op" })).rejects.toThrow(/not PENDING/);

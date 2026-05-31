@@ -200,13 +200,14 @@ export async function fulfillDeletion(
   const result = await deactivateUser(prisma, {
     userId: req.userId, operatorId: args.operatorId, initiatorRef: args.initiatorRef, reason: "DSAR_DELETION_REQUEST",
   });
-  // deactivateUser 的事务内部已将 open DELETION 请求翻转为 COMPLETED（见 pii-governance.ts
-  // dsarRequest.updateMany status→COMPLETED）。此处验证最终态正确即可；
-  // 若已被 deactivateUser 并发完成则属正常路径，不视为竞态错误。
-  const after = await prisma.dsarRequest.findUnique({ where: { id: req.id }, select: { status: true } });
-  if (after?.status !== "COMPLETED") {
-    throw new DsarFulfillError(`request was concurrently resolved to unexpected status: ${after?.status ?? "not found"}`);
-  }
+  // deactivateUser 的事务内部会把 open DELETION 翻 COMPLETED（pii-governance.ts 悬挂收口）。
+  // 但 alreadyDeactivated 早退路径不动 DSAR 行（用户已是 tombstone 时），故这里幂等兜底关单：
+  // 无论 deactivateUser 是否已关，把仍 open 的本工单置 COMPLETED；已 COMPLETED 时命中 0 行也无妨。
+  // 入口处 status!==PENDING 守卫已挡顺序双 fulfill。
+  await prisma.dsarRequest.updateMany({
+    where: { id: req.id, status: { in: ["AWAITING_GUARDIAN", "PENDING"] } },
+    data: { status: "COMPLETED", resolvedAt: new Date(), resolvedByRef: args.initiatorRef },
+  });
   return { dryRun: false, deactivate: result, requestId: req.id };
 }
 
