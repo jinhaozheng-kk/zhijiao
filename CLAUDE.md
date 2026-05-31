@@ -93,6 +93,7 @@
 - **Plan 11**（学情画像 / 趋势 + 家长绑定：`packages/analytics` 纯核 + 只读查询壳、KP 掌握度三档 + 数据不足态、学生付费 AI 学习建议、5min 缓存纯 TTL、学生发码/家长绑定 FamilyLink、三端画像 UI、PII 覆盖 FamilyLink、E2E）—— 见 `docs/superpowers/plans/2026-05-29-learning-portrait-and-trends.md`，spec 在 `docs/superpowers/specs/2026-05-29-learning-portrait-and-trends-design.md`
 - **Plan 13**（KP 树扩充：全学段单 math subject 4 层树 学段→领域→主题→叶子、分学段手写数据文件 + validateKpData 全局 code/alias 唯一校验、通用 seedSubjectKpTree loader、reconciler leaf-only EXACT 守卫、现有 4 KP 实迁 code 不变）—— 见 `docs/superpowers/plans/2026-05-30-kp-tree-expansion.md`，spec 在 `docs/superpowers/specs/2026-05-30-kp-tree-expansion-design.md`
 - **Plan 14a**（未成年人监护人同意 <14 硬门禁：birthYear 自报 + isUnder14 保守判龄、guardianConsentStatus 承重字段进 ctx.auth、GuardianConsent 审计表、requireGuardianConsent 中间件 + chargedProcedure/consentGatedProcedure 双门禁、复用 FamilyLink bindByCode 写同意、revoke 回 PENDING、PII 覆盖、注册/家长端 UI）—— 见 `docs/superpowers/plans/2026-05-30-minor-guardian-consent.md`，spec 在 `docs/superpowers/specs/2026-05-30-minor-guardian-consent-design.md`
+- **Plan 14c**（通用 PII 扫描器·落库前脱敏：`packages/domain/src/pii.ts` 纯核 scanPii/redactPii 手机号 + 身份证 MOD-11、全占位掩码只返计数、输入侧 tutor.ask/error.diagnose body 喂 AI+落库前脱敏、输出侧 router.ts 全部 5 处 parse+persist 咽喉脱敏）—— 见 `docs/superpowers/plans/2026-05-31-pii-scanner.md`，spec 在 `docs/superpowers/specs/2026-05-31-pii-scanner-design.md`
 
 **学情画像现状**（Plan 11）：
 - 新建 `packages/analytics`：`core.ts` 纯函数（`aggregateMastery` / `aggregateClassDiagnosis` / `scoreOf` / `decayWeight` / `tierOf`，零 runtime dep，**不**依赖 redis/ai/server-only）+ `queries.ts` 只读 Prisma 聚合（`profileForStudent` / `classDiagnosis`）。掌握度主源是 `AssignmentPerformance.kpIds`（绕开稀疏的 QuestionKPLink）；时间衰减半衰期 30 天；`UNGRADED` 行被过滤不计。
@@ -205,6 +206,12 @@
 - 两默认（已确认）：既有无 birthYear 用户 grandfather（NOT_REQUIRED 不硬锁）；birthYear 仅 STUDENT 必填，TEACHER/PARENT 视为成年。
 - E2E seed：`dev-student-05`(13800000010, birthYear 2015→PENDING) 发码、`dev-parent-03`(13800000011) 绑定，专给 `guardian-consent.spec.ts`。
 
+**PII 扫描器现状**（Plan 14c）：
+- 纯核 `packages/domain/src/pii.ts`：`redactPii(text)→{ redacted, hits:{phone,idCard} }` + `scanPii(text)→PiiHits`，零依赖纯函数。手机号 `(?<!\d)1[3-9]\d{9}(?!\d)`（数字边界，避免命中更长数学串中段）；身份证 18 位结构化正则（6 地区 + `(?:19|20)\d{2}` 年 + 合法月日 + 3 序 + 校验位）**且** GB 11643 MOD-11 校验位通过才脱敏（校验失败的长数字不误伤）。**全占位掩码** `[手机号]`/`[身份证号]`；**只返类型计数、绝不返回命中原值**（防 PII 流进日志/审计）。先身份证（更长更具体）后手机号。
+- 输入侧：`tutor.ask`（题面 `questionStem`）/ `error.diagnose`（学生自由作答 `actualAnswerMd`）在 body 内脱敏一次，**同时喂 AI 与 upsert/持久化**，模型与 DB 都拿不到原值。命中时 `logger.info({ event:"pii_redacted_input" })` 只记计数。
+- 输出侧：`packages/ai/src/router.ts` 在 adapter 返回后、`JSON.parse(response.content)` 前 `response.content = redactPii(...).redacted`。注意 **5 处** parse+persist 站点都要脱敏：`runJsonTaskWithAudit`（learningAdvice/assignment 等）+ tutor/errorAnalysis/variant/kpReconcile 各自的 inline 重试循环（这 4 个不走 runJsonTaskWithAudit，是 plan 的错误假设，实现时补齐）。占位符不含引号/括号，落在 JSON 字符串值内仍合法。
+- 边界：纯文本变换不抛错、不阻断、不额外计费、不回扫存量数据；MOD-11 测试号必须真有效（`440524198001010013` 年 1980 有效；plan 原列 `...188...` 年 1880 被 `(?:19|20)` 正则拒收已修正）。
+
 **PII 治理现状**（Plan 6）：
 - OPS CLI：`user:deactivate <userId> [--reason TEXT] [--dry-run]` / `user:export <userId> --out <path.json>` / `pii:gc-sweep [--bucket short|medium|orphan|all] [--dry-run]`；全部走 shared service，不引入 apps/web 内置 cron
 - 注销：User 行 soft-delete 作 tombstone；硬删 `ErrorBookEntry`（级联 `VariantGroup`/`VariantItem`）和用户 `USER_ADHOC Question`；删除 `AuthIdentity` + PHONE/GLOBAL 对应 `OtpRequest`；scrub Session / TopupOrder / ModelCall / KpAlias / KpReconcileMatch PII；Plan 12 后额外 scrub `VARIANT_GENERATED Question.createdByUserId=null` 但保留 Question 行；Plan 10 后删除该学生的 `StudentAssignment`（级联 `AssignmentAnswer`）和 `AssignmentPerformance`，payload 只记录计数；财务金额、订单号、ledger 保留
@@ -214,7 +221,7 @@
 - `OpsActionLog.payload` 只能写非 PII 摘要；新增 payload guard test 守门。业务代码不得直接 `prisma.user.delete()`，注销统一走 `deactivateUser`
 
 **Plan 8 未完成的事 —— 等后续 plan**：
-- PII 扫描（手机号 / 身份证 regex）未在 Plan 6 做通用扫描器；当前靠字段级去标识化 + payload/export 守门
+- ~~PII 扫描（手机号 / 身份证 regex）未在 Plan 6 做通用扫描器~~ → **Plan 14c 已落地**（`packages/domain/src/pii.ts` 通用 scanPii/redactPii，输入/输出双侧落库前脱敏）
 
 **常用命令**：
 
@@ -304,11 +311,13 @@ pnpm --filter @zhijiao/web  test -- tests/integration/auth-register-race.test.ts
 64. **bind <14 必带 consent 才写行**（Plan 14a）：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/family-guardian-consent.test.ts` 应全绿（5 例：缺 consent 拒 + 写行激活 + ≥14 回归 + 撤回回 PENDING + 多监护人）。`needsConsent` 判定用 `!== "NOT_REQUIRED"` 不是 `=== "PENDING"`。
 65. **PII 覆盖 GuardianConsent + birthYear**（Plan 14a）：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/pii-deactivate-user.test.ts tests/integration/pii-export-user-data.test.ts tests/unit/pii-ops-action-log-payload.test.ts` 应全绿；注销删双向 consent + guardian 侧回 PENDING + scrub birthYear、导出含本人 consent（guardian masked）、payload 禁词加 `birth_year`/`guardian_user_id`/`child_user_id`。
 66. **Plan 14a E2E**（§8）：`pnpm.cmd --filter @zhijiao/web test:e2e -- e2e/guardian-consent.spec.ts` 应 1 passed（<14 门禁跳转→家长勾选同意绑定→解禁闭环）。注：注册表单 STUDENT 必填出生年份、家长端绑定必带监护人同意勾选框——两处 UI 仅此 E2E 覆盖。OTP burst flake 同红线 #28。
+67. **PII 核单测 + 不返原值**（Plan 14c）：`pnpm.cmd --filter @zhijiao/domain test -- tests/pii.test.ts` 应全绿；`redactPii`/`scanPii` 返回结构不含命中的原始 PII 子串。MOD-11 测试号若改样例必须用真有效号（如 `440524198001010013`），不改算法迁就坏样例。
+68. **输入脱敏在 AI 前**（Plan 14c）：`Select-String -Path apps/web/server/routers/tutor.ts,apps/web/server/routers/error.ts -Pattern "redactPii"` 命中；`pnpm.cmd --filter @zhijiao/web test -- tests/integration/pii-redaction-input.test.ts` 应全绿（tutor stem + error actualAnswerMd 落库与喂 AI 均脱敏）。
+69. **输出脱敏在 AI 咽喉**（Plan 14c）：`Select-String -Path packages/ai/src/router.ts -Pattern "redactPii"` 应命中 **5 处**且每处都在紧邻的 `JSON.parse(response.content)` 之前（runJsonTaskWithAudit + tutor/errorAnalysis/variant/kpReconcile 各自 inline 循环）；`pnpm.cmd --filter @zhijiao/ai test -- tests/pii-redaction.test.ts` 应全绿（含 inline-loop 路径）。
 
-**下一步候选 Plan**（Plan 4 + Plan 6 + Plan 8 + Plan 9 + Plan 10 + Plan 11 + Plan 12 + Plan 13 + Plan 14a 已落地）：
+**下一步候选 Plan**（Plan 4 + Plan 6 + Plan 8 + Plan 9 + Plan 10 + Plan 11 + Plan 12 + Plan 13 + Plan 14a + Plan 14c 已落地）：
 - Plan 5: 真接阿里云 SMS + 微信公众号（ICP 备案通过后；**且 Plan 2 Hardening 必须先 ship**；替换 `RealSmsAdapter` / `RealWechatH5Adapter` 的 stub 实现）
 - Plan 7: 真接微信支付 V3 API（需 ICP 备案 + 商户号 + APIv3 + 商户证书；激活 `RealWechatPayAdapter.unifiedOrder` + `verifyNotify`）—— **Plan 3 prod ship prereq**
 - Plan 14b: DSAR 数据主体请求 + SLA（用户侧数据副本/删除请求入口、SLA 追踪、OPS 工作流；复用 Plan 6 export/deactivate 原语）
-- Plan 14c: 通用 PII 扫描器（手机号/身份证 regex 扫描，接答疑输入/题面/模型输出落库前；Plan 8 punt）
 - Plan 12 cleanup: `VariantItem.questionId NOT NULL` + 下线 nullable reconcile 分支 + 处理历史 `VARIANT_TO_PARENT_NEEDS_REVIEW` 行
 - Plan 15: USER_ADHOC × PUBLISHED canonical dedup / 题库去重 / PUBLISHED 复用 / 统计归并（Plan 8 §6.2 punt）
