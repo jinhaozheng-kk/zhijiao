@@ -8,6 +8,7 @@ import { variantRouter } from "./variant.js";
 import { assignmentRouter } from "./assignment.js";
 import { analyticsRouter } from "./analytics.js";
 import { familyRouter } from "./family.js";
+import { dsarRouter } from "./dsar.js";
 
 export const appRouter = router({
   auth: authRouter,
@@ -18,5 +19,6 @@ export const appRouter = router({
   assignment: assignmentRouter,
   analytics: analyticsRouter,
   family: familyRouter,
+  dsar: dsarRouter,
 });
 export type AppRouter = typeof appRouter;
