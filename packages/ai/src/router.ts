@@ -235,6 +235,8 @@ export class AiRouter {
     while (parseAttempts < 3) {
       try {
         response = await this.opts.adapter.call(request);
+        // Plan 14c：AI 原始响应在 parse + 持久化前脱敏（与 runJsonTaskWithAudit 一致）。
+        response.content = redactPii(response.content).redacted;
         const json = JSON.parse(response.content);
         const validated = TutoringOutputSchema.parse(json);
 
@@ -358,6 +360,8 @@ export class AiRouter {
     while (parseAttempts < 3) {
       try {
         response = await this.opts.adapter.call(request);
+        // Plan 14c：AI 原始响应在 parse + 持久化前脱敏（与 runJsonTaskWithAudit 一致）。
+        response.content = redactPii(response.content).redacted;
         const json = JSON.parse(response.content);
         const validated = ErrorAnalysisOutputSchema.parse(json);
 
@@ -482,6 +486,8 @@ export class AiRouter {
     while (parseAttempts < 3) {
       try {
         response = await this.opts.adapter.call(request);
+        // Plan 14c：AI 原始响应在 parse + 持久化前脱敏（与 runJsonTaskWithAudit 一致）。
+        response.content = redactPii(response.content).redacted;
         const json = JSON.parse(response.content);
         const validated = VariantGenerationOutputSchema.parse(json);
 
@@ -722,6 +728,8 @@ export class AiRouter {
     while (parseAttempts < 3) {
       try {
         response = await this.opts.adapter.call(request);
+        // Plan 14c：AI 原始响应在 parse + 持久化前脱敏（与 runJsonTaskWithAudit 一致）。
+        response.content = redactPii(response.content).redacted;
         const json = JSON.parse(response.content);
         const validated = KpReconciliationOutputSchema.parse(json);
 

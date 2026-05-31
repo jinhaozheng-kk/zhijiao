@@ -65,4 +65,29 @@ describe("Plan 14c: AI response PII redaction at runJsonTaskWithAudit chokepoint
     expect(persistedContent).toContain("[手机号]");
     expect(persistedContent).not.toContain("13812345678");
   });
+
+  it("redacts PII from tutor output (inline-loop path, not just runJsonTaskWithAudit)", async () => {
+    // tutor 走自己的 inline 重试循环（不经 runJsonTaskWithAudit）——验证 inline 路径也脱敏。
+    const adapter = new MockAdapter({
+      respondWith: async () => ({
+        content: JSON.stringify({
+          restatement: "解一元一次方程",
+          knowledgePoints: ["一元一次方程"],
+          steps: ["移项", "合并同类项"],
+          pitfalls: [],
+          finalAnswer: "x=4，如需帮助打 13812345678",
+        }),
+        model: "mock-v1",
+      }),
+    });
+    const router = new AiRouter({ prisma, adapter, userId: "dev-student-01" });
+    const out = await router.tutor({ questionStem: "解 2x+5=13", studentGrade: "G8" });
+
+    expect(out.finalAnswer).toContain("[手机号]");
+    expect(out.finalAnswer).not.toContain("13812345678");
+
+    const calls = await prisma.modelCall.findMany({ orderBy: { createdAt: "desc" } });
+    const responseJson = calls[0]!.responseJson as { content?: string } | null;
+    expect(responseJson?.content ?? "").not.toContain("13812345678");
+  });
 });
