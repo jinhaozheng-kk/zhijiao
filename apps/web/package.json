@@ -17,7 +17,10 @@
     "variant:backfill-questions": "tsx scripts/variant-backfill-questions.ts",
     "user:deactivate": "tsx scripts/user-deactivate.ts",
     "user:export": "tsx scripts/user-export.ts",
-    "pii:gc-sweep": "tsx scripts/pii-gc-sweep.ts"
+    "pii:gc-sweep": "tsx scripts/pii-gc-sweep.ts",
+    "dsar:list": "tsx scripts/dsar-list.ts",
+    "dsar:fulfill": "tsx scripts/dsar-fulfill.ts",
+    "dsar:reject": "tsx scripts/dsar-reject.ts"
   },
   "dependencies": {
     "@zhijiao/ai":            "workspace:*",
