@@ -33,7 +33,7 @@ describe("alias 冲突防御（spec §5.4）", () => {
         source: "VARIANT_ITEM", sourceRefType: "VARIANT_ITEM",
         sourceRefId: "clrelid000000000000000099",
         matchVia: "ALIAS", confidence: 1.0,
-        status: "PENDING_REVIEW", reviewReason: "VARIANT_TO_PARENT_NEEDS_REVIEW",
+        status: "PENDING_REVIEW", reviewReason: "LLM_CONFIDENCE_BAND",
       },
     });
 
@@ -80,7 +80,7 @@ describe("alias 冲突防御（spec §5.4）", () => {
         source: "VARIANT_ITEM", sourceRefType: "VARIANT_ITEM",
         sourceRefId: "clrelid000000000000000098",
         matchVia: "ALIAS", confidence: 1.0,
-        status: "PENDING_REVIEW", reviewReason: "VARIANT_TO_PARENT_NEEDS_REVIEW",
+        status: "PENDING_REVIEW", reviewReason: "LLM_CONFIDENCE_BAND",
       },
     });
 
