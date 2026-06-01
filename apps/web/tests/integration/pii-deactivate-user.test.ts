@@ -62,6 +62,18 @@ async function seedDeactivateFixture() {
       actualAnswerMd: "my answer",
     },
   });
+  const variantQuestion = await prisma.question.create({
+    data: {
+      subjectId: subject.id,
+      stemMd: "variant stem",
+      type: "CALCULATION",
+      status: "DRAFT",
+      source: "VARIANT_GENERATED",
+      createdByUserId: user.id,
+      normalizedStemHash: "hash-variant-1",
+      answer: { create: { contentMd: "answer", solutionMd: "variant solution" } },
+    },
+  });
   const group = await prisma.variantGroup.create({
     data: {
       entryId: entry.id,
@@ -75,6 +87,7 @@ async function seedDeactivateFixture() {
             position: 1,
             stemMd: "variant stem",
             solutionMd: "variant solution",
+            questionId: variantQuestion.id,
           },
         ],
       },

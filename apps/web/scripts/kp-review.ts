@@ -52,7 +52,7 @@ function render(m: PendingRow, idx: number, total: number) {
   // eslint-disable-next-line no-console
   console.log(`  Suggested:   ${kpStr}  via ${m.matchVia ?? "—"}  confidence=${confStr}`);
   // eslint-disable-next-line no-console
-  console.log(`  Parent question: ${m.question.id} "${stem}"`);
+  console.log(`  question: ${m.question.id} "${stem}"`);
 }
 
 function prompt(rl: readline.Interface, q: string): Promise<string> {

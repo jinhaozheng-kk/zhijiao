@@ -104,18 +104,16 @@ async function loadSubjectCandidates(
 
 // ============ reconcileHintsSync ============
 //
-// VariantItem reconciliation is two-stage: promoted variants link matched KPs to
-// VariantItem.questionId, while legacy/null-questionId variants stay queued on
-// the parent question for review and never write a parent QuestionKPLink.
+// Plan 12 cleanup: VariantItem.questionId 现恒非空。VARIANT_ITEM 路径把命中/未命中都
+// 记到变式题自己的 Question（linkedQuestionId = item.questionId），永不污染 parent。
 
 // Plan 9 spec §3.1 + §3.3:
 // - 三个 router body 调用：tutor.ask / error.diagnose / variant.generateForEntry
 // - sourceRefType=VARIANT_ITEM 先解析 VariantItem.questionId（不是只看 source，
 //   因为 BACKFILL source + sourceRefType=VARIANT_ITEM 也走 VARIANT 路径）
-// - promoted VARIANT_ITEM EXACT/ALIAS 命中 → LINKED + 写 variant QuestionKPLink
-// - legacy/null-questionId VARIANT_ITEM EXACT/ALIAS 命中 → PENDING_REVIEW + reviewReason=VARIANT_TO_PARENT_NEEDS_REVIEW
-// - 其它 sourceRefType EXACT/ALIAS 命中 → LINKED + upsert QuestionKPLink
-// - 未命中 → UNMATCHED
+// - VARIANT_ITEM EXACT/ALIAS 命中 → LINKED + 写 variant QuestionKPLink（链到变式题）
+// - 其它 sourceRefType EXACT/ALIAS 命中 → LINKED + upsert QuestionKPLink（linkedQuestionId === args.questionId）
+// - 未命中 → UNMATCHED（同样记在 linkedQuestionId）
 //
 // 错误处理：单条 hint 失败不影响同批其它；调用方必须 try/catch 包住（reconcile 失败
 // 不能破坏主流程）。
@@ -127,23 +125,14 @@ export async function reconcileHintsSync(
   if (args.hints.length === 0) return result;
 
   let effectiveQuestionId: string | null = null;
-  let isVariantPath = false;
-  let isVariantPendingLegacy = false;
 
   if (args.sourceRefType === "VARIANT_ITEM") {
-    const variantItem = await prisma.variantItem.findUnique({
+    // Plan 12 cleanup: questionId 现恒非空；item 缺失=数据损坏 → throw，由调用方 try/catch 兜底。
+    const variantItem = await prisma.variantItem.findUniqueOrThrow({
       where: { id: args.sourceRefId },
       select: { questionId: true },
     });
-    if (!variantItem) {
-      _logger.warn({ event: "kp_reconcile_variant_item_missing", sourceRefId: args.sourceRefId });
-      isVariantPendingLegacy = true;
-    } else if (variantItem.questionId != null) {
-      isVariantPath = true;
-      effectiveQuestionId = variantItem.questionId;
-    } else {
-      isVariantPendingLegacy = true;
-    }
+    effectiveQuestionId = variantItem.questionId;
   }
 
   const subjectQuestionId = args.questionId;
@@ -191,56 +180,27 @@ export async function reconcileHintsSync(
 
     try {
       if (matchedKpId && matchVia) {
-        if (isVariantPath) {
-          await prisma.$transaction(async (tx) => {
-            await upsertReconcileMatch(tx, {
-              ...args,
-              questionId: linkedQuestionId,
-              normalizedHint: normalized,
-              rawHint,
-              kpId: matchedKpId,
-              matchVia,
-              confidence: 1.0,
-              status: "LINKED",
-              reviewReason: null,
-            });
-            await upsertQuestionKpLink(tx, linkedQuestionId, matchedKpId!, 1.0);
-          });
-          result.linked++;
-        } else if (!isVariantPendingLegacy) {
-          // LINKED + upsert QuestionKPLink
-          await prisma.$transaction(async (tx) => {
-            await upsertReconcileMatch(tx, {
-              ...args,
-              normalizedHint: normalized,
-              rawHint,
-              kpId: matchedKpId,
-              matchVia,
-              confidence: 1.0,
-              status: "LINKED",
-              reviewReason: null,
-            });
-            await upsertQuestionKpLink(tx, args.questionId, matchedKpId!, 1.0);
-          });
-          result.linked++;
-        } else {
-          // VARIANT_ITEM → PENDING_REVIEW + 不写 QuestionKPLink
-          await upsertReconcileMatch(prisma, {
+        // LINKED + 写 QuestionKPLink（变式路径写变式题；非变式 linkedQuestionId === args.questionId）
+        await prisma.$transaction(async (tx) => {
+          await upsertReconcileMatch(tx, {
             ...args,
+            questionId: linkedQuestionId,
             normalizedHint: normalized,
             rawHint,
             kpId: matchedKpId,
             matchVia,
             confidence: 1.0,
-            status: "PENDING_REVIEW",
-            reviewReason: "VARIANT_TO_PARENT_NEEDS_REVIEW",
+            status: "LINKED",
+            reviewReason: null,
           });
-          result.queued++;
-        }
+          await upsertQuestionKpLink(tx, linkedQuestionId, matchedKpId, 1.0);
+        });
+        result.linked++;
       } else {
-        // UNMATCHED
+        // UNMATCHED —— 同样记在 linkedQuestionId（变式路径=变式题；linchpin）
         await upsertReconcileMatch(prisma, {
           ...args,
+          questionId: linkedQuestionId,
           normalizedHint: normalized,
           rawHint,
           kpId: null,
@@ -293,7 +253,7 @@ interface ReconcileMatchUpsertArgs extends ReconcileHintsSyncArgs {
   matchVia: "EXACT" | "ALIAS" | "LLM" | "MANUAL" | null;
   confidence: number | null;
   status: "UNMATCHED" | "PENDING_REVIEW" | "LINKED" | "REJECTED" | "DROPPED";
-  reviewReason: "LLM_CONFIDENCE_BAND" | "VARIANT_TO_PARENT_NEEDS_REVIEW" | null;
+  reviewReason: "LLM_CONFIDENCE_BAND" | null;
 }
 
 async function upsertReconcileMatch(

@@ -22,7 +22,7 @@ export interface ProcessBatchResult {
 }
 
 export interface KpReconcileThresholds {
-  autoLink: number;   // ≥ auto_link AND sourceRefType ≠ VARIANT_ITEM → LINKED
+  autoLink: number;   // ≥ auto_link → LINKED（所有 sourceRefType 一致，Plan 12 cleanup）
   review: number;     // ≥ review AND < auto_link → PENDING_REVIEW; < review → DROPPED
 }
 
@@ -136,22 +136,20 @@ export async function processBatch(
 
 type ApplyResult = "LINKED" | "PENDING_REVIEW" | "DROPPED";
 
-// Plan 9 spec §3.3 + §4.3: 状态机分流（按 sourceRefType 而非 source）。
+// Plan 9 spec §3.3 + §4.3 / Plan 12 cleanup: 状态机分流（统一，不再按 sourceRefType 分叉）。
+// Task 5 后变式 UNMATCHED 行 questionId 记变式题自身 id，auto-link 写到变式题安全，
+// 故移除 VARIANT_ITEM → PENDING_REVIEW 特例。
 // - kpId=null 或 confidence < review_threshold → DROPPED
-// - confidence ≥ auto_link AND sourceRefType ≠ VARIANT_ITEM → LINKED + QuestionKPLink
-// - confidence ≥ auto_link AND sourceRefType = VARIANT_ITEM → PENDING_REVIEW
-//   (reviewReason=VARIANT_TO_PARENT_NEEDS_REVIEW)
+// - confidence ≥ auto_link → LINKED + QuestionKPLink（所有 sourceRefType 一致）
 // - review ≤ confidence < auto_link → PENDING_REVIEW
 //   (reviewReason=LLM_CONFIDENCE_BAND)
 async function applyLlmResult(
   prisma: PrismaClient,
-  match: { id: string; questionId: string; sourceRefType: string },
+  match: { id: string; questionId: string },
   item: { matchId: string; kpId: string | null; confidence: number },
   modelCallId: string,
   thresholds: { autoLink: number; review: number },
 ): Promise<ApplyResult> {
-  const isVariant = match.sourceRefType === "VARIANT_ITEM";
-
   // DROPPED — LLM 给 null 或低于 review threshold
   if (!item.kpId || item.confidence < thresholds.review) {
     await prisma.kpReconcileMatch.update({
@@ -168,7 +166,7 @@ async function applyLlmResult(
   }
 
   // confidence ≥ review_threshold
-  if (item.confidence >= thresholds.autoLink && !isVariant) {
+  if (item.confidence >= thresholds.autoLink) {
     // LINKED + 写 QuestionKPLink (atomic raw SQL upsert with GREATEST)
     await prisma.$transaction(async (tx) => {
       await tx.kpReconcileMatch.update({
@@ -192,11 +190,7 @@ async function applyLlmResult(
     return "LINKED";
   }
 
-  // PENDING_REVIEW
-  const reviewReason =
-    isVariant && item.confidence >= thresholds.autoLink
-      ? "VARIANT_TO_PARENT_NEEDS_REVIEW"
-      : "LLM_CONFIDENCE_BAND";
+  // PENDING_REVIEW —— 仅 LLM 置信带 [review, autoLink)
   await prisma.kpReconcileMatch.update({
     where: { id: match.id },
     data: {
@@ -204,7 +198,7 @@ async function applyLlmResult(
       matchVia: "LLM",
       confidence: item.confidence,
       status: "PENDING_REVIEW",
-      reviewReason,
+      reviewReason: "LLM_CONFIDENCE_BAND",
       modelCallId,
     },
   });

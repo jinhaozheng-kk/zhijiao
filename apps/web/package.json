@@ -14,7 +14,6 @@
     "test:e2e": "next build && playwright test",
     "kp:reconcile-pending": "tsx scripts/kp-reconcile-pending.ts",
     "kp:review": "tsx scripts/kp-review.ts",
-    "variant:backfill-questions": "tsx scripts/variant-backfill-questions.ts",
     "user:deactivate": "tsx scripts/user-deactivate.ts",
     "user:export": "tsx scripts/user-export.ts",
     "pii:gc-sweep": "tsx scripts/pii-gc-sweep.ts",

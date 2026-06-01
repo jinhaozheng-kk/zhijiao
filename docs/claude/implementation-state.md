@@ -77,7 +77,7 @@
 - `QuestionKPLink` 仍是唯一权威映射，新表 `KpAlias`（subject 内 normalizedAlias 唯一）+ `KpReconcileMatch`（hint→kp 审计队列）做支撑
 - `reconcileHintsSync(prisma, { questionId, hints, source, sourceRefType, sourceRefId })` 在 `tutor.ask` / `error.diagnose` / `variant.generateForEntry` 三处 body 接入，**await + try/catch**，失败不破坏主流程
 - 同步只跑 EXACT (KP.name/code) → ALIAS 表 → 命中即 LINKED + upsert QuestionKPLink（weight=max(existing, 1.0)）
-- 关键：Plan 12 后 `sourceRefType=VARIANT_ITEM` 分两路：`VariantItem.questionId` 非空时 EXACT/ALIAS 直接 LINKED 到 variant Question 的 `QuestionKPLink`；`questionId` 为空时仍走旧 `PENDING_REVIEW(reviewReason=VARIANT_TO_PARENT_NEEDS_REVIEW)` migration safety。永不自动污染 parent QuestionKPLink；判分流条件是 sourceRefType 不是 source
+- 关键：`sourceRefType=VARIANT_ITEM` 经 `findUniqueOrThrow` 解析 `VariantItem.questionId`（Plan 12 cleanup 后恒非空），EXACT/ALIAS 直接 LINKED 到 variant Question 的 `QuestionKPLink`，未命中的 UNMATCHED 行也记 variant question id。永不自动污染 **parent** QuestionKPLink；判分流条件是 sourceRefType 不是 source（旧 `VARIANT_TO_PARENT_NEEDS_REVIEW` 两路分支已于 cleanup 退役，见下方「VariantItem 升格现状」段）
 - 异步 LLM 走 `pnpm.cmd --filter @zhijiao/web kp:reconcile-pending [-- --limit N]`，三档 (≥0.85 / ≥0.6 / <0.6) 分流 LINKED / PENDING_REVIEW(LLM_CONFIDENCE_BAND) / DROPPED；matchId 对齐写回（不靠 rawHint）；LLM 漏返/重复 retry 2 次再 PARSE_FAILED；多返不属于本批 matchId 静默忽略
 - 人工 review 走 `pnpm.cmd --filter @zhijiao/web kp:review`，单键 a/r/m <code>/alias <code>/s/q；service 层 `apps/web/server/lib/kp-reconcile.ts` 的 `approveMatch / rejectMatch / remapMatch / learnAliasAndLink / unlinkIfOrphan` 5 个函数可被未来 `/ops/kp-reconcile` Web 页面复用
 - alias 冲突防御：`learnAliasAndLink` 检测 `(subjectId, normalizedAlias)` 已映射到不同 KP → 抛 `KpAliasConflictError`，不静默覆盖
@@ -98,12 +98,12 @@
 - 现有 4 KP（`math-g8-linear-eq*`）code 保留不变、实迁挂到 `初中→数与代数` 下。**全学段已做透（树 185 KP）**：小学（义教课标四领域）/ 初中（数与代数·图形与几何·统计与概率·综合与实践全覆盖）/ 高中（普高课标四主线 + 预备知识）。仅初中"综合与实践"与小学/高中同名领域留极少占位。后续扩树 = 往 `kp-data/*.ts` 加 `KpNode` 节点即被校验/seed/匹配，不需新 plan。
 - 设计取舍（不拆 subject）：跨学段同名节点（"函数"）无法 EXACT/ALIAS 自动匹配是**正确保守行为**（落 UNMATCHED 等 LLM/人工），首发初中-only 下代价≈0。
 
-**VariantItem 升格现状**（Plan 12）：
-- `VariantItem.questionId` 是 nullable 过渡字段，指向 `Question(source="VARIANT_GENERATED")`；新生成变式同事务双写 Question + VariantItem。
-- `variant:backfill-questions` 负责历史 VariantItem 补 Question；backfill 后 `variant_items.question_id IS NULL` 应为 0。
-- `reconcileHintsSync` 对 `sourceRefType=VARIANT_ITEM` 两阶段分流：有 `questionId` 直接 LINKED 到 variant Question；无 `questionId` 保留 `PENDING_REVIEW(VARIANT_TO_PARENT_NEEDS_REVIEW)` migration safety。
-- `VARIANT_GENERATED` 与 `USER_ADHOC` 同为 owner-only；注销时 scrub `createdByUserId=null`，Question 行保留作统计样本。
-- 历史 `VARIANT_TO_PARENT_NEEDS_REVIEW` 行升级为 LINKED + 补 QuestionKPLink 显式 punt 到 cleanup plan。
+**VariantItem 升格现状**（Plan 12 + 2026-06-01 cleanup）：
+- `VariantItem.questionId` 现为 **NOT NULL**，恒指向 `Question(source="VARIANT_GENERATED")`；新生成变式同事务双写 Question + VariantItem。
+- `reconcileHintsSync` 对 `sourceRefType=VARIANT_ITEM` 用 `findUniqueOrThrow` 解析 `VariantItem.questionId`，**所有分支**（LINKED + UNMATCHED）的 match 行均记**变式题 id**；EXACT/ALIAS 直接 LINK 到变式题 QuestionKPLink。红线 #2 = 永不写 **parent** QuestionKPLink（仍成立）。
+- 异步 `applyLlmResult` 对变式高置信命中与其它 source 一致 **自动 LINK** 到变式题，不再进人工 review。
+- `KpReconcileReviewReason.VARIANT_TO_PARENT_NEEDS_REVIEW` 为 **tombstone**：无代码读写，Postgres 无 DROP VALUE 故保留。`variant-backfill-questions` 脚本/测试已退役（NOT NULL 后无 null 可补）。`kp-backfill-variant-items` 仍有效。
+- `VARIANT_GENERATED` 与 `USER_ADHOC` 同为 owner-only；注销 scrub `createdByUserId=null` 保留行作统计样本。
 
 **未成年同意现状**（Plan 14a）：
 - `<14` 判定：`User.birthYear`（自报年份，STUDENT 注册必填）→ `isUnder14(birthYear)`（`apps/web/server/lib/consent.ts` 纯函数，保守 `当前年−birthYear ≤ 14` 宁可多触发）。`User.guardianConsentStatus`（`NOT_REQUIRED`/`PENDING`/`GRANTED`，默认 NOT_REQUIRED）是承重字段，进 `ctx.auth`（与 isMinor 同查询，不进 JWT）。

@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { resetDb, prisma } from "@zhijiao/db/test-utils";
 import {
-  reconcileHintsSync,
   approveMatch,
   rejectMatch,
   remapMatch,
@@ -30,17 +29,15 @@ afterAll(async () => { await prisma.$disconnect(); });
 
 describe("KpReconcileMatch state machine: PENDING_REVIEW 4 个转移 + LINKED orphan 清理", () => {
   it("approve: PENDING_REVIEW → LINKED + 写 QuestionKPLink(weight=row.confidence)", async () => {
-    const { subjectId, kpAId, questionId, userId } = await seedFixtures();
-    // 制造 PENDING_REVIEW：VARIANT_ITEM EXACT/ALIAS 命中（spec §3.3）
-    await prisma.kpAlias.create({
-      data: { subjectId, kpId: kpAId, normalizedAlias: "一元一次方程", source: "SEED" },
+    const { kpAId, questionId, userId } = await seedFixtures();
+    const m = await prisma.kpReconcileMatch.create({
+      data: {
+        questionId, kpId: kpAId, rawHint: "一元一次方程", normalizedHint: "一元一次方程",
+        source: "VARIANT_ITEM", sourceRefType: "VARIANT_ITEM", sourceRefId: "clrelid000000000000000001",
+        matchVia: "EXACT", confidence: 1.0,
+        status: "PENDING_REVIEW", reviewReason: "LLM_CONFIDENCE_BAND",
+      },
     });
-    await reconcileHintsSync(prisma, {
-      questionId, hints: ["一元一次方程"],
-      source: "VARIANT_ITEM", sourceRefType: "VARIANT_ITEM",
-      sourceRefId: "clrelid000000000000000001",
-    });
-    const m = await prisma.kpReconcileMatch.findFirstOrThrow({ where: { questionId } });
     expect(m.status).toBe("PENDING_REVIEW");
 
     const updated = await approveMatch(prisma, { matchId: m.id, reviewedByUserId: userId });
@@ -55,16 +52,15 @@ describe("KpReconcileMatch state machine: PENDING_REVIEW 4 个转移 + LINKED or
   });
 
   it("reject: PENDING_REVIEW → REJECTED + 不写 QuestionKPLink", async () => {
-    const { subjectId, kpAId, questionId, userId } = await seedFixtures();
-    await prisma.kpAlias.create({
-      data: { subjectId, kpId: kpAId, normalizedAlias: "一元一次方程", source: "SEED" },
+    const { kpAId, questionId, userId } = await seedFixtures();
+    const m = await prisma.kpReconcileMatch.create({
+      data: {
+        questionId, kpId: kpAId, rawHint: "一元一次方程", normalizedHint: "一元一次方程",
+        source: "VARIANT_ITEM", sourceRefType: "VARIANT_ITEM", sourceRefId: "clrelid000000000000000002",
+        matchVia: "EXACT", confidence: 1.0,
+        status: "PENDING_REVIEW", reviewReason: "LLM_CONFIDENCE_BAND",
+      },
     });
-    await reconcileHintsSync(prisma, {
-      questionId, hints: ["一元一次方程"],
-      source: "VARIANT_ITEM", sourceRefType: "VARIANT_ITEM",
-      sourceRefId: "clrelid000000000000000002",
-    });
-    const m = await prisma.kpReconcileMatch.findFirstOrThrow({ where: { questionId } });
 
     const updated = await rejectMatch(prisma, { matchId: m.id, reviewedByUserId: userId });
     expect(updated.status).toBe("REJECTED");
@@ -73,16 +69,15 @@ describe("KpReconcileMatch state machine: PENDING_REVIEW 4 个转移 + LINKED or
   });
 
   it("remap: PENDING_REVIEW → LINKED with 新 kpId (matchVia=MANUAL, confidence=1.0)", async () => {
-    const { subjectId, kpAId, kpBId, questionId, userId } = await seedFixtures();
-    await prisma.kpAlias.create({
-      data: { subjectId, kpId: kpAId, normalizedAlias: "一元一次方程", source: "SEED" },
+    const { kpAId, kpBId, questionId, userId } = await seedFixtures();
+    const m = await prisma.kpReconcileMatch.create({
+      data: {
+        questionId, kpId: kpAId, rawHint: "一元一次方程", normalizedHint: "一元一次方程",
+        source: "VARIANT_ITEM", sourceRefType: "VARIANT_ITEM", sourceRefId: "clrelid000000000000000003",
+        matchVia: "EXACT", confidence: 1.0,
+        status: "PENDING_REVIEW", reviewReason: "LLM_CONFIDENCE_BAND",
+      },
     });
-    await reconcileHintsSync(prisma, {
-      questionId, hints: ["一元一次方程"],
-      source: "VARIANT_ITEM", sourceRefType: "VARIANT_ITEM",
-      sourceRefId: "clrelid000000000000000003",
-    });
-    const m = await prisma.kpReconcileMatch.findFirstOrThrow({ where: { questionId } });
     expect(m.kpId).toBe(kpAId);
 
     const updated = await remapMatch(prisma, {
