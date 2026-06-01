@@ -39,6 +39,7 @@ const RELEVANT_KEYS = [
   "MINOR_MONTHLY_LIMIT_YUAN",
   "LOG_LEVEL",
   "E2E_TEST_HOOKS",
+  "DEMO_MODE",
   "KP_RECONCILE_AUTO_LINK_THRESHOLD",
   "KP_RECONCILE_REVIEW_THRESHOLD",
   "PII_RETENTION_SHORT_DAYS",
@@ -247,6 +248,20 @@ describe("server/env.ts (fail-fast validator)", () => {
     const mod = await importEnv();
     expect(mod.env.CREDIT_PER_YUAN).toBe(25);
     expect(mod.env.MINOR_MONTHLY_LIMIT_YUAN).toBe(300);
+  });
+
+  it("accepts DEMO_MODE=1", async () => {
+    applyBase();
+    process.env.DEMO_MODE = "1";
+    const mod = await importEnv();
+    expect(mod.env.DEMO_MODE).toBe("1");
+  });
+
+  it("defaults DEMO_MODE to 0", async () => {
+    applyBase();
+    delete process.env.DEMO_MODE;
+    const mod = await importEnv();
+    expect(mod.env.DEMO_MODE).toBe("0");
   });
 
   it("LOG_LEVEL rejects unknown values", async () => {

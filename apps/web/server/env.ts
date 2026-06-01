@@ -61,6 +61,7 @@ const Env = z
 
     // E2E hooks: only "1" unlocks /api/__test__/* style endpoints.
     E2E_TEST_HOOKS: z.enum(["0", "1"]).default("0"),
+    DEMO_MODE: z.enum(["0", "1"]).default("0"),
 
     // Plan 9 KP reconciler thresholds (kp:reconcile-pending CLI 用)
     KP_RECONCILE_AUTO_LINK_THRESHOLD: z.coerce.number().min(0).max(1).default(0.85),
@@ -177,6 +178,7 @@ const parsed = isBuildPhase
       CREDIT_PER_YUAN: "10",
       MINOR_MONTHLY_LIMIT_YUAN: "200",
       E2E_TEST_HOOKS: "0",
+      DEMO_MODE: "0",
     })
   : Env.safeParse(process.env);
 
