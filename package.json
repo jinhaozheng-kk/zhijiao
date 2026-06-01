@@ -13,6 +13,8 @@
     "db:migrate": "pnpm --filter @zhijiao/db db:migrate",
     "db:seed": "pnpm --filter @zhijiao/db db:seed",
     "db:studio": "pnpm --filter @zhijiao/db db:studio",
+    "demo:reset": "pnpm --filter @zhijiao/web demo:reset",
+    "verify:demo": "pnpm --filter @zhijiao/web verify:demo",
     "test:setup": "pnpm --filter @zhijiao/db exec tsx scripts/setup-test-dbs.ts",
     "setup": "node -e \"require('fs').copyFileSync('.env.example','.env.local')\" && docker compose up -d && pnpm install && pnpm db:migrate && pnpm db:seed && pnpm test:setup"
   },
