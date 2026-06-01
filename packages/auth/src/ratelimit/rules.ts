@@ -7,6 +7,11 @@ export const RULE_REGISTER_IP:    RateLimitRule = { prefix: "register:ip:",     
 export const RULE_REFRESH:        RateLimitRule = { prefix: "refresh:",         capacity: 6, refillPerSec: 6/60,  failMode: "open" };
 export const RULE_TOPUP_CREATE_IP:   RateLimitRule = { prefix: "topup:create:ip:",   capacity: 5,  refillPerSec: 5/60,   failMode: "close" };
 export const RULE_TOPUP_CREATE_USER: RateLimitRule = { prefix: "topup:create:user:", capacity: 10, refillPerSec: 10/600, failMode: "close" };
+// Plan 14b: 全量 PII 导出是高敏端点 —— fail-CLOSE(Redis 挂宁可短暂拒,也不放任
+// stolen-session 无限 dump)。cap 2 / refill 1 token 每天:正常人极少导出,挡滥刷。
+export const RULE_DSAR_EXPORT:    RateLimitRule = { prefix: "dsar:export:",    capacity: 2,  refillPerSec: 1/86400, failMode: "close" };
+// DSAR 验码专用桶,不与 LOGIN 的 RULE_OTP_VERIFY_PH 共用暴破预算。
+export const RULE_DSAR_VERIFY_PH: RateLimitRule = { prefix: "dsar:verify:phone:", capacity: 5, refillPerSec: 5/60, failMode: "close" };
 
 import type { RateLimitStore, RateLimitDecision } from "./types.js";
 import { RateLimitBackendDownError } from "./types.js";

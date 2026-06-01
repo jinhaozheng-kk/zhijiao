@@ -209,6 +209,18 @@ async function seedDeactivateFixture() {
   await prisma.familyLink.create({
     data: { parentUserId: otherUser.id, studentUserId: user.id, status: "ACTIVE" },
   });
+  // Plan 14b: a dangling open DELETION request with free-text reason.
+  await prisma.dsarRequest.create({
+    data: {
+      userId: user.id,
+      type: "DELETION",
+      status: "PENDING",
+      isMinor: false,
+      reason: "我的手机 13800138000 想删",
+      requestedAt: new Date(),
+      dueAt: new Date(Date.now() + 86400000),
+    },
+  });
   return { user, otherUser, entry, group, wallet, userAdhocQuestion };
 }
 
@@ -276,6 +288,13 @@ describe("deactivateUser", () => {
       avatarUrl: null,
       deactivationReason: "requested",
     });
+
+    const dsarAfter = await prisma.dsarRequest.findFirstOrThrow({
+      where: { userId: user.id, type: "DELETION" },
+    });
+    expect(dsarAfter.reason).toBeNull();
+    expect(dsarAfter.status).toBe("COMPLETED");
+    expect(result.payload.scrubbed.dsarRequests).toBe(1);
     const log = await prisma.opsActionLog.findFirstOrThrow({
       where: { kind: "DEACTIVATE_USER", targetUserId: user.id },
     });

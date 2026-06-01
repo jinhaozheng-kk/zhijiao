@@ -12,6 +12,7 @@ export interface DeactivatePayload {
     variantGeneratedQuestions: number;
     authIdentities: number;
     otpRequests: number;
+    dsarRequests: number;
   };
   deleted: {
     errorBookEntries: number;
@@ -34,7 +35,7 @@ export interface DeactivateResult {
 }
 
 export interface UserDataExport {
-  schemaVersion: "2026-05-26";
+  schemaVersion: "2026-05-31";
   exportedAt: string;
   userId: string;
   user: {
@@ -146,6 +147,13 @@ export interface UserDataExport {
     revokedAt: Date | null;
     guardianUserId: string;
   }>;
+  dsarRequests: Array<{
+    type: string;
+    status: string;
+    requestedAt: Date;
+    dueAt: Date;
+    resolvedAt: Date | null;
+  }>;
 }
 
 export type SweepBucket = "short" | "medium" | "orphan";
@@ -241,6 +249,7 @@ export async function exportUserData(
     assignmentPerformance,
     familyLinks,
     guardianConsents,
+    dsarRequests,
   ] = await Promise.all([
     prisma.authIdentity.findMany({
       where: { userId },
@@ -378,10 +387,15 @@ export async function exportUserData(
       orderBy: { createdAt: "asc" },
       select: { guardianUserId: true, consentScope: true, method: true, consentedAt: true, revokedAt: true },
     }),
+    prisma.dsarRequest.findMany({
+      where: { userId },
+      orderBy: { createdAt: "asc" },
+      select: { type: true, status: true, requestedAt: true, dueAt: true, resolvedAt: true },
+    }),
   ]);
 
   return {
-    schemaVersion: "2026-05-26",
+    schemaVersion: "2026-05-31",
     exportedAt: new Date().toISOString(),
     userId: user.id,
     user: {
@@ -427,6 +441,7 @@ export async function exportUserData(
       revokedAt: c.revokedAt,
       guardianUserId: maskProviderUserId("USER", c.guardianUserId),
     })),
+    dsarRequests,
   };
 }
 
@@ -661,6 +676,21 @@ export async function deactivateUser(
       where: { childUserId: args.userId },
     });
 
+    // Plan 14b：DSAR 工单 —— 抹掉自由文本 reason 但保留行（审计）。
+    const dsarReasonScrub = await tx.dsarRequest.updateMany({
+      where: { userId: args.userId, reason: { not: null } },
+      data: { reason: null },
+    });
+    // 悬挂工单收口：未结 DELETION → COMPLETED（避免 dsar:list 永久残留）。
+    await tx.dsarRequest.updateMany({
+      where: {
+        userId: args.userId,
+        type: "DELETION",
+        status: { in: ["AWAITING_GUARDIAN", "PENDING"] },
+      },
+      data: { status: "COMPLETED", resolvedAt: now, resolvedByRef: args.initiatorRef },
+    });
+
     await tx.user.update({
       where: { id: args.userId },
       data: {
@@ -682,6 +712,7 @@ export async function deactivateUser(
         variantGeneratedQuestions: variantGeneratedQuestions.count,
         authIdentities: authIdentities.count,
         otpRequests: otpRequests.count,
+        dsarRequests: dsarReasonScrub.count,
       },
       deleted: {
         ...plan.payload.deleted,
@@ -745,6 +776,7 @@ async function buildDeactivatePlan(
       variantGeneratedQuestions: 0,
       authIdentities: 0,
       otpRequests: 0,
+      dsarRequests: 0,
     },
     deleted: {
       errorBookEntries: 0,
@@ -805,6 +837,7 @@ async function buildDeactivatePlan(
     familyLinks,
     guardianConsentsAsChild,
     guardianConsentsAsGuardian,
+    dsarRequests,
   ] = await Promise.all([
     prisma.errorBookEntry.count({ where: { userId } }),
     entryIds.length ? prisma.variantGroup.count({ where: { entryId: { in: entryIds } } }) : 0,
@@ -830,6 +863,7 @@ async function buildDeactivatePlan(
     }),
     prisma.guardianConsent.count({ where: { childUserId: userId } }),
     prisma.guardianConsent.count({ where: { guardianUserId: userId } }),
+    prisma.dsarRequest.count({ where: { userId, reason: { not: null } } }),
   ]);
 
   return {
@@ -845,6 +879,7 @@ async function buildDeactivatePlan(
         variantGeneratedQuestions,
         authIdentities,
         otpRequests,
+        dsarRequests,
       },
       deleted: {
         errorBookEntries,

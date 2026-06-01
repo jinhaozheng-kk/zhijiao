@@ -25,6 +25,7 @@ export async function seedTestUsers(prisma: PrismaClient) {
     { id: "dev-parent-02",  phone: "13800000009", name: "测试家长 02", persona: Persona.PARENT,  gradeLevel: null,          isMinor: false, roles: [] },  // Plan 11: 专给 family-link.spec.ts 用（绑定方）
     { id: "dev-student-05", phone: "13800000010", name: "测试学生 05", persona: Persona.STUDENT, gradeLevel: GradeLevel.G7, isMinor: true,  roles: [], birthYear: 2015, guardianConsentStatus: GuardianConsentStatus.PENDING },  // Plan 14a: <14 待监护人同意，专给 guardian-consent.spec.ts（发码方）
     { id: "dev-parent-03",  phone: "13800000011", name: "测试家长 03", persona: Persona.PARENT,  gradeLevel: null,          isMinor: false, roles: [] },  // Plan 14a: 专给 guardian-consent.spec.ts（绑定方）
+    { id: "dev-student-06", phone: "13800000012", name: "测试学生 06", persona: Persona.STUDENT, gradeLevel: GradeLevel.G9, isMinor: false, roles: [], birthYear: 2000, guardianConsentStatus: GuardianConsentStatus.NOT_REQUIRED },  // Plan 14b: 成年独占（注销会销号），专给 dsar.spec.ts
   ];
 
   for (const u of users) {

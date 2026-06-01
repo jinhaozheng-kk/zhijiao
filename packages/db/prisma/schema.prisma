@@ -44,6 +44,7 @@ enum SessionRevokeReason {
 enum OtpPurpose {
   LOGIN
   BIND_PHONE
+  DSAR_DELETION
 }
 
 model User {
@@ -77,6 +78,7 @@ model User {
   reviewedKpMatches   KpReconcileMatch[] @relation("KpReconcileReviewer") // Plan 9
   initiatedOpsActions OpsActionLog[]     @relation("OpsActionInitiator")
   opsActionLogs       OpsActionLog[]     @relation("OpsActionTarget")
+  dsarRequests        DsarRequest[]      @relation("UserDsarRequests")
 
   @@index([deletedAt])
   @@map("users")
@@ -860,4 +862,39 @@ model GuardianConsent {
   @@index([childUserId])
   @@index([guardianUserId])
   @@map("guardian_consents")
+}
+
+// === Plan 14b: DSAR 数据主体请求 ===
+enum DsarRequestType {
+  EXPORT
+  DELETION
+}
+
+enum DsarRequestStatus {
+  AWAITING_GUARDIAN
+  PENDING
+  COMPLETED
+  REJECTED
+  CANCELED
+}
+
+model DsarRequest {
+  id                       String            @id @default(cuid())
+  userId                   String            @map("user_id")
+  type                     DsarRequestType
+  status                   DsarRequestStatus @default(PENDING)
+  isMinor                  Boolean           @default(false) @map("is_minor")
+  reason                   String?
+  requestedAt              DateTime          @default(now()) @map("requested_at")
+  dueAt                    DateTime          @map("due_at")
+  resolvedAt               DateTime?         @map("resolved_at")
+  resolvedByRef            String?           @map("resolved_by_ref")
+  resolutionNote           String?           @map("resolution_note")
+  guardianApprovedByUserId String?           @map("guardian_approved_by_user_id")
+  guardianApprovedAt       DateTime?         @map("guardian_approved_at")
+  createdAt                DateTime          @default(now()) @map("created_at")
+  user                     User              @relation("UserDsarRequests", fields: [userId], references: [id], onDelete: Cascade)
+  @@index([status, dueAt])
+  @@index([userId])
+  @@map("dsar_requests")
 }

@@ -22,7 +22,7 @@ export function hashCode(code: string, phone: string, pepper: string): string {
 
 export interface IssueOtpInput {
   phone: string;
-  purpose: "LOGIN" | "BIND_PHONE";
+  purpose: "LOGIN" | "BIND_PHONE" | "DSAR_DELETION";
   ipCreated?: string | null;
   userAgent?: string | null;
   pepper: string;
@@ -68,10 +68,16 @@ export async function issueOtp(prisma: PrismaClient, input: IssueOtpInput): Prom
 // counter — useless for rate limiting). Each predicate-on-update is
 // individually atomic, which is what we actually need.
 /** 校验：失败抛 AuthError，成功返回 otpId。命中即标记 consumed */
-export async function verifyOtp(prisma: PrismaClient, phone: string, code: string, pepper: string): Promise<{ otpId: string }> {
+export async function verifyOtp(
+  prisma: PrismaClient,
+  phone: string,
+  code: string,
+  pepper: string,
+  purpose?: "LOGIN" | "BIND_PHONE" | "DSAR_DELETION",
+): Promise<{ otpId: string }> {
   const now = new Date();
   const row = await prisma.otpRequest.findFirst({
-    where: { phone, consumedAt: null, expiredAt: null, expiresAt: { gt: now } },
+    where: { phone, consumedAt: null, expiredAt: null, expiresAt: { gt: now }, ...(purpose ? { purpose } : {}) },
     orderBy: { createdAt: "desc" },
   });
   if (!row) throw new AuthError("OTP_EXPIRED");

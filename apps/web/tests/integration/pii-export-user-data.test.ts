@@ -196,6 +196,29 @@ async function seedExportFixture() {
       kpIds: [],
     },
   });
+  // Plan 14b: DSAR rows — export must whitelist (no free-text reason).
+  await prisma.dsarRequest.create({
+    data: {
+      userId: user.id,
+      type: "EXPORT",
+      status: "COMPLETED",
+      isMinor: false,
+      requestedAt: new Date(),
+      dueAt: new Date(),
+      resolvedAt: new Date(),
+    },
+  });
+  await prisma.dsarRequest.create({
+    data: {
+      userId: user.id,
+      type: "DELETION",
+      status: "PENDING",
+      isMinor: false,
+      reason: "我的手机 13800138000",
+      requestedAt: new Date(),
+      dueAt: new Date(),
+    },
+  });
   await prisma.modelCall.create({
     data: {
       taskKind: "TUTOR_ADHOC",
@@ -219,7 +242,9 @@ describe("exportUserData", () => {
       await seedExportFixture();
 
     const result = await exportUserData(prisma, user.id);
-    expect(result.schemaVersion).toBe("2026-05-26");
+    expect(result.schemaVersion).toBe("2026-05-31");
+    expect(result.dsarRequests.length).toBe(2);
+    expect(JSON.stringify(result.dsarRequests)).not.toContain("我的手机");
     expect(result.userId).toBe(user.id);
     expect(result.user).toMatchObject({
       name: "Alice",

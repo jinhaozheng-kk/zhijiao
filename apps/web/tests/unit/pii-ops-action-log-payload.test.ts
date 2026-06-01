@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 const FORBIDDEN_TEXT =
-  /(?:\b1[3-9]\d{9}\b|openid|unionid|wx_|rawBody|stemMd|actualAnswerMd|requestJson|responseJson|ipCreated|userAgent|outPath|parent_user_id|student_user_id|counterpartUserId|birth_year|birthYear|guardian_user_id|child_user_id|[A-Za-z]:\\|\/tmp\/)/i;
+  /(?:\b1[3-9]\d{9}\b|openid|unionid|wx_|rawBody|stemMd|actualAnswerMd|requestJson|responseJson|ipCreated|userAgent|outPath|parent_user_id|student_user_id|counterpartUserId|birth_year|birthYear|guardian_user_id|child_user_id|dsar_reason|resolution_note|[A-Za-z]:\\|\/tmp\/)/i;
 
 const ROOT_KEYS: Record<string, string[]> = {
   DEACTIVATE_USER: ["deleted", "dryRun", "scrubbed"],
