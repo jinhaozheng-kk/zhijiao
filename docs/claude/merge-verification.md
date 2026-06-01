@@ -34,9 +34,9 @@
 29. **Prisma schema 字段合并后先 regenerate client**：凡是 merge 包含 `packages/db/prisma/schema.prisma` 新字段 / enum / relation，主 worktree 先跑 `pnpm.cmd --filter @zhijiao/db db:generate`，再跑 `pnpm.cmd exec turbo typecheck --force`。否则 stale Prisma Client 会在 typecheck 报找不到新字段
 30. **KpAlias subject 隔离 unique idx 落库**（Plan 9 §2.1）：`docker exec zhijiao-postgres psql -U postgres -d zhijiao -c "\d kp_aliases"` 应见 `UNIQUE (subject_id, normalized_alias)`。同 alias 跨 subject 允许，同 subject 内唯一
 31. **三个 sync 调用点都包 try/catch**（Plan 9 §3.4.2 / 红线 #1）：`Select-String -Path apps/web/server/routers/tutor.ts,apps/web/server/routers/error.ts,apps/web/server/routers/variant.ts -Pattern "reconcileHintsSync" -Context 2,5` 每处必须出现在 `try { ... } catch` 块内 + `logger.warn` 兜底
-32. **sourceRefType=VARIANT_ITEM 永不写 QuestionKPLink**（Plan 9 §3.3 / 红线 #2）：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/kp-reconcile-sync-variant.test.ts` 应全绿（含 BACKFILL+VARIANT_ITEM 测例守门 source vs sourceRefType 分流条件）
+32. **sourceRefType=VARIANT_ITEM LINK 到变式题、不写 parent link**（Plan 9 §3.3 / 红线 #2）：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/kp-reconcile-sync-variant.test.ts` 应全绿（含 BACKFILL+VARIANT_ITEM 测例守门 source vs sourceRefType 分流条件）
 33. **LINKED→REJECTED 反悔入口未暴露**（Plan 9 §5.5 / 红线 #10）：`grep -rn "unlinkIfOrphan" apps/web/server/routers apps/web/scripts` 应 0 命中。Plan 9 只 export helper + 文档化清理 SQL；unit test import 它走 helper 不算"用户入口"
-34. **backfill 脚本幂等**（Plan 9 §7.2）：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/kp-reconcile-backfill.test.ts` 应全绿（覆盖第二次跑 alreadySeen 计数 + 行数不变）
+34. **backfill 脚本幂等 + 变式 LINK 到变式题**（Plan 9 §7.2 / Plan 12 cleanup）：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/kp-reconcile-backfill.test.ts` 应全绿（覆盖第二次跑 alreadySeen 计数 + 行数不变；VARIANT_ITEM 命中走 LINKED 到变式题、不再 PENDING_REVIEW）
 35. **注销支持页 placeholder 不能误当正式信息**（Plan 6 §6.1）：`Select-String -Path apps/web/app/support/deactivate/page.tsx -Pattern "XXXXX|support@zhijiao.example"` 应命中；prod ship 前必须替换公众号 / 邮箱域名 / 运营主体 / ICP 号
 36. **VariantGroup.entry 已改 Cascade**（Plan 6 §2）：`docker exec zhijiao-postgres psql -U postgres -d zhijiao -c "\d variant_groups"` 应见 `ON DELETE CASCADE`，保证注销删 ErrorBookEntry 时变式组/题跟随删除
 37. **WechatPayEvent.rawBody 可 nullable**（Plan 6 §2）：`docker exec zhijiao-postgres psql -U postgres -d zhijiao -c "\d wechat_pay_events"` 应见 `raw_body` nullable；GC medium bucket 才能 scrub raw body
@@ -44,11 +44,11 @@
 39. **USER_DEACTIVATED auth guard 在位**（Plan 6 §3）：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/pii-deleted-user-auth-guard.test.ts` 应全绿；refresh route 应 401 + 清 cookies
 40. **OpsActionLog payload 不含 PII**（Plan 6 §2.4）：`pnpm.cmd --filter @zhijiao/web test -- tests/unit/pii-ops-action-log-payload.test.ts` 应全绿；禁止 phone/openid/rawBody/requestJson/outPath 等进入 payload
 41. **PII GC dry-run smoke**（Plan 6 §5）：`pnpm.cmd --filter @zhijiao/web pii:gc-sweep --dry-run` 应打印 results 且不写 `OpsActionLog`
-42. **VariantItem.questionId FK/unique 已落库**（Plan 12 §2）：`docker exec zhijiao-postgres psql -U postgres -d zhijiao -c "\d variant_items"` 应见 `question_id`、`variant_items_question_id_key`、`ON DELETE RESTRICT`
-43. **VariantItem backfill 0 残留**（Plan 12 §4.4）：三条探针均应 count=0：`variant_items WHERE question_id IS NULL`；`variant_items JOIN questions WHERE q.source IS DISTINCT FROM 'VARIANT_GENERATED'`；`q.created_by_user_id IS NOT NULL AND q.created_by_user_id != vg.user_id`
+42. **VariantItem.questionId FK/unique 已落库**（Plan 12 §2 / Plan 12 cleanup）：`docker exec zhijiao-postgres psql -U postgres -d zhijiao -c "\d variant_items"` 应见 `question_id`、`variant_items_question_id_key`、`ON DELETE RESTRICT`，且 `question_id` 为 `not null`
+43. **VariantItem ↔ Question 完整性不变量**（Plan 12 §4.4 / Plan 12 cleanup）：`variant_items WHERE question_id IS NULL` 已由 schema NOT NULL 强制（见探针 42，无需 backfill）；另两条仍应 count=0：`variant_items JOIN questions WHERE q.source IS DISTINCT FROM 'VARIANT_GENERATED'`；`q.created_by_user_id IS NOT NULL AND q.created_by_user_id != vg.user_id`
 44. **Promoted variant KP link 不污染 parent**（Plan 12 R2/R5）：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/kp-reconcile-sync-variant-promoted.test.ts` 应全绿，且断言 `KpReconcileMatch.questionId === QuestionKPLink.questionId === VariantItem.questionId`
 45. **VARIANT_GENERATED owner-only**（Plan 12 §6）：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/variant-question-access-owner-only.test.ts` 应全绿；cross-user 返回 `NOT_FOUND / QUESTION_NOT_FOUND` 且不写 DEBIT
-46. **Backfill CLI smoke**（Plan 12 §4）：`pnpm.cmd --filter @zhijiao/web variant:backfill-questions --dry-run` 应 exit 0；脚本不得 import `server/lib/question.js` 或 `server-only`
+46. **(已退役)** —— `variant:backfill-questions` 脚本于 Plan 12 cleanup 退役（questionId NOT NULL 后无 null 可补），原 smoke 探针删除。
 47. **Assignment 变量计费不越权扣费**（Plan 10）：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/assignment-generate-billing.test.ts` 应全绿；跨班级 / 不存在 classroom 不写 DEBIT。
 48. **Assignment 权限不泄露存在性**（Plan 10）：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/assignment-permissions.test.ts` 应全绿；跨教师 / 跨学生返回 `NOT_FOUND` 而非 `FORBIDDEN`。
 49. **Assignment 状态机锁定发布快照**（Plan 10）：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/assignment-state-machine.test.ts` 应全绿；发布后 `updateDraft` 返回 `ASSIGNMENT_STATE_CHANGED`。
