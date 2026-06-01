@@ -90,29 +90,37 @@ describe("processBatch (kp-reconcile-pending core)", () => {
     expect(link.weight).toBe(0.92);
   });
 
-  it("confidence >= 0.85 + sourceRefType=VARIANT_ITEM → PENDING_REVIEW + 不写 QuestionKPLink (红线 #2)", async () => {
-    const { kpId, questionId } = await seedSubjectKpQuestion();
-    const m = await seedUnmatched(
-      questionId,
-      "VARIANT_ITEM",
-      "linear",
-      "clrelid000000000000000091",
-    );
+  it("confidence >= 0.85 + sourceRefType=VARIANT_ITEM → LINKED 到变式题（Plan 12 cleanup）", async () => {
+    const subject = await prisma.subject.create({ data: { code: "math", name: "数学" } });
+    const kp = await prisma.knowledgePoint.create({
+      data: { subjectId: subject.id, code: "kp-a", name: "KP-A", difficulty: 2 },
+    });
+    // 变式题（异步路径只用 match.questionId；此处直接 seed 变式 Question）
+    const variantQuestion = await prisma.question.create({
+      data: { subjectId: subject.id, stemMd: "variant", type: "ESSAY", status: "DRAFT", source: "VARIANT_GENERATED" },
+    });
+    const m = await prisma.kpReconcileMatch.create({
+      data: {
+        questionId: variantQuestion.id, // Task 5 后变式 UNMATCHED 行记变式题 id
+        kpId: null, rawHint: "linear", normalizedHint: "linear",
+        source: "VARIANT_ITEM", sourceRefType: "VARIANT_ITEM", sourceRefId: "clrelid000000000000000091",
+        matchVia: null, confidence: null, status: "UNMATCHED",
+      },
+    });
     const adapter = makeAdapter(({ matchIds }) =>
-      matchIds.map((matchId) => ({ matchId, kpId, confidence: 0.95 })),
+      matchIds.map((matchId) => ({ matchId, kpId: kp.id, confidence: 0.95 })),
     );
     const router = new AiRouter({ prisma, adapter });
 
     const r = await processBatch(prisma, router, { limit: 50, thresholds: THRESHOLDS });
-    expect(r.batches[0]!.linked).toBe(0);
-    expect(r.batches[0]!.pendingReview).toBe(1);
+    expect(r.batches[0]!.linked).toBe(1);
+    expect(r.batches[0]!.pendingReview).toBe(0);
 
     const reread = await prisma.kpReconcileMatch.findUniqueOrThrow({ where: { id: m.id } });
-    expect(reread.status).toBe("PENDING_REVIEW");
-    expect(reread.reviewReason).toBe("VARIANT_TO_PARENT_NEEDS_REVIEW");
-    expect(reread.kpId).toBe(kpId);
+    expect(reread.status).toBe("LINKED");
+    expect(reread.kpId).toBe(kp.id);
     expect(reread.confidence).toBe(0.95);
-    expect(await prisma.questionKPLink.count({ where: { questionId, kpId } })).toBe(0);
+    expect(await prisma.questionKPLink.count({ where: { questionId: variantQuestion.id, kpId: kp.id } })).toBe(1);
   });
 
   it("confidence in [0.6, 0.85) → PENDING_REVIEW(LLM_CONFIDENCE_BAND)", async () => {
