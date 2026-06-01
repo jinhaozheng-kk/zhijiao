@@ -104,4 +104,24 @@ describe("reconcileHintsSync — sourceRefType=VARIANT_ITEM 链到变式题，�
     expect(await prisma.questionKPLink.count({ where: { questionId: variantQuestion.id, kpId } })).toBe(1);
     expect(await prisma.questionKPLink.count({ where: { questionId: parentQuestion.id } })).toBe(0);
   });
+
+  it("UNMATCHED 变式 hint → match 行记在变式题（不是 parent）—— linchpin", async () => {
+    const { parentQuestion, variantQuestion, variantItem } = await seedPromotedVariant();
+
+    const r = await reconcileHintsSync(prisma, {
+      questionId: parentQuestion.id,
+      hints: ["完全没有对应知识点的提示词"],
+      source: "VARIANT_ITEM",
+      sourceRefType: "VARIANT_ITEM",
+      sourceRefId: variantItem.id,
+    });
+
+    expect(r.linked).toBe(0);
+    expect(r.queued).toBe(1);
+    const match = await prisma.kpReconcileMatch.findFirstOrThrow({
+      where: { sourceRefType: "VARIANT_ITEM", sourceRefId: variantItem.id },
+    });
+    expect(match.status).toBe("UNMATCHED");
+    expect(match.questionId).toBe(variantQuestion.id); // 关键：变式题 id，非 parent
+  });
 });

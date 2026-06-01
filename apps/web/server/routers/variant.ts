@@ -119,13 +119,12 @@ export const variantRouter = router({
         });
       });
 
-      // Plan 9: 每个 VariantItem 的 knowledgePointHints 都过 reconcile。
-      // sourceRefType=VARIANT_ITEM 在 service 层永不自动写 parent QuestionKPLink
-      // （红线 #2）—— 命中 EXACT/ALIAS 也只到 PENDING_REVIEW。
+      // Plan 9 + Plan 12: 每个 VariantItem 的 knowledgePointHints 过 reconcile。
+      // sourceRefType=VARIANT_ITEM 永不写 PARENT QuestionKPLink（红线 #2）——
+      // 命中 EXACT/ALIAS 直接 LINK 到变式题自己的 Question。
       // 在 $transaction 之外做，避免 reconcile 失败 rollback 已写好的 VariantGroup/Items。
-      // await + try/catch + logger.warn 兜底（红线 #1）。
-      // Plan 12: caller still passes the parent question id as subject context;
-      // reconcileHintsSync internally uses item.questionId when present.
+      // await + try/catch + logger.warn 兜底（红线 #1）。caller 传 parent question 作 subject 上下文；
+      // reconcileHintsSync 内部解析 VariantItem.questionId 作 link 目标。
       for (const item of result.items) {
         try {
           await reconcileHintsSync(ctx.db, {
