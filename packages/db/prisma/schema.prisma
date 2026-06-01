@@ -728,7 +728,7 @@ enum KpReconcileMatchVia {
 
 enum KpReconcileMatchStatus {
   UNMATCHED       // sync 未命中，等异步 LLM
-  PENDING_REVIEW  // 等人工：LLM 中档置信 / VARIANT_ITEM 待写 parent
+  PENDING_REVIEW  // 等人工：LLM 中档置信带 [review, autoLink)
   LINKED          // 已写 QuestionKPLink
   REJECTED        // 人工拒绝
   DROPPED         // LLM 低置信 / NO_MATCH

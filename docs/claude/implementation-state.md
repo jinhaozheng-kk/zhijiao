@@ -77,7 +77,7 @@
 - `QuestionKPLink` 仍是唯一权威映射，新表 `KpAlias`（subject 内 normalizedAlias 唯一）+ `KpReconcileMatch`（hint→kp 审计队列）做支撑
 - `reconcileHintsSync(prisma, { questionId, hints, source, sourceRefType, sourceRefId })` 在 `tutor.ask` / `error.diagnose` / `variant.generateForEntry` 三处 body 接入，**await + try/catch**，失败不破坏主流程
 - 同步只跑 EXACT (KP.name/code) → ALIAS 表 → 命中即 LINKED + upsert QuestionKPLink（weight=max(existing, 1.0)）
-- 关键：Plan 12 后 `sourceRefType=VARIANT_ITEM` 分两路：`VariantItem.questionId` 非空时 EXACT/ALIAS 直接 LINKED 到 variant Question 的 `QuestionKPLink`；`questionId` 为空时仍走旧 `PENDING_REVIEW(reviewReason=VARIANT_TO_PARENT_NEEDS_REVIEW)` migration safety。永不自动污染 parent QuestionKPLink；判分流条件是 sourceRefType 不是 source
+- 关键：`sourceRefType=VARIANT_ITEM` 经 `findUniqueOrThrow` 解析 `VariantItem.questionId`（Plan 12 cleanup 后恒非空），EXACT/ALIAS 直接 LINKED 到 variant Question 的 `QuestionKPLink`，未命中的 UNMATCHED 行也记 variant question id。永不自动污染 **parent** QuestionKPLink；判分流条件是 sourceRefType 不是 source（旧 `VARIANT_TO_PARENT_NEEDS_REVIEW` 两路分支已于 cleanup 退役，见下方「VariantItem 升格现状」段）
 - 异步 LLM 走 `pnpm.cmd --filter @zhijiao/web kp:reconcile-pending [-- --limit N]`，三档 (≥0.85 / ≥0.6 / <0.6) 分流 LINKED / PENDING_REVIEW(LLM_CONFIDENCE_BAND) / DROPPED；matchId 对齐写回（不靠 rawHint）；LLM 漏返/重复 retry 2 次再 PARSE_FAILED；多返不属于本批 matchId 静默忽略
 - 人工 review 走 `pnpm.cmd --filter @zhijiao/web kp:review`，单键 a/r/m <code>/alias <code>/s/q；service 层 `apps/web/server/lib/kp-reconcile.ts` 的 `approveMatch / rejectMatch / remapMatch / learnAliasAndLink / unlinkIfOrphan` 5 个函数可被未来 `/ops/kp-reconcile` Web 页面复用
 - alias 冲突防御：`learnAliasAndLink` 检测 `(subjectId, normalizedAlias)` 已映射到不同 KP → 抛 `KpAliasConflictError`，不静默覆盖
