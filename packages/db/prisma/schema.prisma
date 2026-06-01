@@ -503,7 +503,7 @@ model VariantGroup {
 model VariantItem {
   id                  String        @id @default(cuid())
   groupId             String        @map("group_id")
-  questionId          String?       @unique @map("question_id")
+  questionId          String        @unique @map("question_id")
   level               VariantLevel
   position            Int
   stemMd              String        @db.Text @map("stem_md")
@@ -512,7 +512,7 @@ model VariantItem {
   createdAt           DateTime      @default(now()) @map("created_at")
 
   group               VariantGroup  @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  question            Question?     @relation(fields: [questionId], references: [id], onDelete: Restrict)
+  question            Question      @relation(fields: [questionId], references: [id], onDelete: Restrict)
 
   @@unique([groupId, level])
   @@index([groupId, position])
@@ -736,6 +736,7 @@ enum KpReconcileMatchStatus {
 
 enum KpReconcileReviewReason {
   LLM_CONFIDENCE_BAND
+  // @deprecated Plan 12 cleanup：不再被任何代码读写；Postgres 无 ALTER TYPE DROP VALUE，保留为历史 tombstone。
   VARIANT_TO_PARENT_NEEDS_REVIEW
 }
 
