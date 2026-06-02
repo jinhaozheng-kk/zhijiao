@@ -1,13 +1,12 @@
 import { AppShell } from "@/components/shell/AppShell";
 import { PageHeader } from "@/components/ui/page-header";
-import { isDemoModeEnabled } from "@/server/demo/config";
 import { PortraitView } from "./portrait-view";
 
 export const dynamic = "force-dynamic";
 
 export default function PortraitPage() {
   return (
-    <AppShell role="STUDENT" demoMode={isDemoModeEnabled()}>
+    <AppShell>
       <PageHeader
         eyebrow="学生学习"
         title="我的学情"

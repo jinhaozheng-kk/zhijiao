@@ -2,6 +2,7 @@
 
 import { trpc } from "@/lib/trpc-client";
 import { StatePanel } from "@/components/ui/state-panel";
+import { SkeletonList } from "@/components/ui/skeleton";
 import { StatusPill } from "@/components/ui/status-pill";
 import { EntryActions } from "../entry-actions";
 
@@ -30,7 +31,7 @@ export function EntryDetail({ entryId }: { entryId: string }) {
   const q = trpc.error.getById.useQuery({ entryId }, { retry: false });
 
   if (q.isLoading) {
-    return <div className="mt-6"><StatePanel title="加载中..." /></div>;
+    return <div className="mt-6"><SkeletonList rows={4} /></div>;
   }
 
   if (q.isError) {

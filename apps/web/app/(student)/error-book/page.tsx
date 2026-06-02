@@ -2,14 +2,13 @@ import { Suspense } from "react";
 import { AppShell } from "@/components/shell/AppShell";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatePanel } from "@/components/ui/state-panel";
-import { isDemoModeEnabled } from "@/server/demo/config";
 import { ErrorBookList } from "./error-book-list";
 
 export const dynamic = "force-dynamic";
 
 export default function ErrorBookPage() {
   return (
-    <AppShell role="STUDENT" demoMode={isDemoModeEnabled()}>
+    <AppShell>
       <PageHeader
         eyebrow="学生学习"
         title="错题本"

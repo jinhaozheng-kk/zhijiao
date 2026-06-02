@@ -13,7 +13,7 @@ export default function TutorPage({
   const demo = isDemoModeEnabled() && searchParams?.demo === "1";
 
   return (
-    <AppShell role="STUDENT" demoMode={demo}>
+    <AppShell>
       <PageHeader
         eyebrow="学生学习"
         title="AI 答疑"

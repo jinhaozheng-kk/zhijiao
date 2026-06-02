@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { AppShell } from "@/components/shell/AppShell";
 import { PageHeader } from "@/components/ui/page-header";
-import { isDemoModeEnabled } from "@/server/demo/config";
 import { EntryDetail } from "./entry-detail";
 
 export const dynamic = "force-dynamic";
@@ -12,7 +11,7 @@ export default function EntryDetailPage({
   params: { entryId: string };
 }) {
   return (
-    <AppShell role="STUDENT" demoMode={isDemoModeEnabled()}>
+    <AppShell>
       <div className="text-sm">
         <Link href="/error-book" className="text-slate-500 hover:underline">
           ← 返回错题本

@@ -3,7 +3,6 @@ import { prisma } from "@zhijiao/db";
 import { AppShell } from "@/components/shell/AppShell";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatePanel } from "@/components/ui/state-panel";
-import { isDemoModeEnabled } from "@/server/demo/config";
 import { GenerationForm } from "./generation-form";
 
 export const dynamic = "force-dynamic";
@@ -21,7 +20,7 @@ export default async function NewAssignmentPage({
   const className = classroom.id.startsWith("demo-") ? "初二 3 班" : classroom.name;
 
   return (
-    <AppShell role="TEACHER" demoMode={isDemoModeEnabled()}>
+    <AppShell>
       <div className="text-sm">
         <Link
           href={`/teacher/classes/${classroom.id}`}

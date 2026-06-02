@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc-client";
 import { StatePanel } from "@/components/ui/state-panel";
+import { SkeletonList } from "@/components/ui/skeleton";
 import { TIER_COLOR, tierLabel } from "@/lib/mastery-copy";
 import { AdviceCard } from "./advice-card";
 
@@ -9,7 +10,7 @@ export function PortraitView() {
   const [window, setWindow] = useState<"D30" | "D90" | "ALL">("D90");
   const q = trpc.analytics.profile.mine.useQuery({ window });
 
-  if (q.isLoading) return <StatePanel title="加载中..." />;
+  if (q.isLoading) return <SkeletonList rows={3} />;
   const profile = q.data?.profile;
   if (!profile || !profile.hasData) {
     return (

@@ -4,7 +4,6 @@ import { AppShell } from "@/components/shell/AppShell";
 import { ActionCard } from "@/components/ui/action-card";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatePanel } from "@/components/ui/state-panel";
-import { isDemoModeEnabled } from "@/server/demo/config";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +18,7 @@ export default async function TeacherHome() {
   });
 
   return (
-    <AppShell role="TEACHER" demoMode={isDemoModeEnabled()}>
+    <AppShell>
       <PageHeader
         eyebrow="教师教学"
         title="教师工作台"

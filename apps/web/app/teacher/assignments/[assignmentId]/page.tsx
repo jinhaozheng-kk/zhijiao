@@ -3,7 +3,6 @@ import { prisma } from "@zhijiao/db";
 import { AppShell } from "@/components/shell/AppShell";
 import { PageHeader } from "@/components/ui/page-header";
 import { assignmentStatusLabel, assignmentTierLabel } from "@/lib/assignment-copy";
-import { isDemoModeEnabled } from "@/server/demo/config";
 import { GradingPanel } from "./grading-panel";
 
 export const dynamic = "force-dynamic";
@@ -48,7 +47,7 @@ export default async function AssignmentDetailPage({
   );
 
   return (
-    <AppShell role="TEACHER" demoMode={isDemoModeEnabled()}>
+    <AppShell>
       <div className="text-sm">
         <Link
           href={`/teacher/classes/${assignment.classroomId}`}

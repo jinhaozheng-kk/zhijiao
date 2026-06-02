@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { copyForReason } from "@/lib/error-copy";
 import { trpc } from "@/lib/trpc-client";
+import { AiGeneratingPanel } from "@/components/ui/ai-generating-panel";
 
 interface EntryActionsProps {
   entryId: string;
@@ -147,10 +148,14 @@ export function EntryActions({ entryId, status }: EntryActionsProps) {
         </button>
       </div>
 
+      {variantMutation.isPending && (
+        <AiGeneratingPanel label="举一反三生成中…" />
+      )}
+
       {err && (
         <p className="text-sm text-red-600" data-testid="entry-actions-error">
           {err}
-          {insufficientBalance && (
+          {insufficientBalance ? (
             <>
               {" "}
               <Link
@@ -160,6 +165,18 @@ export function EntryActions({ entryId, status }: EntryActionsProps) {
               >
                 去充值
               </Link>
+            </>
+          ) : (
+            <>
+              {" "}
+              <button
+                type="button"
+                onClick={onGenerateVariant}
+                className="underline"
+                data-testid="entry-actions-retry"
+              >
+                重试
+              </button>
             </>
           )}
         </p>

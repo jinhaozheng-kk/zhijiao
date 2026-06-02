@@ -1,13 +1,12 @@
 import { AppShell } from "@/components/shell/AppShell";
 import { PageHeader } from "@/components/ui/page-header";
-import { isDemoModeEnabled } from "@/server/demo/config";
 import { ParentView } from "./parent-view";
 
 export const dynamic = "force-dynamic";
 
 export default function ParentHome() {
   return (
-    <AppShell role="PARENT" demoMode={isDemoModeEnabled()}>
+    <AppShell>
       <PageHeader
         eyebrow="家长视角"
         title="家长视角"
