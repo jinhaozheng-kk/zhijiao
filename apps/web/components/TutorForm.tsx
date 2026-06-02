@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { trpc } from "@/lib/trpc-client";
 import { copyForReason } from "@/lib/error-copy";
+import { AiGeneratingPanel } from "@/components/ui/ai-generating-panel";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "@/server/routers/_root";
 import { ErrorAnalysisCard } from "@/app/(student)/tutor/error-analysis-card";
@@ -99,10 +100,12 @@ export function TutorForm({ demo = false }: { demo?: boolean }) {
         {ask.isPending ? "讲解中..." : "讲一讲"}
       </button>
 
+      {ask.isPending && <AiGeneratingPanel label="AI 讲解生成中…" />}
+
       {err && (
         <p data-testid="tutor-error" className="rounded-lg bg-red-50 p-4 text-sm text-red-700">
           {err}
-          {insufficientBalance && (
+          {insufficientBalance ? (
             <>
               {" "}
               <Link
@@ -112,6 +115,18 @@ export function TutorForm({ demo = false }: { demo?: boolean }) {
               >
                 去充值
               </Link>
+            </>
+          ) : (
+            <>
+              {" "}
+              <button
+                type="button"
+                onClick={submit}
+                className="underline"
+                data-testid="tutor-retry"
+              >
+                重试
+              </button>
             </>
           )}
         </p>
