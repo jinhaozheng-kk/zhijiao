@@ -31,16 +31,20 @@ describe("demo data seed", () => {
         },
       }),
     ).resolves.toBe(1);
-    await expect(
-      prisma.studentAssignment.count({
-        where: {
-          studentUserId: DEMO_IDS.studentUserId,
-          status: "SUBMITTED",
-          submittedAt: { not: null },
-          gradedAt: null,
-        },
-      }),
-    ).resolves.toBe(1);
+    // The seeded student assignment must be internally coherent: a graded
+    // answer (WRONG + gradedAt + error-book writeback) only hangs off a
+    // GRADED StudentAssignment with gradedAt set — never a SUBMITTED one.
+    const studentAssignment = await prisma.studentAssignment.findFirstOrThrow({
+      where: { studentUserId: DEMO_IDS.studentUserId },
+      include: { answers: true },
+    });
+    expect(studentAssignment.status).toBe("GRADED");
+    expect(studentAssignment.submittedAt).not.toBeNull();
+    expect(studentAssignment.gradedAt).not.toBeNull();
+    const answer = studentAssignment.answers[0];
+    expect(answer.gradeStatus).not.toBe("UNGRADED");
+    expect(answer.gradedAt).not.toBeNull();
+    expect(answer.errorBookEntryId).not.toBeNull();
 
     const studentWallet = await prisma.wallet.findUniqueOrThrow({
       where: { userId: DEMO_IDS.studentUserId },

@@ -512,20 +512,24 @@ export async function resetDemoData(prisma: PrismaClient) {
       },
       update: {
         tierId: IDS.tierConsolidationId,
-        status: "SUBMITTED",
+        // GRADED (not SUBMITTED): the seeded answer below is fully graded
+        // (WRONG + gradedAt + error-book writeback), so the parent
+        // StudentAssignment must be GRADED with gradedAt set to stay
+        // consistent with the Plan 10 grading state machine.
+        status: "GRADED",
         suggestedTier: "CONSOLIDATION",
         submittedAt,
-        gradedAt: null,
+        gradedAt,
       },
       create: {
         id: IDS.studentAssignmentId,
         assignmentId: IDS.assignmentId,
         studentUserId: DEMO_SEED_IDS.studentUserId,
         tierId: IDS.tierConsolidationId,
-        status: "SUBMITTED",
+        status: "GRADED",
         suggestedTier: "CONSOLIDATION",
         submittedAt,
-        gradedAt: null,
+        gradedAt,
       },
     });
 
@@ -854,12 +858,12 @@ export async function verifyDemoData(
       1,
     ],
     [
-      "submitted student assignment",
+      "graded student assignment",
       prisma.studentAssignment.count({
         where: {
           id: IDS.studentAssignmentId,
           studentUserId: DEMO_SEED_IDS.studentUserId,
-          status: "SUBMITTED",
+          status: "GRADED",
         },
       }),
       1,
