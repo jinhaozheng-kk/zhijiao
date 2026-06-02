@@ -93,11 +93,21 @@ function seedE2eDb(): void {
   });
 }
 
+async function resetDemoFixtures(): Promise<void> {
+  process.env.DATABASE_URL = TEST_DB_URL;
+  process.env.DEMO_MODE = "1";
+  const { prisma } = await import("@zhijiao/db");
+  const { resetDemoData } = await import("../server/demo/seed");
+  await resetDemoData(prisma);
+  await prisma.$disconnect();
+}
+
 export default async function globalSetup(): Promise<void> {
   clearStaleState();
   await resetE2eDb();
   await resetE2eRateLimits();
   seedE2eDb();
+  await resetDemoFixtures();
 
   // 单串命令，shell: true 走 cmd.exe /c。spawn 返回的是 cmd.exe 的 PID；teardown 用
   // taskkill /T /F 会沿树往下走，仍能干掉 next start 本身。如果到 teardown 时这个 PID

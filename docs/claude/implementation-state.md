@@ -146,3 +146,9 @@
 - `playwright.config.ts` `workers: 1`：串行消除并行 worker 抢回血 token 的饿死（重试的 login 把刚回血的 token 输给别的 worker）；串行反而更快（并行版把时间烧在 backoff 上）。
 - `e2e/global-setup.ts` `resetE2eRateLimits()`：每次跑前清 Redis 里 `otp:send:*`/`otp:verify:*`/`register:*`/`refresh:*` 桶——否则限频桶跨运行残留，第 N 次跑把桶抽干、第 N+1 次起步即空（同样输入两次跑一绿一红）。
 - 注：`tour-shots/` 与 `e2e/product-tour.spec.ts` 是未追踪的本地可视化巡演产物，不在 CI 套件内，别误提交。
+
+**Demo-ready product hardening status (Plan 16):**
+- `/demo` is gated by `DEMO_MODE=1` and issues real sessions for fixed demo identities.
+- Demo data is reset by `pnpm demo:reset` and verified by `pnpm verify:demo`.
+- Main student/teacher/parent paths share the 初二数学 demo story and use the polished product shell.
+- AI 出卷 and AI 课件 are shown only as Plan 17/18 preview entries; no production workflow is implemented in Plan 16.

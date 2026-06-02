@@ -76,3 +76,11 @@
 71. **dsar service 无 server-only**（Plan 14b）：`Select-String -Path apps/web/server/lib/dsar.ts -Pattern "server-only"` 应 0 命中（被 tsx CLI import，server-only default 会 throw）；`pnpm.cmd --filter @zhijiao/web dsar:list --status all` 应 exit 0 打印 JSON（证明 tsx 不报 server-only）。
 72. **export fail-CLOSE + 未成年数据闸门**（Plan 14b）：`Select-String packages/auth/src/ratelimit/rules.ts -Pattern "RULE_DSAR_EXPORT.*close"` 命中；`pnpm.cmd --filter @zhijiao/web test -- tests/integration/dsar-cli.test.ts` 应全绿（含"未成年 PENDING 无 guardianApprovedByUserId → 拒"/"有则放行"/"AWAITING_GUARDIAN 不可 fulfill"/二次 fulfill 守卫，7 测例）。
 73. **verifyOtp purpose 隔离**（Plan 14b）：`pnpm.cmd --filter @zhijiao/auth test -- tests/otp-purpose.test.ts` 应全绿（LOGIN 码不能用 DSAR purpose 验、不传 purpose 零回归）。`fulfillDeletion` **不**得包 `prisma.$transaction`（`deactivateUser` 自带交互事务，嵌套会 throw）—— `Select-String apps/web/server/lib/dsar.ts -Pattern "\$transaction" -Context 0,8` 在 fulfillDeletion 段应 0 命中。
+
+## Plan 16 demo probes
+
+- Run `pnpm demo:reset` and `pnpm verify:demo`.
+- Open `/demo` with `DEMO_MODE=1` and confirm student, teacher, and parent entries work.
+- Confirm `/demo` is blocked when `DEMO_MODE=0`.
+- Run `pnpm --filter @zhijiao/web test:e2e -- e2e/demo.spec.ts`.
+- Confirm AI 出卷 and AI 课件 are preview-only entries in Plan 16.
