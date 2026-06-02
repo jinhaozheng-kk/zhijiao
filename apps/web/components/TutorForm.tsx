@@ -3,14 +3,18 @@
 import Link from "next/link";
 import { useState } from "react";
 import { trpc } from "@/lib/trpc-client";
+import { copyForReason } from "@/lib/error-copy";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "@/server/routers/_root";
 import { ErrorAnalysisCard } from "@/app/(student)/tutor/error-analysis-card";
 
 type TutorAskResult = inferRouterOutputs<AppRouter>["tutor"]["ask"];
 
-export function TutorForm() {
-  const [questionStem, setQ] = useState("");
+const demoQuestion =
+  "已知一次函数 y = 2x - 3 的图像与 x 轴交于点 A。求点 A 的坐标，并说明这个交点和方程 2x - 3 = 0 的关系。";
+
+export function TutorForm({ demo = false }: { demo?: boolean }) {
+  const [questionStem, setQ] = useState(demo ? demoQuestion : "");
   const [grade, setGrade] = useState<"G5"|"G6"|"G7"|"G8"|"G9"|"G10"|"G11"|"G12">("G8");
   const [actualAnswer, setActualAnswer] = useState("");
   const [showActualAnswer, setShowActualAnswer] = useState(false);
@@ -38,7 +42,7 @@ export function TutorForm() {
     onError: (e) => {
       const reason = (e.data as { reason?: string } | undefined)?.reason;
       setInsufficientBalance(reason === "INSUFFICIENT_BALANCE");
-      setErr(e.message);
+      setErr(copyForReason(reason));
       setData(null);
       setPendingReqId(null);
     },
@@ -51,11 +55,11 @@ export function TutorForm() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 rounded-lg bg-white p-6 shadow-sm ring-1 ring-slate-200">
       <select
         value={grade}
         onChange={(e) => setGrade(e.target.value as typeof grade)}
-        className="border rounded px-2 py-1"
+        className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
       >
         {(["G5","G6","G7","G8","G9","G10","G11","G12"] as const).map(g => (
           <option key={g} value={g}>{g}</option>
@@ -64,7 +68,7 @@ export function TutorForm() {
       <textarea
         value={questionStem}
         onChange={(e) => setQ(e.target.value)}
-        className="w-full border rounded p-2 min-h-32"
+        className="min-h-32 w-full rounded-lg border border-slate-200 p-3 text-sm leading-6 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
         placeholder="粘贴或输入题目"
         data-testid="tutor-input"
       />
@@ -72,7 +76,7 @@ export function TutorForm() {
       <details
         open={showActualAnswer}
         onToggle={(e) => setShowActualAnswer((e.target as HTMLDetailsElement).open)}
-        className="border rounded p-3 text-sm"
+        className="rounded-lg border border-slate-200 p-3 text-sm"
       >
         <summary className="cursor-pointer text-slate-700">
           我的作答（可选，能让错因分析更准确）
@@ -80,7 +84,7 @@ export function TutorForm() {
         <textarea
           value={actualAnswer}
           onChange={(e) => setActualAnswer(e.target.value)}
-          className="mt-2 w-full border rounded p-2 min-h-20"
+          className="mt-2 min-h-20 w-full rounded-lg border border-slate-200 p-3 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
           placeholder="粘贴或输入你的作答"
           data-testid="tutor-actual-answer"
         />
@@ -89,14 +93,14 @@ export function TutorForm() {
       <button
         disabled={ask.isPending || questionStem.trim().length === 0}
         onClick={submit}
-        className="rounded bg-slate-900 px-4 py-2 text-white disabled:opacity-50"
+        className="rounded-full bg-slate-950 px-5 py-3 text-sm font-medium text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
         data-testid="tutor-submit"
       >
         {ask.isPending ? "讲解中..." : "讲一讲"}
       </button>
 
       {err && (
-        <p data-testid="tutor-error" className="text-red-600">
+        <p data-testid="tutor-error" className="rounded-lg bg-red-50 p-4 text-sm text-red-700">
           {err}
           {insufficientBalance && (
             <>
@@ -114,7 +118,7 @@ export function TutorForm() {
       )}
 
       {data && (
-        <div data-testid="tutor-output" className="space-y-2">
+        <div data-testid="tutor-output" className="space-y-2 rounded-lg bg-slate-50 p-4">
           <h2 className="font-bold">{data.restatement}</h2>
           <ul className="list-disc pl-6">
             {data.steps.map((s, i) => <li key={i}>{s}</li>)}

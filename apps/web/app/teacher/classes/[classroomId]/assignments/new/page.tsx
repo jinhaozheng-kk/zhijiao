@@ -1,5 +1,9 @@
 import Link from "next/link";
 import { prisma } from "@zhijiao/db";
+import { AppShell } from "@/components/shell/AppShell";
+import { PageHeader } from "@/components/ui/page-header";
+import { StatePanel } from "@/components/ui/state-panel";
+import { isDemoModeEnabled } from "@/server/demo/config";
 import { GenerationForm } from "./generation-form";
 
 export const dynamic = "force-dynamic";
@@ -14,22 +18,24 @@ export default async function NewAssignmentPage({
     include: { subject: { include: { knowledgePoints: true } } },
   });
   const firstKp = classroom.subject.knowledgePoints[0];
+  const className = classroom.id.startsWith("demo-") ? "初二 3 班" : classroom.name;
 
   return (
-    <main className="mx-auto max-w-5xl px-6 py-8">
+    <AppShell role="TEACHER" demoMode={isDemoModeEnabled()}>
       <div className="text-sm">
         <Link
           href={`/teacher/classes/${classroom.id}`}
           className="text-slate-500 hover:underline"
         >
-          Back to class
+          返回班级
         </Link>
       </div>
-      <div className="mt-4">
-        <h1 className="text-2xl font-semibold">Generate Tiered Assignment</h1>
-        <p className="mt-1 text-sm text-slate-600">
-          {classroom.name} · {classroom.subject.name}
-        </p>
+      <div className="mt-5">
+        <PageHeader
+          eyebrow="分层作业"
+          title="生成分层作业"
+          description={`${className} · ${classroom.subject.name}`}
+        />
       </div>
       {firstKp ? (
         <GenerationForm
@@ -38,10 +44,10 @@ export default async function NewAssignmentPage({
           defaultKpId={firstKp.id}
         />
       ) : (
-        <section className="mt-6 rounded border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-          This subject has no knowledge points yet.
-        </section>
+        <div className="mt-6">
+          <StatePanel title="还没有知识点" description="当前学科还没有可用于生成作业的知识点。" />
+        </div>
       )}
-    </main>
+    </AppShell>
   );
 }

@@ -23,34 +23,33 @@ export function GenerationForm({
     onSuccess: (result) => {
       router.push(`/teacher/assignments/${result.assignmentId}/edit`);
     },
-    onError: (e) => setError(e.message),
+    onError: () => setError("作业状态已变化，请刷新后再继续。"),
   });
   const disabled = mutation.isPending || total <= 0 || total > 30;
 
   return (
-    <section className="mt-6 rounded border bg-white p-4">
+    <section className="mt-6 rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-200">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h2 className="font-medium">Generation Criteria</h2>
+          <h2 className="font-medium">生成条件</h2>
           <p className="mt-1 text-sm text-slate-600">
-            Drafts must be reviewed before publishing. Cost is charged per
-            generated question.
+            草稿需要教师确认后再发布。按生成题量扣除 credits。
           </p>
         </div>
-        <div className="rounded border px-3 py-2 text-sm">
+        <div className="rounded-lg border px-3 py-2 text-sm">
           {total} credits
         </div>
       </div>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-3">
-        <TierCountInput label="Basic" value={basic} onChange={setBasic} />
+        <TierCountInput label="基础" value={basic} onChange={setBasic} />
         <TierCountInput
-          label="Consolidation"
+          label="巩固"
           value={consolidation}
           onChange={setConsolidation}
         />
         <TierCountInput
-          label="Challenge"
+          label="提升"
           value={challenge}
           onChange={setChallenge}
         />
@@ -59,7 +58,7 @@ export function GenerationForm({
       <div className="mt-4 flex flex-wrap items-center gap-3">
         <button
           type="button"
-          className="rounded bg-slate-900 px-4 py-2 text-sm text-white disabled:opacity-50"
+          className="rounded-full bg-slate-950 px-5 py-3 text-sm font-medium text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
           disabled={disabled}
           onClick={() => {
             setError(null);
@@ -79,10 +78,10 @@ export function GenerationForm({
             });
           }}
         >
-          {mutation.isPending ? "Generating..." : "Generate Draft"}
+          {mutation.isPending ? "生成中..." : "生成草稿"}
         </button>
         {total > 30 && (
-          <p className="text-sm text-red-600">Maximum 30 questions.</p>
+          <p className="text-sm text-red-600">最多 30 道题。</p>
         )}
         {error && <p className="text-sm text-red-600">{error}</p>}
       </div>
@@ -103,7 +102,7 @@ function TierCountInput({
     <label className="text-sm">
       <span className="font-medium text-slate-700">{label}</span>
       <input
-        className="mt-1 w-full rounded border px-3 py-2"
+        className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
         type="number"
         min={0}
         max={10}

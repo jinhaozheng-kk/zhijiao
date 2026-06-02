@@ -1,18 +1,24 @@
 "use client";
 import Link from "next/link";
 import { useState } from "react";
+import { copyForReason } from "@/lib/error-copy";
 import { trpc } from "@/lib/trpc-client";
 
 export function AdviceCard({ window }: { window: "D30" | "D90" | "ALL" }) {
   const [pendingReqId, setPendingReqId] = useState<string | null>(null);
   const [insufficient, setInsufficient] = useState(false);
+  const [errorCopy, setErrorCopy] = useState<string | null>(null);
   const advise = trpc.analytics.profile.generateAdvice.useMutation({
     onError: (e) => {
       const reason = (e.data as { reason?: string } | undefined)?.reason;
       setInsufficient(reason === "INSUFFICIENT_BALANCE");
+      setErrorCopy(copyForReason(reason));
       setPendingReqId(null);
     },
-    onSuccess: () => setPendingReqId(null),
+    onSuccess: () => {
+      setErrorCopy(null);
+      setPendingReqId(null);
+    },
   });
 
   function onGenerate() {
@@ -36,7 +42,7 @@ export function AdviceCard({ window }: { window: "D30" | "D90" | "ALL" }) {
       </button>
       {advise.error && (
         <p className="mt-2 text-sm text-red-600" data-testid="advice-error">
-          {advise.error.message}
+          {errorCopy}
           {insufficient && (
             <>
               {" "}

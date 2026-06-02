@@ -1,11 +1,12 @@
 "use client";
 import { trpc } from "@/lib/trpc-client";
+import { copyForReason } from "@/lib/error-copy";
 import { TIER_COLOR, tierLabel } from "@/lib/mastery-copy";
 
 export function ClassDiagnosis({ classroomId }: { classroomId: string }) {
   const q = trpc.analytics.classroom.diagnosis.useQuery({ classroomId, window: "D90" });
   if (q.isLoading) return <p className="text-sm text-slate-500">加载诊断中…</p>;
-  if (q.error) return <p className="text-sm text-red-600">{q.error.message}</p>;
+  if (q.error) return <p className="text-sm text-red-600">{copyForReason((q.error.data as { reason?: string } | undefined)?.reason)}</p>;
   const d = q.data?.diagnosis;
   if (!d || d.kpStats.length === 0)
     return (

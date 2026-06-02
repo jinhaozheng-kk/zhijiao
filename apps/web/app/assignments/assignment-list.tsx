@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { assignmentTierLabel, studentAssignmentStatusLabel } from "@/lib/assignment-copy";
 import { trpc } from "@/lib/trpc-client";
 
 export function AssignmentList() {
@@ -36,7 +37,8 @@ export function AssignmentList() {
               </h2>
               <p className="mt-1 text-sm text-slate-600">
                 {studentAssignment.assignment.classroom.name} ·{" "}
-                {studentAssignment.status} · {studentAssignment.tier.level}
+                {studentAssignmentStatusLabel(studentAssignment.status)} ·{" "}
+                {assignmentTierLabel(studentAssignment.tier.level)}
               </p>
             </div>
             <Link
@@ -47,13 +49,13 @@ export function AssignmentList() {
               }
               className="rounded border px-3 py-2 text-sm"
             >
-              Open
+              打开
             </Link>
           </div>
         ))}
         {query.data.assignments.length === 0 && (
           <p className="px-4 py-6 text-sm text-slate-600">
-            No assignments are available.
+            暂无作业。
           </p>
         )}
       </div>

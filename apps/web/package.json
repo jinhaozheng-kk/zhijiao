@@ -16,6 +16,8 @@
     "kp:review": "tsx scripts/kp-review.ts",
     "user:deactivate": "tsx scripts/user-deactivate.ts",
     "user:export": "tsx scripts/user-export.ts",
+    "demo:reset": "tsx scripts/demo-reset.ts",
+    "verify:demo": "tsx scripts/demo-verify.ts",
     "pii:gc-sweep": "tsx scripts/pii-gc-sweep.ts",
     "dsar:list": "tsx scripts/dsar-list.ts",
     "dsar:fulfill": "tsx scripts/dsar-fulfill.ts",

@@ -2,6 +2,11 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import {
+  gradeStatusLabel,
+  rootCauseLabel,
+  studentAssignmentStatusLabel,
+} from "@/lib/assignment-copy";
 import { trpc } from "@/lib/trpc-client";
 
 const ROOT_CAUSES = [
@@ -28,9 +33,9 @@ interface GradingAnswer {
 
 export function GradingPanel({ answers }: { answers: GradingAnswer[] }) {
   return (
-    <section className="overflow-hidden rounded border bg-white">
+    <section className="overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-slate-200">
       <div className="border-b px-4 py-3">
-        <h2 className="font-medium">Grading</h2>
+        <h2 className="font-medium">批改</h2>
       </div>
       <div className="divide-y">
         {answers.map((answer) => (
@@ -38,7 +43,7 @@ export function GradingPanel({ answers }: { answers: GradingAnswer[] }) {
         ))}
         {answers.length === 0 && (
           <p className="px-4 py-6 text-sm text-slate-600">
-            No submitted answers yet.
+            还没有提交的作答。
           </p>
         )}
       </div>
@@ -63,7 +68,7 @@ function GradingRow({ answer }: { answer: GradingAnswer }) {
       setError(null);
       router.refresh();
     },
-    onError: (e) => setError(e.message),
+    onError: () => setError("作业状态已变化，请刷新后再继续。"),
   });
   const needsRootCause = gradeStatus === "PARTIAL" || gradeStatus === "WRONG";
 
@@ -72,14 +77,14 @@ function GradingRow({ answer }: { answer: GradingAnswer }) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="text-sm font-medium">{answer.studentName}</div>
-          <div className="mt-1 text-xs uppercase text-slate-500">
-            {answer.studentAssignmentStatus} · {answer.gradeStatus}
+          <div className="mt-1 text-xs text-slate-500">
+            {studentAssignmentStatusLabel(answer.studentAssignmentStatus as "ASSIGNED" | "SUBMITTED" | "GRADED")} · {gradeStatusLabel(answer.gradeStatus)}
           </div>
         </div>
         <button
           type="button"
           disabled={mutation.isPending}
-          className="rounded bg-slate-900 px-3 py-2 text-sm text-white disabled:opacity-50"
+          className="rounded-full bg-slate-950 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
           onClick={() =>
             mutation.mutate({
               answerId: answer.id,
@@ -89,29 +94,29 @@ function GradingRow({ answer }: { answer: GradingAnswer }) {
             })
           }
         >
-          {mutation.isPending ? "Saving..." : "Save Grade"}
+          {mutation.isPending ? "保存中..." : "保存批改"}
         </button>
       </div>
 
       <div className="mt-3 space-y-2 text-sm">
         <p>
-          <span className="text-slate-500">Question:</span> {answer.itemStemMd}
+          <span className="text-slate-500">题目：</span> {answer.itemStemMd}
         </p>
         <p>
-          <span className="text-slate-500">Expected:</span>{" "}
+          <span className="text-slate-500">参考：</span>{" "}
           {answer.itemAnswerMd}
         </p>
         <p>
-          <span className="text-slate-500">Submitted:</span>{" "}
+          <span className="text-slate-500">作答：</span>{" "}
           {answer.answerJsonText}
         </p>
       </div>
 
       <div className="mt-4 grid gap-3 md:grid-cols-3">
         <label className="text-sm">
-          Grade
+          批改结果
           <select
-            className="mt-1 w-full rounded border px-3 py-2"
+            className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
             value={gradeStatus}
             onChange={(e) =>
               setGradeStatus(
@@ -119,15 +124,15 @@ function GradingRow({ answer }: { answer: GradingAnswer }) {
               )
             }
           >
-            <option value="CORRECT">Correct</option>
-            <option value="PARTIAL">Partial</option>
-            <option value="WRONG">Wrong</option>
+            <option value="CORRECT">正确</option>
+            <option value="PARTIAL">部分正确</option>
+            <option value="WRONG">错误</option>
           </select>
         </label>
         <label className="text-sm">
-          Root cause
+          错因
           <select
-            className="mt-1 w-full rounded border px-3 py-2"
+            className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
             value={rootCause}
             disabled={!needsRootCause}
             onChange={(e) =>
@@ -136,15 +141,15 @@ function GradingRow({ answer }: { answer: GradingAnswer }) {
           >
             {ROOT_CAUSES.map((cause) => (
               <option key={cause} value={cause}>
-                {cause}
+                {rootCauseLabel(cause)}
               </option>
             ))}
           </select>
         </label>
         <label className="text-sm md:col-span-1">
-          Feedback
+          反馈
           <input
-            className="mt-1 w-full rounded border px-3 py-2"
+            className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
             value={teacherFeedbackMd}
             onChange={(e) => setTeacherFeedbackMd(e.target.value)}
           />

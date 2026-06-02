@@ -3,3 +3,24 @@
 @tailwind utilities;
 
 body { font-family: ui-sans-serif, system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+
+:root {
+  color-scheme: light;
+}
+
+* {
+  letter-spacing: 0;
+}
+
+button,
+a,
+input,
+textarea,
+select {
+  -webkit-tap-highlight-color: transparent;
+}
+
+::selection {
+  background: #dbeafe;
+  color: #0f172a;
+}

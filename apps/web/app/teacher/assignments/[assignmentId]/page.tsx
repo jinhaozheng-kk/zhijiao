@@ -1,5 +1,9 @@
 import Link from "next/link";
 import { prisma } from "@zhijiao/db";
+import { AppShell } from "@/components/shell/AppShell";
+import { PageHeader } from "@/components/ui/page-header";
+import { assignmentStatusLabel, assignmentTierLabel } from "@/lib/assignment-copy";
+import { isDemoModeEnabled } from "@/server/demo/config";
 import { GradingPanel } from "./grading-panel";
 
 export const dynamic = "force-dynamic";
@@ -44,57 +48,58 @@ export default async function AssignmentDetailPage({
   );
 
   return (
-    <main className="mx-auto max-w-6xl px-6 py-8">
+    <AppShell role="TEACHER" demoMode={isDemoModeEnabled()}>
       <div className="text-sm">
         <Link
           href={`/teacher/classes/${assignment.classroomId}`}
           className="text-slate-500 hover:underline"
         >
-          Back to class
+          返回班级
         </Link>
       </div>
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold">{assignment.title}</h1>
-          <p className="mt-1 text-sm text-slate-600">
-            {assignment.classroom.name} · {assignment.status}
-          </p>
-        </div>
-        {assignment.status === "DRAFT" && (
-          <Link
-            href={`/teacher/assignments/${assignment.id}/edit`}
-            className="rounded border px-4 py-2 text-sm"
-          >
-            Edit Draft
-          </Link>
-        )}
+      <div className="mt-5">
+        <PageHeader
+          eyebrow="作业批改"
+          title={assignment.title}
+          description={`${assignment.classroom.name} · ${assignmentStatusLabel(assignment.status)}`}
+          action={
+            assignment.status === "DRAFT" ? (
+              <Link
+                href={`/teacher/assignments/${assignment.id}/edit`}
+                className="rounded-full border border-slate-200 px-4 py-2 text-sm font-medium"
+              >
+                编辑草稿
+              </Link>
+            ) : null
+          }
+        />
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[320px_1fr]">
         <aside className="space-y-6">
-          <section className="rounded border bg-white p-4">
-            <h2 className="font-medium">Summary</h2>
+          <section className="rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-200">
+            <h2 className="font-medium">概览</h2>
             <dl className="mt-3 space-y-2 text-sm">
               <div className="flex justify-between gap-4">
-                <dt className="text-slate-500">Tiers</dt>
+                <dt className="text-slate-500">层级</dt>
                 <dd>{assignment.tiers.length}</dd>
               </div>
               <div className="flex justify-between gap-4">
-                <dt className="text-slate-500">Students</dt>
+                <dt className="text-slate-500">学生</dt>
                 <dd>{assignment.studentAssignments.length}</dd>
               </div>
               <div className="flex justify-between gap-4">
-                <dt className="text-slate-500">Answers</dt>
+                <dt className="text-slate-500">作答</dt>
                 <dd>{answers.length}</dd>
               </div>
             </dl>
           </section>
-          <section className="rounded border bg-white p-4">
-            <h2 className="font-medium">Tier Snapshot</h2>
+          <section className="rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-200">
+            <h2 className="font-medium">分层快照</h2>
             <ul className="mt-3 space-y-2 text-sm text-slate-700">
               {assignment.tiers.map((tier) => (
                 <li key={tier.id}>
-                  {tier.level}: {tier.items.length} items
+                  {assignmentTierLabel(tier.level)}：{tier.items.length} 题
                 </li>
               ))}
             </ul>
@@ -103,6 +108,6 @@ export default async function AssignmentDetailPage({
 
         <GradingPanel answers={answers} />
       </div>
-    </main>
+    </AppShell>
   );
 }

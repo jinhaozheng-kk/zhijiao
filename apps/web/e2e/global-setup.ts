@@ -76,7 +76,7 @@ async function resetE2eRateLimits(): Promise<void> {
   const { default: Redis } = await import("ioredis");
   const redis = new Redis(url);
   try {
-    for (const pattern of ["otp:send:*", "otp:verify:*", "register:*", "refresh:*"]) {
+    for (const pattern of ["otp:send:*", "otp:verify:*", "register:*", "refresh:*", "analytics:*"]) {
       const keys = await redis.keys(pattern);
       if (keys.length) await redis.del(...keys);
     }
@@ -93,11 +93,21 @@ function seedE2eDb(): void {
   });
 }
 
+async function resetDemoFixtures(): Promise<void> {
+  process.env.DATABASE_URL = TEST_DB_URL;
+  process.env.DEMO_MODE = "1";
+  const { prisma } = await import("@zhijiao/db");
+  const { resetDemoData } = await import("../server/demo/seed");
+  await resetDemoData(prisma);
+  await prisma.$disconnect();
+}
+
 export default async function globalSetup(): Promise<void> {
   clearStaleState();
   await resetE2eDb();
   await resetE2eRateLimits();
   seedE2eDb();
+  await resetDemoFixtures();
 
   // 单串命令，shell: true 走 cmd.exe /c。spawn 返回的是 cmd.exe 的 PID；teardown 用
   // taskkill /T /F 会沿树往下走，仍能干掉 next start 本身。如果到 teardown 时这个 PID
@@ -113,6 +123,7 @@ export default async function globalSetup(): Promise<void> {
       // E2E_TEST_HOOKS=1 alone is sufficient to unlock /api/__test__/last-otp and route SMS
       // to sharedTestSmsAdapter inside the spawned server process.
       E2E_TEST_HOOKS: "1",
+      DEMO_MODE: "1",
       SMS_USE_MOCK: "true",
       WECHAT_OAUTH_USE_MOCK: "true",
       WECHAT_PAY_USE_MOCK: "true",
