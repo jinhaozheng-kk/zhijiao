@@ -2,9 +2,12 @@ import { defineConfig } from "vitest/config";
 import { fileURLToPath } from "node:url";
 
 export default defineConfig({
+  // Match Next.js / tsconfig automatic JSX runtime so .tsx tests can render
+  // components with react-dom/server without importing React explicitly.
+  esbuild: { jsx: "automatic" },
   test: {
     environment: "node",
-    include: ["tests/**/*.test.ts"],
+    include: ["tests/**/*.test.{ts,tsx}"],
     setupFiles: ["./tests/setup.ts"],
     pool: "threads", poolOptions: { threads: { singleThread: true } },
     testTimeout: 20_000,

@@ -1,5 +1,6 @@
 "use client";
 import { StatePanel } from "@/components/ui/state-panel";
+import { SkeletonList } from "@/components/ui/skeleton";
 import { trpc } from "@/lib/trpc-client";
 
 export function ChildPortrait({ childId }: { childId: string }) {
@@ -21,7 +22,7 @@ export function ChildPortrait({ childId }: { childId: string }) {
     </section>
   ) : null;
 
-  if (q.isLoading) return <div className="space-y-4">{approvalBlock}<StatePanel title="加载中..." /></div>;
+  if (q.isLoading) return <div className="space-y-4">{approvalBlock}<SkeletonList rows={3} /></div>;
   if (q.error) return <div className="space-y-4">{approvalBlock}<div data-testid="child-error"><StatePanel title="读取学情失败" description="请稍后再试。" /></div></div>;
   // 家长视角后端返回 { relationship:'parent', view }
   const view = q.data && "view" in q.data ? q.data.view : null;

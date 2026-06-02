@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { ActionCard } from "@/components/ui/action-card";
 import { StatePanel } from "@/components/ui/state-panel";
+import { SkeletonList } from "@/components/ui/skeleton";
 import { copyForReason } from "@/lib/error-copy";
 import { trpc } from "@/lib/trpc-client";
 
@@ -60,6 +61,7 @@ export function ParentView() {
       <section>
         <h2 className="mb-3 font-medium">我的孩子</h2>
         <div className="grid gap-4" data-testid="children-list">
+          {children.isLoading && <SkeletonList rows={2} />}
           {children.data?.children.map((c) => (
             <div key={c.linkId} className="space-y-3">
               <ActionCard

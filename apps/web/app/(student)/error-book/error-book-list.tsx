@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { trpc } from "@/lib/trpc-client";
 import { StatePanel } from "@/components/ui/state-panel";
+import { SkeletonList } from "@/components/ui/skeleton";
 
 const ROOT_CAUSE_LABEL: Record<string, string> = {
   CONCEPT_CONFUSION: "概念混淆",
@@ -58,7 +59,7 @@ export function ErrorBookList() {
         </Link>
       </nav>
 
-      {q.isLoading && <div className="mt-4"><StatePanel title="加载中..." /></div>}
+      {q.isLoading && <div className="mt-4"><SkeletonList rows={3} /></div>}
 
       {q.isError && (
         <div className="mt-4">
