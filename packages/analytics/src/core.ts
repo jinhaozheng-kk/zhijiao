@@ -58,7 +58,7 @@ export function aggregateMastery(args: {
   let overallW = 0;
   let overallWScore = 0;
   for (const s of args.samples) {
-    const w = decayWeight(s.ageDays, args.halfLifeDays);
+    const w = decayWeight(s.ageDays, args.halfLifeDays) * (s.sourceWeight ?? 1);
     const sc = scoreOf(s.gradeStatus);
     for (const kpId of s.kpIds) {
       const a = ensure(kpId);

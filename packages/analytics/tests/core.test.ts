@@ -72,3 +72,37 @@ describe("aggregateMastery", () => {
     expect(out.overallScore).toBeNull();
   });
 });
+
+describe("aggregateMastery sourceWeight", () => {
+  const wMeta = new Map([["kp1", "KP One"]]);
+
+  it("down-weights a sample so it contributes less to the weighted score", () => {
+    const res = aggregateMastery({
+      samples: [
+        { kpIds: ["kp1"], gradeStatus: "WRONG", ageDays: 0 },
+        { kpIds: ["kp1"], gradeStatus: "CORRECT", ageDays: 0, sourceWeight: 0.5 },
+      ],
+      errors: [],
+      kpMeta: wMeta,
+      halfLifeDays: 30,
+    });
+    const m = res.masteries.find((x) => x.kpId === "kp1")!;
+    expect(m.score).toBeLessThan(0.5);
+    expect(m.weightedSampleSize).toBeCloseTo(1.5, 4);
+  });
+
+  it("defaults sourceWeight to 1 (existing behavior unchanged)", () => {
+    const res = aggregateMastery({
+      samples: [
+        { kpIds: ["kp1"], gradeStatus: "WRONG", ageDays: 0 },
+        { kpIds: ["kp1"], gradeStatus: "CORRECT", ageDays: 0 },
+      ],
+      errors: [],
+      kpMeta: wMeta,
+      halfLifeDays: 30,
+    });
+    const m = res.masteries.find((x) => x.kpId === "kp1")!;
+    expect(m.score).toBeCloseTo(0.5, 4);
+    expect(m.weightedSampleSize).toBeCloseTo(2, 4);
+  });
+});
