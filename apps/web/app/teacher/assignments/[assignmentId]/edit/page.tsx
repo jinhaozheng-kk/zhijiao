@@ -1,5 +1,8 @@
 import Link from "next/link";
 import { prisma } from "@zhijiao/db";
+import { AppShell } from "@/components/shell/AppShell";
+import { PageHeader } from "@/components/ui/page-header";
+import { isDemoModeEnabled } from "@/server/demo/config";
 import { DraftEditor } from "./draft-editor";
 
 export const dynamic = "force-dynamic";
@@ -21,20 +24,21 @@ export default async function AssignmentEditPage({
   });
 
   return (
-    <main className="mx-auto max-w-6xl px-6 py-8">
+    <AppShell role="TEACHER" demoMode={isDemoModeEnabled()}>
       <div className="text-sm">
         <Link
           href={`/teacher/classes/${assignment.classroomId}`}
           className="text-slate-500 hover:underline"
         >
-          Back to class
+          返回班级
         </Link>
       </div>
-      <div className="mt-4">
-        <h1 className="text-2xl font-semibold">Edit Draft</h1>
-        <p className="mt-1 text-sm text-slate-600">
-          {assignment.classroom.name} · {assignment.status}
-        </p>
+      <div className="mt-5">
+        <PageHeader
+          eyebrow="作业草稿"
+          title="审核分层作业"
+          description={`${assignment.classroom.name} · ${assignment.status}`}
+        />
       </div>
       <DraftEditor
         assignmentId={assignment.id}
@@ -53,8 +57,8 @@ export default async function AssignmentEditPage({
             answerMd: item.answerMd,
             solutionMd: item.solutionMd,
           })),
-        }))}
+        }))} 
       />
-    </main>
+    </AppShell>
   );
 }
