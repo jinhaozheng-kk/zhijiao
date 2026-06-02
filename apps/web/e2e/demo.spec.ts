@@ -16,6 +16,7 @@ test("student demo opens tutoring path", async ({ page }) => {
   await expect(page).toHaveURL(/\/tutor/);
   await expect(page.getByRole("heading", { name: /AI 答疑/ })).toBeVisible();
   await expect(page.getByTestId("tutor-input")).toContainText(/一次函数/);
+  await expect(page.getByTestId("shell-identity")).toContainText("周予安");
 });
 
 test("teacher demo opens class workspace and shows next-stage AI cards", async ({ page }) => {
@@ -27,6 +28,10 @@ test("teacher demo opens class workspace and shows next-stage AI cards", async (
   await expect(page.getByRole("heading", { name: "AI 出卷" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "AI 课件" })).toBeVisible();
   await expect(page.getByRole("link", { name: /生成分层作业/ })).toBeVisible();
+  await expect(page.getByTestId("shell-identity")).toContainText("李老师");
+  await expect(
+    page.getByRole("link", { name: "作业", exact: true }),
+  ).toHaveAttribute("href", /\/teacher\/classes\/.*#assignments/);
 });
 
 test("parent demo opens calm learning portrait", async ({ page }) => {
