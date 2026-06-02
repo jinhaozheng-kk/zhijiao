@@ -8,3 +8,7 @@ export * from "./wechat/h5-oauth/mock.js";
 export * from "./wechat/h5-oauth/real.js";
 export * from "./wechat/h5-oauth/build.js";
 export * from "./wechat-pay/index.js";
+export * from "./storage/types.js";
+export * from "./storage/mock.js";
+export * from "./storage/real.js";
+export * from "./storage/build.js";

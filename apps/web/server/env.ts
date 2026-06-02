@@ -28,6 +28,8 @@ const Env = z
     SMS_USE_MOCK: z.enum(["true", "false"]).default("false"),
     WECHAT_OAUTH_USE_MOCK: z.enum(["true", "false"]).default("false"),
     WECHAT_PAY_USE_MOCK: z.enum(["true", "false"]).default("false"),
+    // Object storage defaults to mock (real Aliyun OSS is activated post-ICP).
+    STORAGE_USE_MOCK: z.enum(["true", "false"]).default("true"),
 
     // Real-mode credentials (checked by .refine below — optional at schema level
     // because they're only required when the corresponding USE_MOCK="false").
@@ -46,6 +48,11 @@ const Env = z
     WECHAT_PAY_CERT_SERIAL: z.string().optional(),
     WECHAT_PAY_PUB_KEY_FILE: z.string().optional(),
     WECHAT_PAY_NOTIFY_HOST: z.string().url().optional(),
+    ALIYUN_OSS_ACCESS_KEY_ID: z.string().optional(),
+    ALIYUN_OSS_ACCESS_KEY_SECRET: z.string().optional(),
+    ALIYUN_OSS_BUCKET: z.string().optional(),
+    ALIYUN_OSS_REGION: z.string().optional(),
+    ALIYUN_OSS_ENDPOINT: z.string().optional(),
     MOCK_WECHAT_PAY_SECRET: z
       .string()
       .min(16, "MOCK_WECHAT_PAY_SECRET must be >= 16 bytes")
@@ -120,6 +127,19 @@ const Env = z
       // mock match unset placeholders.
       message:
         "WECHAT_PAY_USE_MOCK=true requires MOCK_WECHAT_PAY_SECRET (>= 16 bytes) + WECHAT_PAY_APPID + WECHAT_PAY_MCHID",
+    },
+  )
+  .refine(
+    (e) =>
+      e.STORAGE_USE_MOCK === "true" ||
+      (!!e.ALIYUN_OSS_ACCESS_KEY_ID &&
+        !!e.ALIYUN_OSS_ACCESS_KEY_SECRET &&
+        !!e.ALIYUN_OSS_BUCKET &&
+        !!e.ALIYUN_OSS_REGION &&
+        !!e.ALIYUN_OSS_ENDPOINT),
+    {
+      message:
+        "Real object storage requires ALIYUN_OSS_ACCESS_KEY_ID + ALIYUN_OSS_ACCESS_KEY_SECRET + ALIYUN_OSS_BUCKET + ALIYUN_OSS_REGION + ALIYUN_OSS_ENDPOINT",
     },
   )
   .refine(
