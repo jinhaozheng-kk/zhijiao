@@ -9,6 +9,9 @@ import {
   TutoringInputSchema,
   TutoringOutputSchema,
   type TutoringOutput,
+  TutoringImageInputSchema,
+  TutoringImageOutputSchema,
+  type TutoringImageOutput,
   ErrorAnalysisInputSchema,
   ErrorAnalysisOutputSchema,
   type ErrorAnalysisOutput,
@@ -39,6 +42,18 @@ export class ComplianceRejectedError extends Error {
 
 function scanTutoringOutputForForbidden(out: TutoringOutput): string[] {
   const corpus = [
+    out.restatement,
+    out.finalAnswer,
+    ...out.knowledgePoints,
+    ...out.steps,
+    ...out.pitfalls,
+  ].join("\n");
+  return findForbidden(corpus);
+}
+
+function scanTutoringImageOutputForForbidden(out: TutoringImageOutput): string[] {
+  const corpus = [
+    out.stemTranscript,
     out.restatement,
     out.finalAnswer,
     ...out.knowledgePoints,
@@ -110,8 +125,9 @@ export class AiRouter {
       messages: Array<{ role: "system" | "user"; content: string }>;
       responseFormat: "json_object";
       temperature: number;
+      imageDataUrls?: string[];
     };
-    schema: z.ZodType<T>;
+    schema: z.ZodType<T, z.ZodTypeDef, unknown>;
     scanForbidden: (output: T) => string[];
     retryMessage?: string;
   }): Promise<T & { modelCallId: string }> {
@@ -313,6 +329,42 @@ export class AiRouter {
         lastError instanceof Error ? lastError.message : String(lastError)
       }`,
     );
+  }
+
+  // 图片/OCR 拍照答疑：单次多模态调用，qwen-vl 同时转写题面（stemTranscript）
+  // 与产出 hint-first 讲解。复用 runJsonTaskWithAudit（脱敏/合规/审计/重试一致），
+  // 仅多带 imageDataUrls。
+  async tutorImage(
+    input: unknown,
+  ): Promise<TutoringImageOutput & { modelCallId: string }> {
+    const parsed = TutoringImageInputSchema.parse(input);
+    const taskKind: TaskKind = "TUTOR_ASK_IMAGE";
+    const prompt = await loadPrompt("tutoring-image", this.opts.promptVersion ?? "v1");
+    const promptTemplateId = await ensurePromptInDb(this.opts.prisma, prompt);
+    const userContent = prompt.interpolate({
+      studentGrade: parsed.studentGrade ?? "G8",
+    });
+    const model = this.opts.modelOverride ?? TASK_MODEL_MAP[taskKind];
+    const request = {
+      model,
+      messages: [
+        {
+          role: "system" as const,
+          content: "你是严谨、面向中国 K12 的数学拍照辅导助手。",
+        },
+        { role: "user" as const, content: userContent },
+      ],
+      responseFormat: "json_object" as const,
+      temperature: 0.3,
+      imageDataUrls: [parsed.imageDataUrl],
+    };
+    return this.runJsonTaskWithAudit({
+      taskKind,
+      promptTemplateId,
+      request,
+      schema: TutoringImageOutputSchema,
+      scanForbidden: scanTutoringImageOutputForForbidden,
+    });
   }
 
   // Plan 4: error.diagnose backing call.

@@ -8,6 +8,8 @@ export interface AdapterRequest {
   messages: AdapterMessage[];
   responseFormat?: "json_object" | "text";
   temperature?: number;
+  // multimodal (qwen-vl): data URLs appended to the last user message.
+  imageDataUrls?: string[];
 }
 
 export interface AdapterResponse {

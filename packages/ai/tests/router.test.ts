@@ -136,3 +136,34 @@ describe("AiRouter.tutor", () => {
     expect(calls[0]!.userId).toBe("dev-student-01");
   });
 });
+
+describe("AiRouter.tutorImage (multimodal)", () => {
+  it("returns a stem transcript plus tutoring output and forwards the image", async () => {
+    let seenImages: string[] | undefined;
+    const adapter = {
+      name: "spy",
+      async call(req: { imageDataUrls?: string[] }) {
+        seenImages = req.imageDataUrls;
+        return {
+          content: JSON.stringify({
+            stemTranscript: "已知一次函数 y = 2x - 3，求与 x 轴交点的横坐标。",
+            restatement: "求一次函数与 x 轴交点。",
+            knowledgePoints: ["一次函数与一元一次方程关系"],
+            steps: ["令 y = 0", "解 2x - 3 = 0"],
+            pitfalls: ["别忘了 y=0"],
+            finalAnswer: "x = 1.5",
+          }),
+          model: "qwen-vl-plus",
+        };
+      },
+    };
+    const router = new AiRouter({ prisma, adapter, userId: "dev-student-01" });
+    const out = await router.tutorImage({
+      imageDataUrl: "data:image/png;base64,AAAA",
+      studentGrade: "G8",
+    });
+    expect(out.stemTranscript).toContain("一次函数");
+    expect(out.finalAnswer).toBe("x = 1.5");
+    expect(seenImages).toEqual(["data:image/png;base64,AAAA"]);
+  });
+});
