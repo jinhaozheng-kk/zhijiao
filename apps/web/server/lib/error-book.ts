@@ -38,6 +38,26 @@ export function nextReviewAtAfter(reviewCountAfter: number, now: Date): Date {
   return new Date(now.getTime() + REVIEW_INTERVALS_MS[safeIdx]!);
 }
 
+// Advance an ACTIVE error entry one rung along the fixed 5-step review ladder.
+// Shared by error.markReviewed and training.submitAttempt so the spacing logic
+// lives in exactly one place.
+export async function advanceReviewLadder(
+  db: PrismaClient,
+  entryId: string,
+  reviewCount: number,
+  now: Date,
+) {
+  const reviewCountAfter = reviewCount + 1;
+  return db.errorBookEntry.update({
+    where: { id: entryId },
+    data: {
+      reviewCount: reviewCountAfter,
+      lastReviewedAt: now,
+      nextReviewAt: nextReviewAtAfter(reviewCountAfter, now),
+    },
+  });
+}
+
 // spec §4.1 修订: P2002 helper — preserves Plan 4 spec "isErrorBookPartialUniqueP2002"
 // contract. Extracted as a single returnable so the partial-unique race detection
 // can't be expressed inline as `a && b && c || d` (which TS parses as
