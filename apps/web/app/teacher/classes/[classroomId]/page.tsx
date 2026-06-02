@@ -4,7 +4,6 @@ import { AppShell } from "@/components/shell/AppShell";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatePanel } from "@/components/ui/state-panel";
 import { assignmentStatusLabel } from "@/lib/assignment-copy";
-import { isDemoModeEnabled } from "@/server/demo/config";
 import { ClassDiagnosis } from "./class-diagnosis";
 
 export const dynamic = "force-dynamic";
@@ -28,7 +27,7 @@ export default async function TeacherClassPage({
   const className = classroom.id.startsWith("demo-") ? "初二 3 班" : classroom.name;
 
   return (
-    <AppShell role="TEACHER" demoMode={isDemoModeEnabled()}>
+    <AppShell>
       <div className="text-sm">
         <Link href="/teacher" className="text-slate-500 hover:underline">
           返回教师工作台
