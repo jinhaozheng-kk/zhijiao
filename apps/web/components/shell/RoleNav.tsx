@@ -3,7 +3,7 @@ import Link from "next/link";
 
 export type NavItem = { label: string; href: string; preview?: boolean };
 
-export function navForRole(role: Persona): NavItem[] {
+export function navForRole(role: Persona, classroomId?: string): NavItem[] {
   if (role === "STUDENT") {
     return [
       { label: "答疑", href: "/tutor" },
@@ -14,12 +14,16 @@ export function navForRole(role: Persona): NavItem[] {
   }
 
   if (role === "TEACHER") {
+    // All five teacher sections live on the class workspace page. Anchor into
+    // it when we know the teacher's classroom; otherwise degrade to /teacher.
+    const anchor = (frag: string) =>
+      classroomId ? `/teacher/classes/${classroomId}#${frag}` : "/teacher";
     return [
       { label: "班级", href: "/teacher" },
-      { label: "作业", href: "/teacher" },
-      { label: "学生", href: "/teacher" },
-      { label: "AI 出卷", href: "/teacher#ai-paper", preview: true },
-      { label: "AI 课件", href: "/teacher#ai-courseware", preview: true },
+      { label: "作业", href: anchor("assignments") },
+      { label: "学生", href: anchor("students") },
+      { label: "AI 出卷", href: anchor("ai-paper"), preview: true },
+      { label: "AI 课件", href: anchor("ai-courseware"), preview: true },
     ];
   }
 
@@ -30,10 +34,16 @@ export function navForRole(role: Persona): NavItem[] {
   ];
 }
 
-export function RoleNav({ role }: { role: Persona }) {
+export function RoleNav({
+  role,
+  classroomId,
+}: {
+  role: Persona;
+  classroomId?: string;
+}) {
   return (
     <nav className="flex flex-wrap gap-1 rounded-full bg-white p-1 shadow-sm ring-1 ring-slate-200">
-      {navForRole(role).map((item) => (
+      {navForRole(role, classroomId).map((item) => (
         <Link
           key={item.label}
           href={item.href}

@@ -59,7 +59,7 @@ export default async function TeacherClassPage({
       </section>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_320px]">
-        <section className="overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-slate-200">
+        <section id="assignments" className="overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-slate-200">
           <div className="border-b px-4 py-3">
             <h2 className="font-medium">分层作业</h2>
           </div>
@@ -129,7 +129,7 @@ export default async function TeacherClassPage({
               将支持按知识点生成课堂导入、讲解结构、例题、易错点和课堂练习。
             </p>
           </section>
-          <section className="rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-200">
+          <section id="students" className="rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-200">
             <h2 className="font-medium">学生</h2>
             <ul className="mt-3 space-y-2 text-sm text-slate-700">
               {students.slice(0, 10).map((member) => (

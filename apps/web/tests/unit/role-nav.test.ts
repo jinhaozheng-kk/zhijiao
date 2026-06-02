@@ -28,4 +28,26 @@ describe("role navigation", () => {
       "隐私",
     ]);
   });
+
+  it("teacher nav anchors into the class workspace when a classroom is known", () => {
+    const items = navForRole("TEACHER", "cls-1");
+    expect(items.find((i) => i.label === "作业")?.href).toBe(
+      "/teacher/classes/cls-1#assignments",
+    );
+    expect(items.find((i) => i.label === "学生")?.href).toBe(
+      "/teacher/classes/cls-1#students",
+    );
+    expect(items.find((i) => i.label === "AI 出卷")?.href).toBe(
+      "/teacher/classes/cls-1#ai-paper",
+    );
+  });
+
+  it("teacher nav falls back to /teacher with no classroom", () => {
+    expect(navForRole("TEACHER").every((i) => i.href.startsWith("/teacher"))).toBe(
+      true,
+    );
+    expect(navForRole("TEACHER").find((i) => i.label === "作业")?.href).toBe(
+      "/teacher",
+    );
+  });
 });
