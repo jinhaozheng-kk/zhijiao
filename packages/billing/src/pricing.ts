@@ -1,5 +1,6 @@
 export type ActionKind =
   | "TUTOR_ASK"
+  | "TUTOR_ASK_IMAGE"
   | "PAPER_GEN"
   | "LESSON_PLAN_GEN"
   | "PPT_GEN"
@@ -10,6 +11,7 @@ export type ActionKind =
 
 export const PRICING: Record<ActionKind, number> = {
   TUTOR_ASK: 1,
+  TUTOR_ASK_IMAGE: 2,
   PAPER_GEN: 5,
   LESSON_PLAN_GEN: 3,
   PPT_GEN: 5,

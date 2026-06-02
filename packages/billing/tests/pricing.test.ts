@@ -11,6 +11,8 @@ describe("priceOf", () => {
     expect(priceOf("VARIANT_GROUP_GEN")).toBe(3));
   it("ERROR_ANALYSIS = 1", () =>
     expect(priceOf("ERROR_ANALYSIS")).toBe(1));
+  it("TUTOR_ASK_IMAGE = 2 (vision premium over 1-credit text)", () =>
+    expect(priceOf("TUTOR_ASK_IMAGE")).toBe(2));
   it("LEARNING_ADVICE_GEN = 1", () =>
     expect(priceOf("LEARNING_ADVICE_GEN")).toBe(1));
   it("unknown kind throws", () => {
