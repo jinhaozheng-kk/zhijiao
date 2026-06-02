@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { copyForReason } from "@/lib/error-copy";
 import { trpc } from "@/lib/trpc-client";
 
 const ROOT_CAUSE_LABEL: Record<string, string> = {
@@ -96,7 +97,7 @@ export function ErrorAnalysisCard({
     onError: (e) => {
       const reason = (e.data as { reason?: string } | undefined)?.reason;
       setInsufficientBalance(reason === "INSUFFICIENT_BALANCE");
-      setErr(e.message);
+      setErr(copyForReason(reason));
       setPendingReqId(null);
     },
   });

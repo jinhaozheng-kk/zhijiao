@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { trpc } from "@/lib/trpc-client";
+import { copyForReason } from "@/lib/error-copy";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "@/server/routers/_root";
 import { ErrorAnalysisCard } from "@/app/(student)/tutor/error-analysis-card";
@@ -41,7 +42,7 @@ export function TutorForm({ demo = false }: { demo?: boolean }) {
     onError: (e) => {
       const reason = (e.data as { reason?: string } | undefined)?.reason;
       setInsufficientBalance(reason === "INSUFFICIENT_BALANCE");
-      setErr(e.message);
+      setErr(copyForReason(reason));
       setData(null);
       setPendingReqId(null);
     },

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { ActionCard } from "@/components/ui/action-card";
 import { StatePanel } from "@/components/ui/state-panel";
+import { copyForReason } from "@/lib/error-copy";
 import { trpc } from "@/lib/trpc-client";
 
 export function ParentView() {
@@ -17,6 +18,7 @@ export function ParentView() {
       utils.family.listMyChildren.invalidate();
     },
   });
+  const bindReason = (bind.error?.data as { reason?: string } | undefined)?.reason;
 
   return (
     <div className="space-y-6">
@@ -52,7 +54,7 @@ export function ParentView() {
             我确认是该未成年人的监护人，已知悉其学习数据将用于提供 AI 答疑、错题本与学情服务，并同意其使用本平台。若孩子未满 14 周岁，须勾选本项方可激活账号；同意可随时撤回。
           </span>
         </label>
-        {bind.error && <p className="mt-2 text-sm text-red-600" data-testid="bind-error">{bind.error.message}</p>}
+        {bind.error && <p className="mt-2 text-sm text-red-600" data-testid="bind-error">{copyForReason(bindReason)}</p>}
       </section>
 
       <section>

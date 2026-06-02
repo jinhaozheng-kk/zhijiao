@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { copyForReason } from "@/lib/error-copy";
 import { trpc } from "@/lib/trpc-client";
 
 interface EntryActionsProps {
@@ -36,7 +37,7 @@ export function EntryActions({ entryId, status }: EntryActionsProps) {
     onError: (e) => {
       const reason = (e.data as { reason?: string } | undefined)?.reason;
       setInsufficientBalance(reason === "INSUFFICIENT_BALANCE");
-      setErr(e.message);
+      setErr(copyForReason(reason));
       setPendingVariantReqId(null);
     },
   });
@@ -48,7 +49,7 @@ export function EntryActions({ entryId, status }: EntryActionsProps) {
       await utils.error.list.invalidate();
       await utils.error.dueForReview.invalidate();
     },
-    onError: (e) => setErr(e.message),
+    onError: (e) => setErr(copyForReason((e.data as { reason?: string } | undefined)?.reason)),
   });
 
   const archiveMutation = trpc.error.archive.useMutation({
@@ -58,7 +59,7 @@ export function EntryActions({ entryId, status }: EntryActionsProps) {
       await utils.error.list.invalidate();
       await utils.error.dueForReview.invalidate();
     },
-    onError: (e) => setErr(e.message),
+    onError: (e) => setErr(copyForReason((e.data as { reason?: string } | undefined)?.reason)),
   });
 
   const deleteMutation = trpc.error.delete.useMutation({
@@ -68,7 +69,7 @@ export function EntryActions({ entryId, status }: EntryActionsProps) {
       await utils.error.dueForReview.invalidate();
       router.push("/error-book");
     },
-    onError: (e) => setErr(e.message),
+    onError: (e) => setErr(copyForReason((e.data as { reason?: string } | undefined)?.reason)),
   });
 
   const anyPending =
