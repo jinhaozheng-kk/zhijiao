@@ -1,6 +1,8 @@
 "use client";
 import Link from "next/link";
 import { useState } from "react";
+import { ActionCard } from "@/components/ui/action-card";
+import { StatePanel } from "@/components/ui/state-panel";
 import { trpc } from "@/lib/trpc-client";
 
 export function ParentView() {
@@ -18,7 +20,7 @@ export function ParentView() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded border p-4">
+      <section className="rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-200">
         <h2 className="font-medium">绑定孩子</h2>
         <p className="mt-1 text-sm text-slate-600">输入孩子在「绑定家长」页生成的邀请码。</p>
         <div className="mt-3 flex gap-2">
@@ -26,13 +28,13 @@ export function ParentView() {
             value={code}
             onChange={(e) => setCode(e.target.value.trim())}
             placeholder="邀请码"
-            className="rounded border px-3 py-2 text-sm font-mono"
+            className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-mono"
             data-testid="input-invite-code"
           />
           <button
             onClick={() => bind.mutate({ code, guardianConsent: consent })}
             disabled={bind.isPending || code.length < 4}
-            className="rounded bg-slate-900 px-4 py-2 text-sm text-white disabled:opacity-50"
+            className="rounded-full bg-slate-950 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
             data-testid="btn-bind"
           >
             绑定
@@ -54,18 +56,28 @@ export function ParentView() {
       </section>
 
       <section>
-        <h2 className="mb-2 font-medium">我的孩子</h2>
-        <div className="divide-y rounded border" data-testid="children-list">
+        <h2 className="mb-3 font-medium">我的孩子</h2>
+        <div className="grid gap-4" data-testid="children-list">
           {children.data?.children.map((c) => (
-            <div key={c.linkId} className="flex items-center justify-between px-4 py-3">
-              <span>
-                {c.name ?? "（未设置昵称）"} · {c.gradeLevel ?? "—"}
-              </span>
-              <Link href={`/parent/children/${c.userId}`} className="text-sm text-emerald-700 underline">查看学情</Link>
+            <div key={c.linkId} className="space-y-3">
+              <ActionCard
+                href={`/parent/children/${c.userId}`}
+                title={c.name ?? "孩子学情"}
+                description={`${c.gradeLevel ?? "—"} · 查看近期巩固方向`}
+                label="查看学情"
+              />
+              <div className="grid gap-2 text-sm sm:grid-cols-3">
+                <div className="rounded-lg bg-emerald-50 px-3 py-2 text-emerald-800">掌握较稳</div>
+                <div className="rounded-lg bg-amber-50 px-3 py-2 text-amber-800">正在巩固</div>
+                <div className="rounded-lg bg-sky-50 px-3 py-2 text-sky-800">重点关注</div>
+              </div>
             </div>
           ))}
           {children.data && children.data.children.length === 0 && (
-            <p className="px-4 py-6 text-sm text-slate-600">还没有绑定孩子。</p>
+            <StatePanel
+              title="还没有绑定孩子"
+              description="演示环境会自动准备绑定关系。请运行 pnpm demo:reset 后再试一次。"
+            />
           )}
         </div>
       </section>
