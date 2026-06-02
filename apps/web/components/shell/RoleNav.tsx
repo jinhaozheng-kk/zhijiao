@@ -8,6 +8,7 @@ export function navForRole(role: Persona, classroomId?: string): NavItem[] {
     return [
       { label: "答疑", href: "/tutor" },
       { label: "错题本", href: "/error-book" },
+      { label: "训练", href: "/training" },
       { label: "作业", href: "/assignments" },
       { label: "学情", href: "/portrait" },
     ];

@@ -52,6 +52,7 @@ export interface PerfSample {
   kpIds: string[];
   gradeStatus: GradeStatusSignal;
   ageDays: number; // now - createdAt, in days (>= 0)
+  sourceWeight?: number; // multiplier on the decay weight; default 1.0 (teacher-graded). Self-practice uses < 1.
 }
 export interface ErrorSample {
   kpIds: string[];

@@ -14,7 +14,7 @@ import { redactPii } from "@zhijiao/domain";
 import { getAiRouter } from "@/lib/ai-client";
 import {
   upsertEntryOnDiagnose,
-  nextReviewAtAfter,
+  advanceReviewLadder,
   toEntryView,
   toQuestionView,
   toVariantGroupView,
@@ -278,15 +278,12 @@ export const errorRouter = router({
         });
       }
       const now = new Date();
-      const reviewCountAfter = ctx.entry.reviewCount + 1;
-      const updated = await ctx.db.errorBookEntry.update({
-        where: { id: ctx.entry.id },
-        data: {
-          reviewCount: reviewCountAfter,
-          lastReviewedAt: now,
-          nextReviewAt: nextReviewAtAfter(reviewCountAfter, now),
-        },
-      });
+      const updated = await advanceReviewLadder(
+        ctx.db,
+        ctx.entry.id,
+        ctx.entry.reviewCount,
+        now,
+      );
       return { entry: toEntryView(updated) };
     }),
 

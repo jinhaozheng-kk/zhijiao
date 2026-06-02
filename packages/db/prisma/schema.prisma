@@ -899,3 +899,26 @@ model DsarRequest {
   @@index([userId])
   @@map("dsar_requests")
 }
+
+// 靶向训练 (Plan: targeted training) — one row per self-checked practice item.
+// Free, student-self-initiated; blended down-weighted into the learning profile
+// (see packages/analytics queries.ts). Deliberately NOT AssignmentPerformance
+// (that table is keyed to the classroom assignment lifecycle + class diagnosis).
+enum TrainingItemSource {
+  ERROR_BOOK
+  VARIANT
+}
+
+model TrainingAttempt {
+  id            String                @id @default(cuid())
+  sessionId     String                @map("session_id")
+  studentUserId String                @map("student_user_id")
+  questionId    String                @map("question_id")
+  source        TrainingItemSource
+  gradeStatus   AssignmentGradeStatus @map("grade_status") // self-check: CORRECT (会) | WRONG (还不熟)
+  kpIds         String[]              @default([]) @map("kp_ids")
+  createdAt     DateTime              @default(now()) @map("created_at")
+
+  @@index([studentUserId, createdAt])
+  @@map("training_attempts")
+}

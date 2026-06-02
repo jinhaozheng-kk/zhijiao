@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import Link from "next/link";
 import { trpc } from "@/lib/trpc-client";
 import { StatePanel } from "@/components/ui/state-panel";
 import { SkeletonList } from "@/components/ui/skeleton";
@@ -53,6 +54,16 @@ export function PortraitView() {
           ))}
         </div>
       </section>
+
+      <div>
+        <Link
+          href="/training"
+          className="inline-flex rounded-full bg-slate-950 px-5 py-3 text-sm font-medium text-white"
+          data-testid="portrait-training-cta"
+        >
+          去靶向训练
+        </Link>
+      </div>
 
       <AdviceCard window={window} />
     </div>

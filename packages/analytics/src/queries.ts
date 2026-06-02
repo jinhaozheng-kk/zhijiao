@@ -52,19 +52,40 @@ export async function profileForStudent(
     select: { kpIds: true, gradeStatus: true, createdAt: true },
   });
 
+  // 靶向训练自评结果：降权（自评比教师批改软）混入掌握度，闭合 训练→学情。
+  // 不进 classDiagnosis（自主练习不喂班级诊断）。
+  const TRAINING_SOURCE_WEIGHT = 0.5;
+  const training = await db.trainingAttempt.findMany({
+    where: {
+      studentUserId: args.userId,
+      ...(cutoff ? { createdAt: { gte: cutoff } } : {}),
+    },
+    select: { kpIds: true, gradeStatus: true, createdAt: true },
+  });
+
   // 错题弱信号：ACTIVE entry → question.knowledgePoints（QuestionKPLink）→ kpId
   const errorEntries = await db.errorBookEntry.findMany({
     where: { userId: args.userId, status: "ACTIVE" },
     select: { question: { select: { knowledgePoints: { select: { kpId: true } } } } },
   });
 
-  const samples: PerfSample[] = perf
-    .filter((p) => p.gradeStatus !== "UNGRADED")
-    .map((p) => ({
-      kpIds: p.kpIds,
-      gradeStatus: p.gradeStatus as PerfSample["gradeStatus"],
-      ageDays: ageDays(p.createdAt, now),
-    }));
+  const samples: PerfSample[] = [
+    ...perf
+      .filter((p) => p.gradeStatus !== "UNGRADED")
+      .map((p) => ({
+        kpIds: p.kpIds,
+        gradeStatus: p.gradeStatus as PerfSample["gradeStatus"],
+        ageDays: ageDays(p.createdAt, now),
+      })),
+    ...training
+      .filter((t) => t.gradeStatus !== "UNGRADED")
+      .map((t) => ({
+        kpIds: t.kpIds,
+        gradeStatus: t.gradeStatus as PerfSample["gradeStatus"],
+        ageDays: ageDays(t.createdAt, now),
+        sourceWeight: TRAINING_SOURCE_WEIGHT,
+      })),
+  ];
   const errors: ErrorSample[] = errorEntries.map((e) => ({
     kpIds: e.question.knowledgePoints.map((l) => l.kpId),
   }));

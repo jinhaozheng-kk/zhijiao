@@ -6,6 +6,7 @@ describe("role navigation", () => {
     expect(navForRole("STUDENT").map((item) => item.label)).toEqual([
       "答疑",
       "错题本",
+      "训练",
       "作业",
       "学情",
     ]);
