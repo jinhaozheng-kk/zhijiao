@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { isDemoModeEnabled } from "@/server/demo/config";
 
 export const dynamic = "force-dynamic";
@@ -51,18 +50,32 @@ export default function DemoPage() {
         </p>
         <div className="mt-12 grid gap-5 md:grid-cols-3">
           {roles.map((role) => (
-            <Link
+            // POST form (not a link): entering the demo has side effects
+            // (reset data + issue session), so it must not be prefetchable.
+            <form
               key={role.title}
-              href={role.href}
-              className="group rounded-lg bg-white p-7 shadow-sm ring-1 ring-slate-200 transition hover:-translate-y-0.5 hover:shadow-lg"
+              action={role.href}
+              method="post"
+              className="contents"
             >
-              <p className="text-sm font-medium text-slate-500">{role.eyebrow}</p>
-              <h2 className="mt-4 text-2xl font-semibold">{role.title}</h2>
-              <p className="mt-3 text-sm leading-6 text-slate-600">{role.body}</p>
-              <span className="mt-8 inline-flex text-sm font-medium text-slate-950">
-                进入体验
-              </span>
-            </Link>
+              <button
+                type="submit"
+                className="group rounded-lg bg-white p-7 text-left shadow-sm ring-1 ring-slate-200 transition hover:-translate-y-0.5 hover:shadow-lg"
+              >
+                <span className="block text-sm font-medium text-slate-500">
+                  {role.eyebrow}
+                </span>
+                <span className="mt-4 block text-2xl font-semibold">
+                  {role.title}
+                </span>
+                <span className="mt-3 block text-sm leading-6 text-slate-600">
+                  {role.body}
+                </span>
+                <span className="mt-8 inline-flex text-sm font-medium text-slate-950">
+                  进入体验
+                </span>
+              </button>
+            </form>
           ))}
         </div>
       </section>
