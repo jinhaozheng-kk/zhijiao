@@ -113,6 +113,7 @@ export default async function globalSetup(): Promise<void> {
       // E2E_TEST_HOOKS=1 alone is sufficient to unlock /api/__test__/last-otp and route SMS
       // to sharedTestSmsAdapter inside the spawned server process.
       E2E_TEST_HOOKS: "1",
+      DEMO_MODE: "1",
       SMS_USE_MOCK: "true",
       WECHAT_OAUTH_USE_MOCK: "true",
       WECHAT_PAY_USE_MOCK: "true",
