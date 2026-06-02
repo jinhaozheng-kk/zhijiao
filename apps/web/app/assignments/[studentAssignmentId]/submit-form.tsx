@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { assignmentTierLabel, studentAssignmentStatusLabel } from "@/lib/assignment-copy";
 import { trpc } from "@/lib/trpc-client";
 
 export function SubmitForm({
@@ -26,17 +27,17 @@ export function SubmitForm({
   });
 
   if (query.isLoading) {
-    return <p className="text-sm text-slate-500">Loading...</p>;
+    return <p className="text-sm text-slate-500">加载中...</p>;
   }
   if (query.isError) {
     return (
       <p className="text-sm text-red-600">
-        Could not load assignment: {query.error.message}
+        读取作业失败：{query.error.message}
       </p>
     );
   }
   if (!query.data) {
-    return <p className="text-sm text-slate-500">Loading...</p>;
+    return <p className="text-sm text-slate-500">加载中...</p>;
   }
 
   const studentAssignment = query.data.studentAssignment;
@@ -47,7 +48,7 @@ export function SubmitForm({
     <div>
       <div className="text-sm">
         <Link href="/assignments" className="text-slate-500 hover:underline">
-          Back to assignments
+          返回作业
         </Link>
       </div>
       <div className="mt-4">
@@ -55,20 +56,21 @@ export function SubmitForm({
           {studentAssignment.assignment.title}
         </h1>
         <p className="mt-1 text-sm text-slate-600">
-          {studentAssignment.status} · {studentAssignment.tier.level}
+          {studentAssignmentStatusLabel(studentAssignment.status)} ·{" "}
+          {assignmentTierLabel(studentAssignment.tier.level)}
         </p>
       </div>
 
       {alreadySubmitted ? (
         <section className="mt-6 rounded border bg-white p-4">
           <p className="text-sm text-slate-700">
-            This assignment has already been submitted.
+            这份作业已经提交。
           </p>
           <Link
             href={`/assignments/${studentAssignmentId}/result`}
             className="mt-3 inline-block rounded border px-3 py-2 text-sm"
           >
-            View Result
+            查看结果
           </Link>
         </section>
       ) : (
@@ -88,7 +90,7 @@ export function SubmitForm({
         >
           {items.map((item, index) => (
             <section key={item.id} className="rounded border bg-white p-4">
-              <h2 className="font-medium">Question {index + 1}</h2>
+              <h2 className="font-medium">第 {index + 1} 题</h2>
               <div className="mt-2 whitespace-pre-wrap text-sm">
                 {item.stemMd}
               </div>
@@ -109,7 +111,7 @@ export function SubmitForm({
               className="rounded bg-slate-900 px-4 py-2 text-sm text-white disabled:opacity-50"
               disabled={mutation.isPending}
             >
-              {mutation.isPending ? "Submitting..." : "Submit Assignment"}
+              {mutation.isPending ? "提交中..." : "提交作业"}
             </button>
             {error && <p className="text-sm text-red-600">{error}</p>}
           </div>

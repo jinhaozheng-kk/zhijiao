@@ -18,8 +18,12 @@ export const DEMO_TARGETS: Record<DemoRole, string> = {
   parent: "/parent",
 };
 
+export function isDemoRuntimeAllowed(): boolean {
+  return process.env.NODE_ENV !== "production" || env.E2E_TEST_HOOKS === "1";
+}
+
 export function isDemoModeEnabled(): boolean {
-  return env.DEMO_MODE === "1";
+  return env.DEMO_MODE === "1" && isDemoRuntimeAllowed();
 }
 
 export function userIdForDemoRole(role: DemoRole): string {

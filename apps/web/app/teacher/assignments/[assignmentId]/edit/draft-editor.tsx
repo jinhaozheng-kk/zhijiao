@@ -2,18 +2,24 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import {
+  assignmentTierLabel,
+  questionTypeLabel,
+  type AssignmentTierValue,
+  type QuestionTypeValue,
+} from "@/lib/assignment-copy";
 import { trpc } from "@/lib/trpc-client";
 
 interface DraftTier {
   id: string;
-  level: string;
+  level: AssignmentTierValue;
   title: string;
   rationaleMd: string | null;
   items: Array<{
     id: string;
     position: number;
     stemMd: string;
-    type: string;
+    type: QuestionTypeValue;
     answerMd: string;
     solutionMd: string;
   }>;
@@ -105,7 +111,7 @@ export function DraftEditor({
           <div key={tier.id} className="overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-slate-200">
             <div className="border-b px-4 py-3">
               <h2 className="font-medium">
-                {tier.level} · {tier.title}
+                {assignmentTierLabel(tier.level)} · {tier.title}
               </h2>
               {tier.rationaleMd && (
                 <p className="mt-1 text-sm text-slate-600">
@@ -117,7 +123,7 @@ export function DraftEditor({
               {tier.items.map((item) => (
                 <article key={item.id} className="px-4 py-4">
                   <div className="text-xs uppercase text-slate-500">
-                    {item.type} · #{item.position}
+                    {questionTypeLabel(item.type)} · 第 {item.position} 题
                   </div>
                   <h3 className="mt-1 font-medium">{item.stemMd}</h3>
                   <p className="mt-2 text-sm text-slate-700">

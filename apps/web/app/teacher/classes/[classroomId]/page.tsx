@@ -3,6 +3,7 @@ import { prisma } from "@zhijiao/db";
 import { AppShell } from "@/components/shell/AppShell";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatePanel } from "@/components/ui/state-panel";
+import { assignmentStatusLabel } from "@/lib/assignment-copy";
 import { isDemoModeEnabled } from "@/server/demo/config";
 import { ClassDiagnosis } from "./class-diagnosis";
 
@@ -71,7 +72,7 @@ export default async function TeacherClassPage({
                 <div>
                   <h3 className="font-medium">{assignment.title}</h3>
                   <p className="mt-1 text-sm text-slate-600">
-                    {assignment.status} · {assignment.source}
+                    {assignmentStatusLabel(assignment.status)}
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">

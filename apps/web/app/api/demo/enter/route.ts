@@ -4,6 +4,7 @@ import {
   isDemoModeEnabled,
   type DemoRole,
 } from "@/server/demo/config";
+import { clearDemoAnalyticsCache } from "@/server/demo/cache";
 import { resetDemoData } from "@/server/demo/seed";
 import { issueDemoSession } from "@/server/demo/session";
 
@@ -30,6 +31,7 @@ export async function GET(req: Request) {
   }
 
   await resetDemoData(prisma);
+  await clearDemoAnalyticsCache();
 
   const resHeaders = new Headers();
   const { redirectTo } = await issueDemoSession({

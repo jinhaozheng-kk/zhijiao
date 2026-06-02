@@ -2,6 +2,11 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import {
+  gradeStatusLabel,
+  rootCauseLabel,
+  studentAssignmentStatusLabel,
+} from "@/lib/assignment-copy";
 import { trpc } from "@/lib/trpc-client";
 
 const ROOT_CAUSES = [
@@ -72,8 +77,8 @@ function GradingRow({ answer }: { answer: GradingAnswer }) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="text-sm font-medium">{answer.studentName}</div>
-          <div className="mt-1 text-xs uppercase text-slate-500">
-            {answer.studentAssignmentStatus} · {answer.gradeStatus}
+          <div className="mt-1 text-xs text-slate-500">
+            {studentAssignmentStatusLabel(answer.studentAssignmentStatus as "ASSIGNED" | "SUBMITTED" | "GRADED")} · {gradeStatusLabel(answer.gradeStatus)}
           </div>
         </div>
         <button
@@ -136,7 +141,7 @@ function GradingRow({ answer }: { answer: GradingAnswer }) {
           >
             {ROOT_CAUSES.map((cause) => (
               <option key={cause} value={cause}>
-                {cause}
+                {rootCauseLabel(cause)}
               </option>
             ))}
           </select>

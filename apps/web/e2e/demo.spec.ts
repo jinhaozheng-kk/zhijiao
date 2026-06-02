@@ -35,6 +35,9 @@ test("parent demo opens calm learning portrait", async ({ page }) => {
 
   await expect(page).toHaveURL(/\/parent/);
   await expect(page.getByRole("heading", { name: /家长/ })).toBeVisible();
+  await expect(page.getByTestId("children-list").getByText("掌握较稳")).toHaveCount(0);
+  await page.getByRole("link", { name: /查看学情/ }).click();
+  await expect(page).toHaveURL(/\/parent\/children\//);
   await expect(page.getByText("掌握较稳")).toBeVisible();
   await expect(page.getByText("正在巩固")).toBeVisible();
   await expect(page.getByText("重点关注")).toBeVisible();

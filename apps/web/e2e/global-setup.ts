@@ -76,7 +76,7 @@ async function resetE2eRateLimits(): Promise<void> {
   const { default: Redis } = await import("ioredis");
   const redis = new Redis(url);
   try {
-    for (const pattern of ["otp:send:*", "otp:verify:*", "register:*", "refresh:*"]) {
+    for (const pattern of ["otp:send:*", "otp:verify:*", "register:*", "refresh:*", "analytics:*"]) {
       const keys = await redis.keys(pattern);
       if (keys.length) await redis.del(...keys);
     }

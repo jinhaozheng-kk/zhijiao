@@ -3,9 +3,11 @@ import { prisma, resetDb } from "@zhijiao/db/test-utils";
 import { COOKIE_AT, COOKIE_RT } from "@zhijiao/auth";
 
 const originalDemoMode = process.env.DEMO_MODE;
+const originalNodeEnv = process.env.NODE_ENV;
 
 beforeEach(async () => {
   await resetDb();
+  (process.env as { NODE_ENV?: string }).NODE_ENV = originalNodeEnv ?? "test";
   vi.resetModules();
 });
 
@@ -14,6 +16,11 @@ afterAll(async () => {
     delete process.env.DEMO_MODE;
   } else {
     process.env.DEMO_MODE = originalDemoMode;
+  }
+  if (originalNodeEnv === undefined) {
+    delete (process.env as { NODE_ENV?: string }).NODE_ENV;
+  } else {
+    (process.env as { NODE_ENV?: string }).NODE_ENV = originalNodeEnv;
   }
   await prisma.$disconnect();
 });
@@ -47,6 +54,20 @@ describe("/api/demo/enter", () => {
     expect(res.status).toBe(400);
     await expect(res.json()).resolves.toEqual({
       error: "DEMO_ROLE_INVALID",
+    });
+  });
+
+  it("returns 404 in production even when demo mode is enabled", async () => {
+    (process.env as { NODE_ENV?: string }).NODE_ENV = "production";
+    const { GET } = await getRouteWithDemoMode("1");
+
+    const res = await GET(
+      new Request("http://localhost/api/demo/enter?role=student"),
+    );
+
+    expect(res.status).toBe(404);
+    await expect(res.json()).resolves.toEqual({
+      error: "DEMO_MODE_DISABLED",
     });
   });
 

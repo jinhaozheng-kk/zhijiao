@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { gradeStatusLabel, studentAssignmentStatusLabel } from "@/lib/assignment-copy";
 import { trpc } from "@/lib/trpc-client";
 
 export default function AssignmentResultPage({
@@ -44,7 +45,7 @@ export default function AssignmentResultPage({
     <main className="mx-auto max-w-3xl px-6 py-8">
       <div className="text-sm">
         <Link href="/assignments" className="text-slate-500 hover:underline">
-          Back to assignments
+          返回作业
         </Link>
       </div>
       <div className="mt-4">
@@ -52,7 +53,7 @@ export default function AssignmentResultPage({
           {studentAssignment.assignment.title}
         </h1>
         <p className="mt-1 text-sm text-slate-600">
-          {studentAssignment.status}
+          {studentAssignmentStatusLabel(studentAssignment.status)}
         </p>
       </div>
 
@@ -62,19 +63,19 @@ export default function AssignmentResultPage({
           return (
             <article key={item.id} className="rounded border bg-white p-4">
               <div className="text-xs uppercase text-slate-500">
-                Question {index + 1} · {answer?.gradeStatus ?? "UNGRADED"}
+                第 {index + 1} 题 ·{" "}
+                {gradeStatusLabel(answer?.gradeStatus ?? "UNGRADED")}
               </div>
               <h2 className="mt-1 font-medium">{item.stemMd}</h2>
               <p className="mt-3 text-sm text-slate-700">
-                Submitted:{" "}
-                {answer ? JSON.stringify(answer.answerJson) : "No answer"}
+                作答：{answer ? JSON.stringify(answer.answerJson) : "未作答"}
               </p>
               <p className="mt-1 text-sm text-slate-700">
-                Expected: {item.answerMd}
+                参考：{item.answerMd}
               </p>
               {answer?.teacherFeedbackMd && (
                 <p className="mt-1 text-sm text-slate-600">
-                  Feedback: {answer.teacherFeedbackMd}
+                  反馈：{answer.teacherFeedbackMd}
                 </p>
               )}
             </article>

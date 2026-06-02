@@ -2,6 +2,7 @@ import Link from "next/link";
 import { prisma } from "@zhijiao/db";
 import { AppShell } from "@/components/shell/AppShell";
 import { PageHeader } from "@/components/ui/page-header";
+import { assignmentStatusLabel, assignmentTierLabel } from "@/lib/assignment-copy";
 import { isDemoModeEnabled } from "@/server/demo/config";
 import { GradingPanel } from "./grading-panel";
 
@@ -60,7 +61,7 @@ export default async function AssignmentDetailPage({
         <PageHeader
           eyebrow="作业批改"
           title={assignment.title}
-          description={`${assignment.classroom.name} · ${assignment.status}`}
+          description={`${assignment.classroom.name} · ${assignmentStatusLabel(assignment.status)}`}
           action={
             assignment.status === "DRAFT" ? (
               <Link
@@ -98,7 +99,7 @@ export default async function AssignmentDetailPage({
             <ul className="mt-3 space-y-2 text-sm text-slate-700">
               {assignment.tiers.map((tier) => (
                 <li key={tier.id}>
-                  {tier.level}: {tier.items.length} items
+                  {assignmentTierLabel(tier.level)}：{tier.items.length} 题
                 </li>
               ))}
             </ul>
