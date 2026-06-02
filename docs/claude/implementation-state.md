@@ -152,3 +152,11 @@
 - Demo data is reset by `pnpm demo:reset` and verified by `pnpm verify:demo`.
 - Main student/teacher/parent paths share the 初二数学 demo story and use the polished product shell.
 - AI 出卷 and AI 课件 are shown only as Plan 17/18 preview entries; no production workflow is implemented in Plan 16.
+
+**靶向训练现状（targeted training v1）：**
+- 免费、复用优先：`training.*` 走 `consentGatedProcedure`（**不** chargedProcedure），不调 AI。题源只读学生自己的 ACTIVE 错题 + 已生成变式（`VariantItem`→其晋升 Question 的 KP link），按 FOCUS KP 排序；不足 `MIN_TARGETED=3` 时回退 `dueForReview`，全空返 `INSUFFICIENT_DATA`。会话上限 `SESSION_ITEM_CAP=8`。
+- 回写学情：`TrainingAttempt`（自评 CORRECT/WRONG + `kpIds` **快照自会话目标 KP**，不靠题目自身 QuestionKPLink——绕开 USER_ADHOC/变式题关联稀疏）。`profileForStudent` 加读它作 `sourceWeight=0.5` 降权 `PerfSample`（自评比教师批改软）；`core.ts` 仅加 `sourceWeight` 一字段乘进衰减权重，仍纯。**不进 `classDiagnosis`**（自主练习不喂班级诊断）。
+- **刻意不复用 `AssignmentPerformance`**：那表绑教师作业生命周期 + 班级诊断扫描，混入自练行会污染语义。`TrainingAttempt` 是独立表。
+- 复习阶梯：`submitAttempt` 在 KNOW + ERROR_BOOK + ACTIVE entry 时调共享 `advanceReviewLadder`（从 `error.markReviewed` 抽出，`lib/error-book.ts`）推进；UNSURE 不动。`markReviewed` 已改用同一 helper（行为不变，回归 67 测护住）。
+- 合规：hint-first 揭示 + 自评制（会/还不熟）、无分数/提分/压力文案。
+- 设计代价 / 已知留白：KP-linkage 稀疏使"按 FOCUS KP 精准取题"覆盖面偏小（靠 dueForReview 回退兜底）；调度 Plan 9 reconciler 可增强题池，列为范围外后续。缓存沿用 analytics 5min TTL，自评回写最多 5min 后反映到画像。
