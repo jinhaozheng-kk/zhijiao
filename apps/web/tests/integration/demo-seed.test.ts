@@ -41,7 +41,8 @@ describe("demo data seed", () => {
     expect(studentAssignment.status).toBe("GRADED");
     expect(studentAssignment.submittedAt).not.toBeNull();
     expect(studentAssignment.gradedAt).not.toBeNull();
-    const answer = studentAssignment.answers[0];
+    expect(studentAssignment.answers).toHaveLength(1);
+    const answer = studentAssignment.answers[0]!;
     expect(answer.gradeStatus).not.toBe("UNGRADED");
     expect(answer.gradedAt).not.toBeNull();
     expect(answer.errorBookEntryId).not.toBeNull();
