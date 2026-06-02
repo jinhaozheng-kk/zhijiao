@@ -32,9 +32,9 @@ async function getRouteWithDemoMode(demoMode: "0" | "1") {
 
 describe("/api/demo/enter", () => {
   it("returns 404 when demo mode is disabled", async () => {
-    const { GET } = await getRouteWithDemoMode("0");
+    const { POST } = await getRouteWithDemoMode("0");
 
-    const res = await GET(
+    const res = await POST(
       new Request("http://localhost/api/demo/enter?role=student"),
     );
 
@@ -45,9 +45,9 @@ describe("/api/demo/enter", () => {
   });
 
   it("returns 400 for an unknown role when demo mode is enabled", async () => {
-    const { GET } = await getRouteWithDemoMode("1");
+    const { POST } = await getRouteWithDemoMode("1");
 
-    const res = await GET(
+    const res = await POST(
       new Request("http://localhost/api/demo/enter?role=admin"),
     );
 
@@ -59,9 +59,9 @@ describe("/api/demo/enter", () => {
 
   it("returns 404 in production even when demo mode is enabled", async () => {
     (process.env as { NODE_ENV?: string }).NODE_ENV = "production";
-    const { GET } = await getRouteWithDemoMode("1");
+    const { POST } = await getRouteWithDemoMode("1");
 
-    const res = await GET(
+    const res = await POST(
       new Request("http://localhost/api/demo/enter?role=student"),
     );
 
@@ -72,7 +72,7 @@ describe("/api/demo/enter", () => {
   });
 
   it("seeds demo data and redirects a student with normal auth cookies", async () => {
-    const [{ GET }, { DEMO_IDS, DEMO_TARGETS }] = await Promise.all([
+    const [{ POST }, { DEMO_IDS, DEMO_TARGETS }] = await Promise.all([
       getRouteWithDemoMode("1"),
       import("@/server/demo/config"),
     ]);
@@ -82,8 +82,9 @@ describe("/api/demo/enter", () => {
     });
     expect(before).toBe(0);
 
-    const res = await GET(
+    const res = await POST(
       new Request("http://localhost/api/demo/enter?role=student", {
+        method: "POST",
         headers: {
           "x-forwarded-for": "203.0.113.10, 10.0.0.2",
           "user-agent": "vitest-demo-entry",
@@ -91,7 +92,7 @@ describe("/api/demo/enter", () => {
       }),
     );
 
-    expect(res.status).toBe(307);
+    expect(res.status).toBe(303);
     expect(res.headers.get("location")).toBe(
       `http://localhost${DEMO_TARGETS.student}`,
     );

@@ -13,7 +13,10 @@ export const dynamic = "force-dynamic";
 
 const DEMO_ROLES = new Set<string>(["student", "teacher", "parent"]);
 
-export async function GET(req: Request) {
+// POST (not GET): entering the demo resets data, mints a real session, and
+// sets auth cookies — side effects that must not be triggerable by link
+// prefetch, crawlers, or cross-site GET. The /demo page submits a form.
+export async function POST(req: Request) {
   if (!isDemoModeEnabled()) {
     return NextResponse.json(
       { error: "DEMO_MODE_DISABLED" },
@@ -42,7 +45,9 @@ export async function GET(req: Request) {
     ua: req.headers.get("user-agent") ?? null,
   });
 
-  const res = NextResponse.redirect(new URL(redirectTo, url));
+  // 303 See Other: the browser follows with a GET to redirectTo (a 307 would
+  // re-issue the POST against the target page).
+  const res = NextResponse.redirect(new URL(redirectTo, url), 303);
   resHeaders.getSetCookie().forEach((cookie) => {
     res.headers.append("Set-Cookie", cookie);
   });

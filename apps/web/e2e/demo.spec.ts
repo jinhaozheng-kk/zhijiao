@@ -4,14 +4,14 @@ test("demo center shows three role entries", async ({ page }) => {
   await page.goto("/demo");
 
   await expect(page.getByRole("heading", { name: "智教演示中心" })).toBeVisible();
-  await expect(page.getByRole("link", { name: /学生体验/ })).toBeVisible();
-  await expect(page.getByRole("link", { name: /教师体验/ })).toBeVisible();
-  await expect(page.getByRole("link", { name: /家长体验/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /学生体验/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /教师体验/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /家长体验/ })).toBeVisible();
 });
 
 test("student demo opens tutoring path", async ({ page }) => {
   await page.goto("/demo");
-  await page.getByRole("link", { name: /学生体验/ }).click();
+  await page.getByRole("button", { name: /学生体验/ }).click();
 
   await expect(page).toHaveURL(/\/tutor/);
   await expect(page.getByRole("heading", { name: /AI 答疑/ })).toBeVisible();
@@ -21,7 +21,7 @@ test("student demo opens tutoring path", async ({ page }) => {
 
 test("teacher demo opens class workspace and shows next-stage AI cards", async ({ page }) => {
   await page.goto("/demo");
-  await page.getByRole("link", { name: /教师体验/ }).click();
+  await page.getByRole("button", { name: /教师体验/ }).click();
 
   await expect(page).toHaveURL(/\/teacher\/classes\//);
   await expect(page.getByRole("heading", { name: /初二 3 班/ })).toBeVisible();
@@ -36,7 +36,7 @@ test("teacher demo opens class workspace and shows next-stage AI cards", async (
 
 test("parent demo opens calm learning portrait", async ({ page }) => {
   await page.goto("/demo");
-  await page.getByRole("link", { name: /家长体验/ }).click();
+  await page.getByRole("button", { name: /家长体验/ }).click();
 
   await expect(page).toHaveURL(/\/parent/);
   await expect(page.getByRole("heading", { name: /家长/ })).toBeVisible();
