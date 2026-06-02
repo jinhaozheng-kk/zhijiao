@@ -100,6 +100,7 @@
 - **Plan 14c**（通用 PII 扫描器·落库前脱敏：`packages/domain/src/pii.ts` 纯核 scanPii/redactPii 手机号 + 身份证 MOD-11、全占位掩码只返计数、输入侧 tutor.ask/error.diagnose body 喂 AI+落库前脱敏、输出侧 router.ts 全部 5 处 parse+persist 咽喉脱敏）—— 见 `docs/superpowers/plans/2026-05-31-pii-scanner.md`，spec 在 `docs/superpowers/specs/2026-05-31-pii-scanner-design.md`
 - **Plan 14b**（DSAR 数据主体请求 + SLA：`DsarRequest` 工单表、数据副本自助导出 + 注销 OPS-CLI 履行的 hybrid 模型、`<14` 注销经绑定监护人站内审批、OTP 重验 + `verifyOtp` purpose 隔离、export fail-CLOSE 限频、REJECTED 回显理由、15 工作日/30 自然日封顶 SLA、`dsar.*` 监护人门禁白名单、PII 扩展 scrub reason + 悬挂收口 + export 段 schemaVersion 2026-05-31）—— 见 `docs/superpowers/plans/2026-05-31-dsar-data-subject-requests.md`，spec 在 `docs/superpowers/specs/2026-05-31-dsar-data-subject-requests-design.md`
 - **Plan 12 cleanup**（VariantItem.questionId NOT NULL + 退役 legacy reconcile 分支：`findUniqueOrThrow` 解析 + 同步/异步双路径均 LINK 变式题自身 Question + `VARIANT_TO_PARENT_NEEDS_REVIEW` 降为 tombstone + 退役 `variant-backfill-questions` 脚本）—— 见 `docs/superpowers/plans/2026-06-01-plan12-cleanup.md`，spec 在 `docs/superpowers/specs/2026-06-01-plan12-cleanup-design.md`
+- **Plan 16**（demo-ready 产品打磨：门禁 `/demo` 演示中心 + 学生/教师/家长三身份快速入口、确定性中文 §4 种子 `server/demo/seed.ts`（初二3班·一次函数与方程/不等式·3 KP·L1/L2/L3 变式）+ `verifyDemoData` 最小数量校验、`isDemoRuntimeAllowed` 生产兜底门禁（`NODE_ENV!=="production"` 或 `E2E_TEST_HOOKS=1`）、role-aware AppShell/RoleNav/DemoModeBanner + `ui/` 基础组件 + 状态面板、`lib/error-copy.ts` + `lib/assignment-copy.ts` 合规中文文案/枚举映射、`demo:reset`/`verify:demo` 脚本 + demo E2E、reset 后清 analytics 缓存）—— 见 `docs/superpowers/plans/2026-06-02-demo-ready-product-hardening.md`，spec 在 `docs/superpowers/specs/2026-06-02-demo-ready-product-hardening-design.md`。**遗留跟进**（未进本次阻塞修复）：`/api/demo/enter` 仍为带副作用 GET；AppShell role 按页面写死、不显示当前身份、教师导航 §9 半实现；§10 状态矩阵缺真骨架屏与 AI 失败重试态；种子 SUBMITTED 与子答案批改字段轻微状态机不一致。
 
 ## 实现现状
 
@@ -129,7 +130,9 @@ pnpm --filter @zhijiao/web  test -- tests/integration/auth-register-race.test.ts
 
 73 条回归探针已拆到 **`docs/claude/merge-verification.md`** —— 每次 merge 后逐条核对；新探针追加到该文件，不写回本文件。
 
-**下一步候选 Plan**（Plan 4 + Plan 6 + Plan 8 + Plan 9 + Plan 10 + Plan 11 + Plan 12 + Plan 13 + Plan 14a + Plan 14b + Plan 14c 已落地）：
+**下一步候选 Plan**（Plan 4 + Plan 6 + Plan 8 + Plan 9 + Plan 10 + Plan 11 + Plan 12 + Plan 13 + Plan 14a + Plan 14b + Plan 14c + Plan 16 已落地）：
 - Plan 5: 真接阿里云 SMS + 微信公众号（ICP 备案通过后；**且 Plan 2 Hardening 必须先 ship**；替换 `RealSmsAdapter` / `RealWechatH5Adapter` 的 stub 实现）
 - Plan 7: 真接微信支付 V3 API（需 ICP 备案 + 商户号 + APIv3 + 商户证书；激活 `RealWechatPayAdapter.unifiedOrder` + `verifyNotify`）—— **Plan 3 prod ship prereq**
 - Plan 15: USER_ADHOC × PUBLISHED canonical dedup / 题库去重 / PUBLISHED 复用 / 统计归并（Plan 8 §6.2 punt）
+- Plan 17: 生产 AI 出卷（Plan 16 §6 预览卡占位；当前仅 roadmap）
+- Plan 18: 生产 AI 课件（Plan 16 §6 预览卡占位；当前仅 roadmap）
