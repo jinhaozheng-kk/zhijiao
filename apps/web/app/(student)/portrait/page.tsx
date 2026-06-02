@@ -1,13 +1,21 @@
+import { AppShell } from "@/components/shell/AppShell";
+import { PageHeader } from "@/components/ui/page-header";
+import { isDemoModeEnabled } from "@/server/demo/config";
 import { PortraitView } from "./portrait-view";
+
+export const dynamic = "force-dynamic";
 
 export default function PortraitPage() {
   return (
-    <main className="mx-auto max-w-4xl px-6 py-8">
-      <h1 className="text-2xl font-semibold">我的学情</h1>
-      <p className="mt-1 text-sm text-slate-600">看看自己各知识点的掌握情况，找到下一步重点。</p>
+    <AppShell role="STUDENT" demoMode={isDemoModeEnabled()}>
+      <PageHeader
+        eyebrow="学生学习"
+        title="我的学情"
+        description="看看自己各知识点的掌握情况，找到下一步重点。"
+      />
       <div className="mt-6">
         <PortraitView />
       </div>
-    </main>
+    </AppShell>
   );
 }

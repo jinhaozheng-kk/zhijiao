@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { trpc } from "@/lib/trpc-client";
+import { StatePanel } from "@/components/ui/state-panel";
 
 const ROOT_CAUSE_LABEL: Record<string, string> = {
   CONCEPT_CONFUSION: "概念混淆",
@@ -57,24 +58,39 @@ export function ErrorBookList() {
         </Link>
       </nav>
 
-      {q.isLoading && <p className="mt-4 text-sm text-slate-500">加载中…</p>}
+      {q.isLoading && <div className="mt-4"><StatePanel title="加载中..." /></div>}
 
       {q.isError && (
-        <p className="mt-4 text-sm text-red-600">
-          读取错题本失败：{q.error.message}
-        </p>
+        <div className="mt-4">
+          <StatePanel title="读取错题本失败" description="请稍后再试。" />
+        </div>
       )}
 
       {q.data && q.data.entries.length === 0 && (
-        <p className="mt-4 text-sm text-slate-500" data-testid="empty-list">
-          {status === "ACTIVE"
-            ? "还没有错题。答题答错后可以从答疑卡片加入错题本。"
-            : "归档区是空的。"}
-        </p>
+        <div className="mt-4" data-testid="empty-list">
+          <StatePanel
+            title={status === "ACTIVE" ? "还没有错题" : "归档区是空的"}
+            description={
+              status === "ACTIVE"
+                ? "完成一次错因分析后，系统会把需要巩固的题目放到这里。"
+                : "归档后的错题会显示在这里。"
+            }
+            action={
+              status === "ACTIVE" ? (
+                <Link
+                  href="/tutor"
+                  className="rounded-full bg-slate-950 px-4 py-2 text-sm font-medium text-white"
+                >
+                  去答疑
+                </Link>
+              ) : null
+            }
+          />
+        </div>
       )}
 
       {q.data && q.data.entries.length > 0 && (
-        <ul className="mt-4 divide-y rounded border">
+        <ul className="mt-4 divide-y overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-slate-200">
           {q.data.entries.map((e) => (
             <li key={e.id} className="hover:bg-slate-50">
               <Link

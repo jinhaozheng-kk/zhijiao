@@ -1,6 +1,8 @@
 "use client";
 
 import { trpc } from "@/lib/trpc-client";
+import { StatePanel } from "@/components/ui/state-panel";
+import { StatusPill } from "@/components/ui/status-pill";
 import { EntryActions } from "../entry-actions";
 
 const ROOT_CAUSE_LABEL: Record<string, string> = {
@@ -28,7 +30,7 @@ export function EntryDetail({ entryId }: { entryId: string }) {
   const q = trpc.error.getById.useQuery({ entryId }, { retry: false });
 
   if (q.isLoading) {
-    return <p className="mt-6 text-sm text-slate-500">加载中…</p>;
+    return <div className="mt-6"><StatePanel title="加载中..." /></div>;
   }
 
   if (q.isError) {
@@ -39,17 +41,14 @@ export function EntryDetail({ entryId }: { entryId: string }) {
     if (code === "NOT_FOUND") {
       return (
         <div className="mt-6" data-testid="entry-not-found">
-          <h2 className="text-xl font-semibold">未找到这道错题</h2>
-          <p className="mt-2 text-sm text-slate-600">
-            它可能已经被你从错题本移除了。
-          </p>
+          <StatePanel title="未找到这道错题" description="它可能已经被你从错题本移除了。" />
         </div>
       );
     }
     return (
-      <p className="mt-6 text-sm text-red-600">
-        读取错题失败：{q.error.message}
-      </p>
+      <div className="mt-6">
+        <StatePanel title="读取错题失败" description="请稍后再试。" />
+      </div>
     );
   }
 
@@ -57,15 +56,14 @@ export function EntryDetail({ entryId }: { entryId: string }) {
 
   return (
     <div className="mt-4 space-y-6" data-testid="entry-detail">
-      <header>
-        <h1 className="text-2xl font-bold">错题详情</h1>
-        <div className="mt-1 text-xs text-slate-500">
-          状态：{STATUS_LABEL[entry.status] ?? entry.status} · 已复习{" "}
-          {entry.reviewCount} 次
+      <header className="rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-200">
+        <div className="flex flex-wrap items-center gap-3 text-sm text-slate-500">
+          <StatusPill>{STATUS_LABEL[entry.status] ?? entry.status}</StatusPill>
+          <span>已复习 {entry.reviewCount} 次</span>
         </div>
       </header>
 
-      <section className="rounded border p-4">
+      <section className="rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-200">
         <h2 className="font-semibold">题目</h2>
         <div className="mt-2 whitespace-pre-wrap text-sm">{question.stemMd}</div>
         {question.answer?.contentMd && (
@@ -80,7 +78,7 @@ export function EntryDetail({ entryId }: { entryId: string }) {
         )}
       </section>
 
-      <section className="rounded border border-amber-200 bg-amber-50 p-4">
+      <section className="rounded-lg border border-amber-200 bg-amber-50 p-5 shadow-sm">
         <h2 className="font-semibold">错因分析</h2>
         <div className="mt-2 text-sm">
           <span className="font-medium">分类：</span>
@@ -106,7 +104,7 @@ export function EntryDetail({ entryId }: { entryId: string }) {
 
       <EntryActions entryId={entry.id} status={entry.status} />
 
-      <section data-testid="variant-groups">
+      <section data-testid="variant-groups" className="rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-200">
         <h2 className="font-semibold">举一反三（{variantGroups.length} 组）</h2>
         {variantGroups.length === 0 ? (
           <p className="mt-2 text-sm text-slate-500">
@@ -115,7 +113,7 @@ export function EntryDetail({ entryId }: { entryId: string }) {
         ) : (
           <ul className="mt-2 space-y-3">
             {variantGroups.map((g) => (
-              <li key={g.id} className="rounded border p-3">
+              <li key={g.id} className="rounded-lg border border-slate-200 p-3">
                 <div className="text-xs text-slate-500">
                   生成于 {new Date(g.createdAt).toLocaleString()} · 消耗{" "}
                   {g.creditsCost} credits

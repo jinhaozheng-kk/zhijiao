@@ -1,15 +1,27 @@
 import { TutorForm } from "@/components/TutorForm";
+import { AppShell } from "@/components/shell/AppShell";
+import { PageHeader } from "@/components/ui/page-header";
+import { isDemoModeEnabled } from "@/server/demo/config";
 
-export default function TutorPage() {
+export const dynamic = "force-dynamic";
+
+export default function TutorPage({
+  searchParams,
+}: {
+  searchParams?: { demo?: string };
+}) {
+  const demo = isDemoModeEnabled() && searchParams?.demo === "1";
+
   return (
-    <main className="mx-auto max-w-2xl px-6 py-10">
-      <h1 className="text-2xl font-bold">AI 答疑</h1>
-      <p className="mt-1 text-sm text-slate-600">
-        粘贴或输入一道题，AI 会先讲思路，再展开完整答案。
-      </p>
-      <div className="mt-8">
-        <TutorForm />
+    <AppShell role="STUDENT" demoMode={demo}>
+      <PageHeader
+        eyebrow="学生学习"
+        title="AI 答疑"
+        description="先看提示和方法，再展开完整讲解。适合把一道题变成一类题。"
+      />
+      <div className="mt-8 max-w-3xl">
+        <TutorForm demo={demo} />
       </div>
-    </main>
+    </AppShell>
   );
 }

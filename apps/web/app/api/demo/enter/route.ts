@@ -8,6 +8,7 @@ import { resetDemoData } from "@/server/demo/seed";
 import { issueDemoSession } from "@/server/demo/session";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 const DEMO_ROLES = new Set<string>(["student", "teacher", "parent"]);
 

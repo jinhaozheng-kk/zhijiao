@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { trpc } from "@/lib/trpc-client";
+import { StatePanel } from "@/components/ui/state-panel";
 import { TIER_COLOR, tierLabel } from "@/lib/mastery-copy";
 import { AdviceCard } from "./advice-card";
 
@@ -8,13 +9,16 @@ export function PortraitView() {
   const [window, setWindow] = useState<"D30" | "D90" | "ALL">("D90");
   const q = trpc.analytics.profile.mine.useQuery({ window });
 
-  if (q.isLoading) return <p className="text-sm text-slate-500">加载中…</p>;
+  if (q.isLoading) return <StatePanel title="加载中..." />;
   const profile = q.data?.profile;
   if (!profile || !profile.hasData) {
     return (
-      <p className="text-sm text-slate-600" data-testid="portrait-empty">
-        还没有足够的学情数据。完成一些练习或作业后，这里会显示你的知识点掌握情况。
-      </p>
+      <div data-testid="portrait-empty">
+        <StatePanel
+          title="还没有足够的学情数据"
+          description="完成一些练习或作业后，这里会显示你的知识点掌握情况。"
+        />
+      </div>
     );
   }
 
@@ -36,7 +40,7 @@ export function PortraitView() {
         <h2 className="mb-3 font-medium">知识点掌握情况</h2>
         <div className="grid gap-2 sm:grid-cols-2" data-testid="portrait-masteries">
           {profile.masteries.map((m) => (
-            <div key={m.kpId} className={`rounded border px-3 py-2 ${TIER_COLOR[m.tier]}`}>
+            <div key={m.kpId} className={`rounded-lg border px-3 py-2 ${TIER_COLOR[m.tier]}`}>
               <div className="flex items-center justify-between">
                 <span className="font-medium">{m.kpName}</span>
                 <span className="text-xs">{tierLabel(m.tier)}</span>
