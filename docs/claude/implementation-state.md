@@ -45,6 +45,7 @@
 - 微信 H5 OAuth：完整路由 + adapter 接口；`MockWechatH5Adapter` 默认，真接公众号留下个 plan
 - `Role` 仅 `OPS / ADMIN`；`Persona`（STUDENT/TEACHER/PARENT）是 onboarding 默认入口，不再是权限门槛；`PAPER_GEN / LESSON_PLAN_GEN / PPT_GEN / TUTOR_ASK / ERROR_BOOK_VIEW_OWN` 对所有登录用户开放
 - tRPC v11 全量落地；`apps/web/app/(student)/tutor/actions.ts` 已删除，改走 `tutor.ask` procedure；`DEV_USER_ID` 已下线
+- **env 校验 + 本地 env-loading 坑**（Plan 2 Hardening / 2026-06-03 实测）：`apps/web/server/env.ts` 在 module-load 跑 `Env.safeParse(process.env)`，失败即 `throw`（无静默兜底）；`NEXT_PHASE==="phase-production-build"`（即 `next build`）走 placeholder 旁路**不**校验，只有 dev/start 真验。zod `.refine()`（AI/SMS/OAuth/Pay/Storage 真接闸门）**仅在 base object `.parse()` 成功后才跑**——base required（`DATABASE_URL/REDIS_URL/NEXT_PUBLIC_APP_URL/ACCESS_JWT_SECRET/OTP_PEPPER`）缺一，base parse 先失败、refine 永不执行。**裸 `next dev` 不读仓库根 `.env.local`**：Next 只从 cwd（`pnpm --filter` 下 = `apps/web`）读 `.env.local`，而仓库 `.env.local` 在**根** `D:\智教\`（`apps/web` 下没有），故 base env 实际来自 shell/OS 进程环境——本地手动验 fail-close（merge-verification 探针 5/9）须 inline 注入完整 base env，不能只靠改根 `.env.local`。
 
 **错题本 / 变式现状**（Plan 4）：
 - `ErrorBookEntry` 三态：ACTIVE / ARCHIVED / DELETED。**DELETED 是终态**，UI 不提供任何"恢复 / 回收站"入口；DB 行保留作审计。文案统一用"从错题本移除"，不用"删除"
