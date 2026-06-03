@@ -208,6 +208,13 @@ describe("server/env.ts (fail-fast validator)", () => {
     await expect(importEnv()).rejects.toThrow(/WECHAT_PAY_MCHID/i);
   });
 
+  it("WECHAT_PAY_USE_MOCK=true treats an empty optional notify host as unset", async () => {
+    applyBase();
+    process.env.WECHAT_PAY_NOTIFY_HOST = "";
+    const mod = await importEnv();
+    expect(mod.env.WECHAT_PAY_NOTIFY_HOST).toBeUndefined();
+  });
+
   it("WECHAT_PAY_USE_MOCK=false + missing real WECHAT_PAY_* throws", async () => {
     applyBase();
     process.env.WECHAT_PAY_USE_MOCK = "false";
