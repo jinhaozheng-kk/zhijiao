@@ -74,18 +74,61 @@ Check status:
 
 ```powershell
 docker compose --env-file .env.production -f docker-compose.prod.yml ps
+curl.exe -i http://127.0.0.1:3000/readiness
 curl.exe -i http://127.0.0.1:3000/login
 ```
+
+## First Deploy Smoke Checklist
+
+Run these checks before treating a host as usable:
+
+```powershell
+docker compose --env-file .env.production -f docker-compose.prod.yml config
+docker compose --env-file .env.production -f docker-compose.prod.yml ps
+curl.exe -fsS http://127.0.0.1:3000/readiness
+curl.exe -fsS http://127.0.0.1:3000/login
+```
+
+Expected results:
+
+- `config` exits 0 and shows no unresolved placeholders.
+- `postgres`, `redis`, and `web` are healthy.
+- `/readiness` returns HTTP 200 with `database.ok=true` and `redis.ok=true`.
+- `/login` returns HTTP 200.
+
+For private dry-runs before public launch, also complete one seeded/mock login
+flow and one tutoring request before handing the host to anyone else.
+
+## Backup Before Migration
+
+Create a database backup before every production migration or risky deploy.
+
+```powershell
+$stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+New-Item -ItemType Directory -Force backups
+docker compose --env-file .env.production -f docker-compose.prod.yml exec -T postgres sh -lc 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists --no-owner --no-acl' > "backups\zhijiao-$stamp.sql"
+```
+
+Verify that the file exists and is non-empty:
+
+```powershell
+Get-Item "backups\zhijiao-$stamp.sql" | Select-Object FullName,Length
+```
+
+Keep at least the latest pre-migration dump outside the deployment directory so
+a failed host disk or accidental cleanup cannot remove the only recovery copy.
 
 ## Update Deploy
 
 ```powershell
 git pull
+docker compose --env-file .env.production -f docker-compose.prod.yml ps
 docker compose --env-file .env.production -f docker-compose.prod.yml --profile migrate build web migrate
 docker compose --env-file .env.production -f docker-compose.prod.yml up -d postgres redis
 docker compose --env-file .env.production -f docker-compose.prod.yml --profile migrate run --rm migrate
 docker compose --env-file .env.production -f docker-compose.prod.yml up -d web
 docker compose --env-file .env.production -f docker-compose.prod.yml ps
+curl.exe -fsS http://127.0.0.1:3000/readiness
 ```
 
 ## Rollback
@@ -100,6 +143,23 @@ docker compose --env-file .env.production -f docker-compose.prod.yml up -d web
 
 Only run rollback migrations if a future migration explicitly documents a
 rollback path. Prisma `migrate deploy` is forward-only by design.
+
+## Restore From Backup
+
+Use restore only when you intentionally want to replace the database contents
+with a known backup. Stop the web process first so no requests write during the
+restore.
+
+```powershell
+docker compose --env-file .env.production -f docker-compose.prod.yml stop web
+docker compose --env-file .env.production -f docker-compose.prod.yml exec -T postgres sh -lc 'dropdb -U "$POSTGRES_USER" --if-exists "$POSTGRES_DB" && createdb -U "$POSTGRES_USER" "$POSTGRES_DB"'
+Get-Content "backups\zhijiao-<stamp>.sql" | docker compose --env-file .env.production -f docker-compose.prod.yml exec -T postgres sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+docker compose --env-file .env.production -f docker-compose.prod.yml up -d web
+curl.exe -fsS http://127.0.0.1:3000/readiness
+```
+
+After restore, check login and a minimal authenticated flow before resuming
+normal traffic.
 
 ## Launch Blockers Still Outside This Skeleton
 

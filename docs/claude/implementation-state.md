@@ -9,6 +9,7 @@
 - E2E 已接入 CI：workflow 起 `pgvector/pgvector:pg16` + `redis:7-alpine`，跑 `test:setup` 后执行 web E2E；失败时上传 Playwright artifacts。`docker compose` cleanup 放在 `always()` step。
 - Web production image 已落地：根 `Dockerfile` 构建 Next standalone web image；`NEXT_OUTPUT_STANDALONE=1` 只在 Docker build 打开，避免污染普通 `next build`。`apps/web/public/.gitkeep` 保证 standalone copy 目标稳定。
 - Production deploy skeleton 已落地：`.env.production.example`、`docker-compose.prod.yml`、`Dockerfile --target migrator`、`docs/ops/production-deploy.md`。prod compose 暴露 web，Postgres/Redis 只在内部网络；`migrate` 用 profile 单独跑 `db:migrate:deploy`；compose config 和 web/migrator image build 已进 CI。
+- Prod ops guardrails 已落地：`/readiness` 做 DB `SELECT 1` + Redis `PING` 依赖探针，web healthcheck 和 E2E server bootstrap 都改轮询 `/readiness`；`docs/ops/production-deploy.md` 补 first-deploy smoke、migration 前备份、恢复流程。实际 prod compose smoke 暴露并修掉两坑：可选 URL env 的空字符串必须按 unset 处理（否则 `.env.production.example` 的空 `WECHAT_PAY_NOTIFY_HOST` 会 fail）；Docker runner 阶段也必须装 `openssl`，否则 Prisma runtime 误选 `debian-openssl-1.1.x` query engine。
 - 已验证：local prod-style smoke 可启动临时 prod Postgres/Redis、跑 16 个 migration、启动 web，`/login` 返回 200 且 web container healthy；临时 prod volumes 已 `down -v` 清掉。master merge commit `2cc143a` 的 CI run `26890807958` 已 success。
 - 仍不是公网生产上线：ICP、域名/证书、真实短信、微信 OAuth、微信支付商户/APIv3/证书、OSS bucket/CDN、生产 secrets 注入与备份策略仍需独立推进；当前 production skeleton 只是可演练部署骨架。
 

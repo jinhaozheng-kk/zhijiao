@@ -150,11 +150,12 @@ export default async function globalSetup(): Promise<void> {
   writeFileSync(PID_FILE, String(child.pid));
 
   const url = `http://localhost:${PORT}`;
+  const readinessUrl = `${url}/readiness`;
   const startedAt = Date.now();
   try {
     while (Date.now() - startedAt < 60_000) {
       try {
-        const r = await fetch(url);
+        const r = await fetch(readinessUrl);
         if (r.ok) {
           // eslint-disable-next-line no-console
           console.log(`[e2e] server up at ${url} (spawn pid=${child.pid})`);
@@ -165,7 +166,7 @@ export default async function globalSetup(): Promise<void> {
       }
       await sleep(500);
     }
-    throw new Error(`globalSetup: server didn't start within 60s on ${url}`);
+    throw new Error(`globalSetup: server didn't become ready within 60s on ${readinessUrl}`);
   } catch (e) {
     // 自清理：失败路径必须把刚刚 spawn 的进程 + pidfile + 端口占用全收掉
     clearStaleState();

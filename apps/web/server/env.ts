@@ -6,6 +6,11 @@ const nullablePositiveIntEnv = z.preprocess(
   z.coerce.number().int().min(1).nullable(),
 );
 
+const optionalUrlEnv = z.preprocess(
+  (value) => (value === undefined || value === "" ? undefined : value),
+  z.string().url().optional(),
+);
+
 // Plan 2 Hardening — Task 1 (C1 + C2): fail-fast server env validation.
 // Module-load side effect: any server bundle that touches env.ts first triggers
 // this. Missing or malformed env → throw → Next.js logs the issue at boot.
@@ -34,7 +39,7 @@ const Env = z
     // Real-mode credentials (checked by .refine below — optional at schema level
     // because they're only required when the corresponding USE_MOCK="false").
     DASHSCOPE_API_KEY: z.string().optional(),
-    DASHSCOPE_BASE_URL: z.string().url().optional(),
+    DASHSCOPE_BASE_URL: optionalUrlEnv,
     ALIYUN_SMS_ACCESS_KEY_ID: z.string().optional(),
     ALIYUN_SMS_ACCESS_KEY_SECRET: z.string().optional(),
     ALIYUN_SMS_SIGN_NAME: z.string().optional(),
@@ -47,12 +52,12 @@ const Env = z
     WECHAT_PAY_PRIVATE_KEY: z.string().optional(),
     WECHAT_PAY_CERT_SERIAL: z.string().optional(),
     WECHAT_PAY_PUB_KEY_FILE: z.string().optional(),
-    WECHAT_PAY_NOTIFY_HOST: z.string().url().optional(),
+    WECHAT_PAY_NOTIFY_HOST: optionalUrlEnv,
     ALIYUN_OSS_ACCESS_KEY_ID: z.string().optional(),
     ALIYUN_OSS_ACCESS_KEY_SECRET: z.string().optional(),
     ALIYUN_OSS_BUCKET: z.string().optional(),
     ALIYUN_OSS_REGION: z.string().optional(),
-    ALIYUN_OSS_ENDPOINT: z.string().optional(),
+    ALIYUN_OSS_ENDPOINT: optionalUrlEnv,
     MOCK_WECHAT_PAY_SECRET: z
       .string()
       .min(16, "MOCK_WECHAT_PAY_SECRET must be >= 16 bytes")
