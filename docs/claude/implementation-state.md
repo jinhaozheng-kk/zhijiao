@@ -4,6 +4,14 @@
 > 承载红线、不变量、设计代价。**新 Plan 落地后在此追加现状段，不要写回 CLAUDE.md。**
 > 真源仍是 docx 需求文档与各 `docs/superpowers/plans/*.md`。
 
+**Launch-prep 现状**（2026-06-04）：
+- GitHub Actions CI 已落地并在 `master` 绿：push / PR 跑 `turbo typecheck`、`turbo test`、Playwright E2E、Docker image build。关键 CI 坑已修：Windows `.cmd` spawn 走 `execSync + PNPM_BIN`；`pnpm/action-setup` 必须早于 `setup-node cache: pnpm`；CI 全新 install 必须显式 `pnpm --filter @zhijiao/db db:generate`。
+- E2E 已接入 CI：workflow 起 `pgvector/pgvector:pg16` + `redis:7-alpine`，跑 `test:setup` 后执行 web E2E；失败时上传 Playwright artifacts。`docker compose` cleanup 放在 `always()` step。
+- Web production image 已落地：根 `Dockerfile` 构建 Next standalone web image；`NEXT_OUTPUT_STANDALONE=1` 只在 Docker build 打开，避免污染普通 `next build`。`apps/web/public/.gitkeep` 保证 standalone copy 目标稳定。
+- Production deploy skeleton 已落地：`.env.production.example`、`docker-compose.prod.yml`、`Dockerfile --target migrator`、`docs/ops/production-deploy.md`。prod compose 暴露 web，Postgres/Redis 只在内部网络；`migrate` 用 profile 单独跑 `db:migrate:deploy`；compose config 和 web/migrator image build 已进 CI。
+- 已验证：local prod-style smoke 可启动临时 prod Postgres/Redis、跑 16 个 migration、启动 web，`/login` 返回 200 且 web container healthy；临时 prod volumes 已 `down -v` 清掉。master merge commit `2cc143a` 的 CI run `26890807958` 已 success。
+- 仍不是公网生产上线：ICP、域名/证书、真实短信、微信 OAuth、微信支付商户/APIv3/证书、OSS bucket/CDN、生产 secrets 注入与备份策略仍需独立推进；当前 production skeleton 只是可演练部署骨架。
+
 **学情画像现状**（Plan 11）：
 - 新建 `packages/analytics`：`core.ts` 纯函数（`aggregateMastery` / `aggregateClassDiagnosis` / `scoreOf` / `decayWeight` / `tierOf`，零 runtime dep，**不**依赖 redis/ai/server-only）+ `queries.ts` 只读 Prisma 聚合（`profileForStudent` / `classDiagnosis`）。掌握度主源是 `AssignmentPerformance.kpIds`（绕开稀疏的 QuestionKPLink）；时间衰减半衰期 30 天；`UNGRADED` 行被过滤不计。
 - 掌握度三档 + 数据不足态：`weightedSampleSize < 1.0 → INSUFFICIENT_DATA(score=null)`；否则 `score<0.5 FOCUS / <0.8 PROGRESSING / 否则 SOLID`。**合规**：数据不足 KP 绝不渲染成 `0% 红块`；`FOCUS` 措辞用"重点巩固方向"、配色用蓝（`bg-sky-100`，聚焦）非红（失败）。色块措辞常量在 `apps/web/lib/mastery-copy.ts`。
