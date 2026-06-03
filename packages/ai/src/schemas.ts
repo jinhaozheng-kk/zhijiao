@@ -17,6 +17,18 @@ export const TutoringOutputSchema = z.object({
 });
 export type TutoringOutput = z.infer<typeof TutoringOutputSchema>;
 
+// 图片/OCR 拍照答疑（image tutor）— 单次多模态：转写 + 讲解一次出
+export const TutoringImageInputSchema = z.object({
+  imageDataUrl: z.string().min(1),
+  studentGrade: z.enum(["G5", "G6", "G7", "G8", "G9", "G10", "G11", "G12"]).optional(),
+});
+export type TutoringImageInput = z.infer<typeof TutoringImageInputSchema>;
+
+export const TutoringImageOutputSchema = TutoringOutputSchema.extend({
+  stemTranscript: z.string().min(1, "题面转写不能为空").max(4000),
+});
+export type TutoringImageOutput = z.infer<typeof TutoringImageOutputSchema>;
+
 // === ErrorAnalysis (error.diagnose) — Plan 4 ===
 
 // 与 ErrorBookEntry.rootCause Prisma enum 一一对应（packages/db/prisma/schema.prisma）

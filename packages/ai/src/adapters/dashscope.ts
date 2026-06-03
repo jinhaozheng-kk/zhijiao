@@ -18,9 +18,27 @@ export class DashScopeAdapter implements ModelAdapter {
   }
 
   async call(req: AdapterRequest): Promise<AdapterResponse> {
+    // Multimodal (qwen-vl): rewrite the last user message into OpenAI-compatible
+    // content parts (text + image_url) when image data URLs are present.
+    const messages = req.imageDataUrls?.length
+      ? req.messages.map((m, i, arr) =>
+          m.role === "user" && i === arr.length - 1
+            ? {
+                role: m.role,
+                content: [
+                  { type: "text" as const, text: m.content },
+                  ...req.imageDataUrls!.map((url) => ({
+                    type: "image_url" as const,
+                    image_url: { url },
+                  })),
+                ],
+              }
+            : m,
+        )
+      : req.messages;
     const resp = await this.client.chat.completions.create({
       model: req.model,
-      messages: req.messages,
+      messages: messages as OpenAI.Chat.ChatCompletionMessageParam[],
       temperature: req.temperature ?? 0.3,
       response_format:
         req.responseFormat === "json_object" ? { type: "json_object" } : undefined,

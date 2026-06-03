@@ -18,6 +18,8 @@ export {
 export interface UpsertUserAdhocQuestionArgs {
   userId: string;
   stemMd: string;
+  // 图片/OCR 拍照答疑：题源图片的对象存储 key（owner-scoped）。默认空。
+  stemImageKeys?: string[];
 }
 
 /**
@@ -72,6 +74,7 @@ export async function upsertUserAdhocQuestion(
         source: QUESTION_SOURCE_USER_ADHOC,
         createdByUserId: args.userId,
         normalizedStemHash,
+        stemImageKeys: args.stemImageKeys ?? [],
       },
     });
   } catch (e) {

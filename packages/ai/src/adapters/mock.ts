@@ -12,6 +12,11 @@ const DEFAULT_TUTORING = {
   finalAnswer: "x = 4",
 };
 
+const DEFAULT_TUTORING_IMAGE = {
+  stemTranscript: "已知一次函数 y = 2x - 3，求它与 x 轴交点的横坐标。",
+  ...DEFAULT_TUTORING,
+};
+
 const DEFAULT_ERROR_ANALYSIS = {
   rootCause: "CONCEPT_CONFUSION",
   reasoning: "Mock 分析：学生将类似概念混淆所致。",
@@ -90,6 +95,7 @@ function pickDefault(req: AdapterRequest): unknown {
     return DEFAULT_ASSIGNMENT_QUESTION_GENERATION;
   }
   if (sys.includes("学习顾问")) return DEFAULT_LEARNING_ADVICE;
+  if (sys.includes("拍照辅导助手")) return DEFAULT_TUTORING_IMAGE;
   return DEFAULT_TUTORING;
 }
 
