@@ -1,0 +1,109 @@
+name: zhijiao-prod
+
+services:
+  web:
+    image: ${ZHIJIAO_WEB_IMAGE:-zhijiao-web:prod}
+    build:
+      context: .
+      target: runner
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      HOSTNAME: 0.0.0.0
+      DATABASE_URL: postgresql://${POSTGRES_USER:?set POSTGRES_USER}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:?set POSTGRES_DB}
+      REDIS_URL: redis://redis:6379
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:?set NEXT_PUBLIC_APP_URL}
+      ACCESS_JWT_SECRET: ${ACCESS_JWT_SECRET:?set ACCESS_JWT_SECRET}
+      OTP_PEPPER: ${OTP_PEPPER:?set OTP_PEPPER}
+      AI_USE_MOCK: ${AI_USE_MOCK:?set AI_USE_MOCK}
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
+      DASHSCOPE_BASE_URL: ${DASHSCOPE_BASE_URL:-}
+      SMS_USE_MOCK: ${SMS_USE_MOCK:?set SMS_USE_MOCK}
+      ALIYUN_SMS_ACCESS_KEY_ID: ${ALIYUN_SMS_ACCESS_KEY_ID:-}
+      ALIYUN_SMS_ACCESS_KEY_SECRET: ${ALIYUN_SMS_ACCESS_KEY_SECRET:-}
+      ALIYUN_SMS_SIGN_NAME: ${ALIYUN_SMS_SIGN_NAME:-}
+      ALIYUN_SMS_TEMPLATE_CODE: ${ALIYUN_SMS_TEMPLATE_CODE:-}
+      WECHAT_OAUTH_USE_MOCK: ${WECHAT_OAUTH_USE_MOCK:?set WECHAT_OAUTH_USE_MOCK}
+      WECHAT_H5_APPID: ${WECHAT_H5_APPID:-}
+      WECHAT_H5_SECRET: ${WECHAT_H5_SECRET:-}
+      WECHAT_PAY_USE_MOCK: ${WECHAT_PAY_USE_MOCK:?set WECHAT_PAY_USE_MOCK}
+      MOCK_WECHAT_PAY_SECRET: ${MOCK_WECHAT_PAY_SECRET:-}
+      WECHAT_PAY_APPID: ${WECHAT_PAY_APPID:-}
+      WECHAT_PAY_MCHID: ${WECHAT_PAY_MCHID:-}
+      WECHAT_PAY_API_V3_KEY: ${WECHAT_PAY_API_V3_KEY:-}
+      WECHAT_PAY_PRIVATE_KEY: ${WECHAT_PAY_PRIVATE_KEY:-}
+      WECHAT_PAY_CERT_SERIAL: ${WECHAT_PAY_CERT_SERIAL:-}
+      WECHAT_PAY_PUB_KEY_FILE: ${WECHAT_PAY_PUB_KEY_FILE:-}
+      WECHAT_PAY_NOTIFY_HOST: ${WECHAT_PAY_NOTIFY_HOST:-}
+      STORAGE_USE_MOCK: ${STORAGE_USE_MOCK:?set STORAGE_USE_MOCK}
+      ALIYUN_OSS_ACCESS_KEY_ID: ${ALIYUN_OSS_ACCESS_KEY_ID:-}
+      ALIYUN_OSS_ACCESS_KEY_SECRET: ${ALIYUN_OSS_ACCESS_KEY_SECRET:-}
+      ALIYUN_OSS_BUCKET: ${ALIYUN_OSS_BUCKET:-}
+      ALIYUN_OSS_REGION: ${ALIYUN_OSS_REGION:-}
+      ALIYUN_OSS_ENDPOINT: ${ALIYUN_OSS_ENDPOINT:-}
+      CREDIT_PER_YUAN: ${CREDIT_PER_YUAN:?set CREDIT_PER_YUAN}
+      MINOR_MONTHLY_LIMIT_YUAN: ${MINOR_MONTHLY_LIMIT_YUAN:?set MINOR_MONTHLY_LIMIT_YUAN}
+      DEMO_MODE: ${DEMO_MODE:-0}
+      E2E_TEST_HOOKS: "0"
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - node -e "fetch('http://127.0.0.1:3000/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  migrate:
+    image: ${ZHIJIAO_MIGRATOR_IMAGE:-zhijiao-migrator:prod}
+    build:
+      context: .
+      target: migrator
+    profiles:
+      - migrate
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:?set POSTGRES_USER}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:?set POSTGRES_DB}
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB}
+    volumes:
+      - zhijiao-prod-pgdata:/var/lib/postgresql/data
+      - ./docker/postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - zhijiao-prod-redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  zhijiao-prod-pgdata:
+  zhijiao-prod-redisdata:

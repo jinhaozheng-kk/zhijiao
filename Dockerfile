@@ -28,6 +28,11 @@ COPY . .
 RUN pnpm --filter @zhijiao/db db:generate
 RUN pnpm --filter @zhijiao/web build
 
+FROM deps AS migrator
+ENV NODE_ENV=production
+COPY packages/db/prisma packages/db/prisma
+CMD ["pnpm", "--filter", "@zhijiao/db", "db:migrate:deploy"]
+
 FROM node:20-bookworm-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production
