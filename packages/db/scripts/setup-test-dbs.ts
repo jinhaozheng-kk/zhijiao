@@ -11,6 +11,9 @@ const PORT = process.env.PGPORT ?? "5432";
 const USER = process.env.PGUSER ?? "postgres";
 const PWD  = process.env.PGPASSWORD ?? "postgres";
 
+// On Windows the pnpm shim is `pnpm.cmd`; on Linux CI runners it is `pnpm`.
+const PNPM_BIN = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
+
 const dbs = [
   "zhijiao_test_ai",
   "zhijiao_test_auth",
@@ -63,7 +66,10 @@ function ensureDb(name: string): void {
 function migrate(name: string): void {
   const url = dbDsn(name);
   console.log(`[setup-test-dbs] migrating ${name} …`);
-  execSync(`pnpm.cmd --filter @zhijiao/db db:migrate:deploy`, {
+  // Run through the shell (execSync) so Windows resolves the `.cmd` shim;
+  // PNPM_BIN keeps Linux CI on bare `pnpm`. execFileSync without a shell
+  // cannot spawn `pnpm.cmd` on Windows (ENOENT).
+  execSync(`${PNPM_BIN} --filter @zhijiao/db db:migrate:deploy`, {
     stdio: "inherit",
     env: { ...process.env, DATABASE_URL: url },
   });
