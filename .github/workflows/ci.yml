@@ -9,9 +9,9 @@ permissions:
 
 jobs:
   test:
-    name: Typecheck and test
+    name: Typecheck, test, and E2E
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
 
     env:
       PGHOST: 127.0.0.1
@@ -63,6 +63,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Install Playwright Chromium
+        run: pnpm --filter @zhijiao/web exec playwright install --with-deps chromium
+
       # Generate the Prisma client so typecheck/test see the generated types.
       # test:setup uses `migrate deploy`, which (unlike `migrate dev`) does not
       # generate; without this, packages depending on Prisma types fail tsc.
@@ -77,6 +80,19 @@ jobs:
 
       - name: Test
         run: pnpm test
+
+      - name: E2E
+        run: pnpm --filter @zhijiao/web test:e2e
+
+      - name: Upload Playwright artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-artifacts
+          path: |
+            apps/web/test-results
+            apps/web/playwright-report
+          if-no-files-found: ignore
 
       - name: Stop containers
         if: always()
