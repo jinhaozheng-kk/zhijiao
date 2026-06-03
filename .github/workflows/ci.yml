@@ -63,6 +63,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Generate the Prisma client so typecheck/test see the generated types.
+      # test:setup uses `migrate deploy`, which (unlike `migrate dev`) does not
+      # generate; without this, packages depending on Prisma types fail tsc.
+      - name: Generate Prisma client
+        run: pnpm --filter @zhijiao/db db:generate
+
       - name: Prepare test databases
         run: pnpm test:setup
 
