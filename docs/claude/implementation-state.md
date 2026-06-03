@@ -142,7 +142,7 @@
 **Plan 8 未完成的事 —— 等后续 plan**：
 - ~~PII 扫描（手机号 / 身份证 regex）未在 Plan 6 做通用扫描器~~ → **Plan 14c 已落地**（`packages/domain/src/pii.ts` 通用 scanPii/redactPii，输入/输出双侧落库前脱敏）
 
-**E2E 现状**：全量 `pnpm.cmd --filter @zhijiao/web test:e2e` 现可**一次跑绿**（**24/24，17 个 spec 文件**；以 `playwright test --list` 的 `Total` 为准——单 chromium project、零 skip，list 数即 run 数）。承重的三件事，缺一会重新 flake：
+**E2E 现状**：全量 `pnpm.cmd --filter @zhijiao/web test:e2e` 现可**一次跑绿**（**24/24，17 个 spec 文件**；以 `playwright test --list` 的 `Total` 为准——单 chromium project、零 skip，list 数即 run 数）。**此数字是 source of truth，并在 `docs/claude/merge-verification.md` 探针 4 镜像一份；增/删任一 spec 后两处同步改。** 承重的三件事，缺一会重新 flake：
 - `e2e/helpers/login.ts`：OTP 发送被 per-IP 限频（`RULE_OTP_SEND_IP` cap 10 / 1 token 每 6s / fail-close）拒时，stagger 重试（jitter backoff ≈ refill 间隔）而不是首次失败即挂；每次重试 `goto("/login")` 取干净态；并 `test.setTimeout` 抬高运行中 test 的上限好让 backoff 放得下。
 - `playwright.config.ts` `workers: 1`：串行消除并行 worker 抢回血 token 的饿死（重试的 login 把刚回血的 token 输给别的 worker）；串行反而更快（并行版把时间烧在 backoff 上）。
 - `e2e/global-setup.ts` `resetE2eRateLimits()`：每次跑前清 Redis 里 `otp:send:*`/`otp:verify:*`/`register:*`/`refresh:*` 桶——否则限频桶跨运行残留，第 N 次跑把桶抽干、第 N+1 次起步即空（同样输入两次跑一绿一红）。
