@@ -97,3 +97,15 @@ jobs:
       - name: Stop containers
         if: always()
         run: docker compose down -v
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build web image
+        run: docker build -t zhijiao-web:ci .
