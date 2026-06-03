@@ -2,7 +2,7 @@ import type { WechatH5Adapter, WechatH5UserInfo } from "./types.js";
 
 /**
  * Mock 策略（不引入真微信）：
- *  - buildAuthorizeUrl 返回一个本地化的 URL，指向 /auth/wechat/callback?code=<mock-...>&state=<...>
+ *  - buildAuthorizeUrl 返回一个本地化的 URL，指向 /wechat/callback?code=<mock-...>&state=<...>
  *  - exchangeCodeForUser 按 code 前缀决定返回什么 openid：
  *      "mock-new-..."      → 全新 openid
  *      "mock-existing-..." → 固定 openid mock-openid-existing（测试需先 seed AuthIdentity）
