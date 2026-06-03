@@ -107,5 +107,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Validate production compose
+        run: docker compose --env-file .env.production.example -f docker-compose.prod.yml --profile migrate config --quiet
+
       - name: Build web image
         run: docker build -t zhijiao-web:ci .
+
+      - name: Build migrator image
+        run: docker build --target migrator -t zhijiao-migrator:ci .
