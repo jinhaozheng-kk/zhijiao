@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Typecheck and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: "5432"
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      REDIS_URL: redis://127.0.0.1:6379
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Start Postgres and Redis
+        run: docker compose up -d
+
+      - name: Wait for containers
+        shell: bash
+        run: |
+          set -euo pipefail
+          for container in zhijiao-postgres zhijiao-redis; do
+            echo "Waiting for ${container} to become healthy..."
+            for i in {1..30}; do
+              status="$(docker inspect -f '{{.State.Health.Status}}' "${container}" 2>/dev/null || true)"
+              if [ "${status}" = "healthy" ]; then
+                echo "${container} is healthy"
+                break
+              fi
+              sleep 2
+            done
+            final_status="$(docker inspect -f '{{.State.Health.Status}}' "${container}")"
+            if [ "${final_status}" != "healthy" ]; then
+              docker compose ps
+              docker compose logs "${container}"
+              exit 1
+            fi
+          done
+
+      # Install pnpm BEFORE setup-node so its `cache: pnpm` can locate the
+      # pnpm store. Version is read from package.json `packageManager` (pnpm@9).
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Generate the Prisma client so typecheck/test see the generated types.
+      # test:setup uses `migrate deploy`, which (unlike `migrate dev`) does not
+      # generate; without this, packages depending on Prisma types fail tsc.
+      - name: Generate Prisma client
+        run: pnpm --filter @zhijiao/db db:generate
+
+      - name: Prepare test databases
+        run: pnpm test:setup
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: Stop containers
+        if: always()
+        run: docker compose down -v
