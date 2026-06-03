@@ -22,7 +22,7 @@ async function token(userId: string) {
 }
 function form(bytes: Uint8Array, type: string, name = "x.png") {
   const fd = new FormData();
-  fd.set("file", new File([bytes], name, { type }));
+  fd.set("file", new File([bytes as BlobPart], name, { type }));
   return fd;
 }
 

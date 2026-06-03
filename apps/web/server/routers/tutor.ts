@@ -10,6 +10,7 @@ import { TutoringInputSchema, ComplianceRejectedError } from "@zhijiao/ai";
 import { redactPii } from "@zhijiao/domain";
 import { TRPCError } from "@trpc/server";
 import { getAiRouter } from "@/lib/ai-client";
+import { getStorage } from "@/lib/storage";
 import { upsertUserAdhocQuestion } from "../lib/question.js";
 import { reconcileHintsSync } from "../lib/kp-reconcile.js";
 import { logger } from "../logger.js";
@@ -88,5 +89,94 @@ export const tutorRouter = router({
       }
 
       return { ...ai, questionId: question.id };
+    }),
+
+  // 图片/OCR 拍照答疑：单次多模态调用（qwen-vl 转写 + 讲解），2 credits。
+  // 合规/PII 后置（单次多模态调用前没有文本可前置扫）：AI 路由已在 parse 前脱敏
+  // response + 扫违禁词（命中抛 ComplianceRejectedError）；本层再对 stemTranscript
+  // 落库前脱敏。图片 owner-only（key 前缀门禁）。
+  askImage: authedProcedure
+    .use(chargeMiddleware("TUTOR_ASK_IMAGE"))
+    .input(
+      z.object({
+        imageKey: z.string().min(1),
+        studentGrade: z
+          .enum(["G5", "G6", "G7", "G8", "G9", "G10", "G11", "G12"])
+          .optional(),
+        clientRequestId: z.string().uuid(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const prefix = `adhoc/${ctx.auth.userId}/`;
+      if (!input.imageKey.startsWith(prefix)) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "图片不存在",
+          cause: { reason: "IMAGE_NOT_FOUND" },
+        });
+      }
+      const bytes = await getStorage().getBytes(input.imageKey);
+      if (!bytes) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "图片不存在",
+          cause: { reason: "IMAGE_NOT_FOUND" },
+        });
+      }
+      const contentType = input.imageKey.endsWith(".png")
+        ? "image/png"
+        : input.imageKey.endsWith(".webp")
+          ? "image/webp"
+          : "image/jpeg";
+      const imageDataUrl = `data:${contentType};base64,${Buffer.from(bytes).toString("base64")}`;
+
+      let ai;
+      try {
+        ai = await getAiRouter(ctx.auth.userId).tutorImage({
+          imageDataUrl,
+          studentGrade: input.studentGrade,
+        });
+      } catch (e) {
+        if (e instanceof ComplianceRejectedError) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "讲解内容未通过合规检查，请换一张图或稍后再试。",
+            cause: { reason: "COMPLIANCE_REJECTED", original: e },
+          });
+        }
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "识别失败，请稍后再试。",
+          cause: { reason: "TUTOR_IMAGE_INTERNAL" },
+        });
+      }
+
+      const { redacted: redactedStem, hits } = redactPii(ai.stemTranscript);
+      if (hits.phone > 0 || hits.idCard > 0) {
+        logger.info({ event: "pii_redacted_input", source: "TUTOR_ASK_IMAGE", hits });
+      }
+      const question = await upsertUserAdhocQuestion(ctx.db, {
+        userId: ctx.auth.userId,
+        stemMd: redactedStem,
+        stemImageKeys: [input.imageKey],
+      });
+      try {
+        await reconcileHintsSync(ctx.db, {
+          questionId: question.id,
+          hints: ai.knowledgePoints,
+          source: "TUTOR_ADHOC",
+          sourceRefType: "QUESTION",
+          sourceRefId: question.id,
+        });
+      } catch (e) {
+        logger.warn({
+          event: "kp_reconcile_sync_failed",
+          source: "TUTOR_IMAGE",
+          questionId: question.id,
+          err: String(e),
+        });
+      }
+      const { stemTranscript: _t, modelCallId: _m, ...tutoring } = ai;
+      return { ...tutoring, stemTranscript: redactedStem, questionId: question.id };
     }),
 });
