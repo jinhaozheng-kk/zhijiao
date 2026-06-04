@@ -6,8 +6,8 @@
 
 **产品重心转向现状**（2026-06-04）：
 - 项目重心已从“学生 AI 学习闭环（答疑 / 错因 / 举一反三 / 训练 / 错题本 / 学情）”转向“教师生产力工具”。学生端进入维护态：除稳定性、合规、安全、存量闭环和支撑教师工具的数据需求外，不继续扩展学生端新能力。
-- 近期产品主线只有两条：Plan 17 `AI 出卷` 和 Plan 18 `AI 课件`。Plan 17 是第一突破口；Plan 18 是第二支柱。
-- Plan 17 已有 spec + implementation plan：独立 `Paper`/`PaperItem`，复用现有 `PAPER_GEN` 固定计费，题库 best-effort 复用 + AI 补 gap，`PAPER_GENERATED` owner-only，双向细目表渲染时计算，打印页浏览器另存 PDF。
+- 近期产品主线只有两条：Plan 17 `AI 出卷` 和 Plan 18 `AI 课件`。Plan 17 已落地为第一突破口；Plan 18 是第二支柱。
+- Plan 17 `AI 出卷` 已落地：独立 `Paper`/`PaperItem`，复用现有 `PAPER_GEN` 固定计费，题库 best-effort 复用 + AI 补 gap，`PAPER_GENERATED` owner-only，双向细目表渲染时计算，打印页浏览器另存 PDF。
 - Plan 18 已有 spec：独立 `Courseware`/`CoursewareSection`，复用 `LESSON_PLAN_GEN` 固定 3 credits，五段强校验（INTRO / EXPLANATION / EXAMPLE / PITFALL / EXERCISE），分段编辑，打印页，例题/练习 inline markdown 不落 `Question`。
 - 新实现默认遵守扣费链顺序：`.input(...) -> requireTeacherPersona -> requireGuardianConsent -> chargeMiddleware(...) -> resolver`，畸形输入和非教师身份不得先扣费。
 
@@ -41,6 +41,15 @@
 - 学生只看到自己的 `StudentAssignment` tier；只能提交 assigned tier item，重复提交返回状态冲突。
 - 教师人工批改；`WRONG` / `PARTIAL` 要 root cause，写回错题本并 upsert `AssignmentPerformance`；全部答案批改后 `StudentAssignment` 进入 `GRADED`。
 - `/teacher`、`/teacher/classes/...`、`/teacher/assignments/...` 和 `/assignments` 学生端闭环已可用；E2E hook `/api/e2e-hooks/assignment` 仅 `E2E_TEST_HOOKS=1` 开启。
+
+**AI 出卷现状**（Plan 17）：
+- 数据模型：独立 `Paper` / `PaperItem`，教师自有、不绑定班级；`PaperStatus` 只有 `DRAFT` / `READY`，`PaperItemSource` 只有 `BANK` / `AI_GENERATED`。`PaperItem` 保存题面、答案、解析、分值、难度、认知层级、KP hints 的快照；`Question.cognitiveLevel` 与 `Question(source="PAPER_GENERATED")` 支撑后续复用和 owner-only 访问。
+- AI 与计费：复用既有 `PAPER_GEN` taskKind，固定 5 credits；链顺序是 `.input(...) -> requireTeacherPersona -> requireGuardianConsent -> chargeMiddleware("PAPER_GEN") -> resolver`。非教师在扣费前 `FORBIDDEN` 且不写 DEBIT；KP 与 subject 不匹配发生在扣费后但会补偿，净余额不变且不落 Paper。
+- 生成链：`selectBankQuestions` 先按 subject/KP/题型/难度 best-effort 命中题库；不足题量才调 `AiRouter.generatePaper` 补 gap。BANK 命中不阻塞 AI gap；全 AI 出卷落 `Paper` + `PaperItem` + `Question(PAPER_GENERATED)`，每题默认 5 分，可在预览页调分。
+- 权限：`requireTeacherPersona` 是教师入口门禁；`validatePaperOwnership` 对 `get/markReady/removeItem/updateItemPoints` 做 owner-only，跨教师/不存在合并 `NOT_FOUND/PAPER_NOT_FOUND`，避免存在性侧信道。`PAPER_GENERATED` 已加入 `validateQuestionAccess` owner-only 集，其他用户拿 questionId 经 `error.diagnose` 探测时返回 `NOT_FOUND`。
+- UI：`/teacher/papers` 列表、`/teacher/papers/new` 参数表单、`/teacher/papers/[paperId]` 预览编辑、`/teacher/papers/[paperId]/print` 打印页已可用；教师导航 `AI 出卷` 指向 `/teacher/papers`，班级页原 Plan 17 占位卡已改为真实入口。打印页仍走 `paper.get` 权限链，DRAFT/READY 均可访问。
+- 双向细目表：由 `buildSpecTable` 渲染时聚合 `KP × cognitiveLevel × type × difficulty`，返回 rows + `totalCount` + `totalPoints`；不额外持久化，避免调分/删题后的派生数据漂移。
+- PII：注销教师删除其 `Paper`（级联 `PaperItem`），同时将本人 `PAPER_GENERATED Question.createdByUserId` 置 null 保留题目行；`exportUserData` 加 `papers` 白名单段（title/status/paramsJson/createdAt/items 的 stem/type/answer/solution/points/difficulty/cognitiveLevel/kpHints），不导出他人 Paper。
 
 **计费现状**：
 - `packages/billing` 新建：ensureWallet / chargeForAction（predicate-on-update + idemKey 防重，原子化）/ compensate（写 COMPENSATION ledger + refId 指回 DEBIT）/ applyWechatPayNotify（P2002 idemKey 重读 → ALREADY_PAID；P2002 transactionId 重读 → DUPLICATE_TRANSACTION_ID；spec §4.1 状态机；FAILED→PAID 拒绝走 TERMINAL_STATE_CONFLICT）/ expireStaleOrders / adminAdjust（OPS 调账；负 delta 也走 predicate-on-update 防透支 → InsufficientBalanceForAdjustError）/ sumMonthlyTopupCents（Asia/Shanghai 自然月 + CREATED+PENDING by createdAt + PAID by paidAt）
@@ -159,7 +168,7 @@
 **Plan 8 未完成的事 —— 等后续 plan**：
 - ~~PII 扫描（手机号 / 身份证 regex）未在 Plan 6 做通用扫描器~~ → **Plan 14c 已落地**（`packages/domain/src/pii.ts` 通用 scanPii/redactPii，输入/输出双侧落库前脱敏）
 
-**E2E 现状**：全量 `pnpm.cmd --filter @zhijiao/web test:e2e` 现可**一次跑绿**（**24/24，17 个 spec 文件**；以 `playwright test --list` 的 `Total` 为准——单 chromium project、零 skip，list 数即 run 数）。**此数字是 source of truth，并在 `docs/claude/merge-verification.md` 探针 4 镜像一份；增/删任一 spec 后两处同步改。** 承重的三件事，缺一会重新 flake：
+**E2E 现状**：全量 `pnpm.cmd --filter @zhijiao/web test:e2e` 现可**一次跑绿**（**25/25，18 个 spec 文件**；以 `playwright test --list` 的 `Total` 为准——单 chromium project、零 skip，list 数即 run 数）。**此数字是 source of truth，并在 `docs/claude/merge-verification.md` 探针 4 镜像一份；增/删任一 spec 后两处同步改。** 承重的三件事，缺一会重新 flake：
 - `e2e/helpers/login.ts`：OTP 发送被 per-IP 限频（`RULE_OTP_SEND_IP` cap 10 / 1 token 每 6s / fail-close）拒时，stagger 重试（jitter backoff ≈ refill 间隔）而不是首次失败即挂；每次重试 `goto("/login")` 取干净态；并 `test.setTimeout` 抬高运行中 test 的上限好让 backoff 放得下。
 - `playwright.config.ts` `workers: 1`：串行消除并行 worker 抢回血 token 的饿死（重试的 login 把刚回血的 token 输给别的 worker）；串行反而更快（并行版把时间烧在 backoff 上）。
 - `e2e/global-setup.ts` `resetE2eRateLimits()`：每次跑前清 Redis 里 `otp:send:*`/`otp:verify:*`/`register:*`/`refresh:*` 桶——否则限频桶跨运行残留，第 N 次跑把桶抽干、第 N+1 次起步即空（同样输入两次跑一绿一红）。
@@ -169,7 +178,7 @@
 - `/demo` is gated by `DEMO_MODE=1` and issues real sessions for fixed demo identities.
 - Demo data is reset by `pnpm demo:reset` and verified by `pnpm verify:demo`.
 - Main student/teacher/parent paths share the 初二数学 demo story and use the polished product shell.
-- AI 出卷 and AI 课件 are shown only as Plan 17/18 preview entries; no production workflow is implemented in Plan 16.
+- Plan 16 originally showed AI 出卷 and AI 课件 as preview entries; Plan 17 has replaced AI 出卷 with the production `/teacher/papers` workflow. AI 课件 remains preview-only until Plan 18 lands.
 
 **靶向训练现状（targeted training v1）：**
 - 免费、复用优先：`training.*` 走 `consentGatedProcedure`（**不** chargedProcedure），不调 AI。题源只读学生自己的 ACTIVE 错题 + 已生成变式（`VariantItem`→其晋升 Question 的 KP link），按 FOCUS KP 排序；不足 `MIN_TARGETED=3` 时回退 `dueForReview`，全空返 `INSUFFICIENT_DATA`。会话上限 `SESSION_ITEM_CAP=8`。
