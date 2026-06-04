@@ -104,10 +104,11 @@
 - **Plan 16 follow-up**（§9/§10 残留收口：`server/shell-identity.ts` 从会话解析身份 → async `AppShell` 显示当前身份徽标 + 角色从 persona 派生、12 页去掉写死 role/demoMode；`navForRole(role, classroomId?)` 教师导航锚点进班级工作台（修好原指向 `/teacher` 的死链 AI 预览）；`ui/skeleton.tsx` 骨架屏接入 5 个客户端数据视图；`ui/ai-generating-panel.tsx` + tutor/变式流的「AI 生成中」面板与「重试」入口；vitest esbuild jsx automatic + `.test.tsx` 渲染测试）—— 见 `docs/superpowers/plans/2026-06-02-plan16-shell-state-followup.md`，spec 在 `docs/superpowers/specs/2026-06-02-plan16-shell-state-followup-design.md`
 - **Plan 16 residuals**（收口最后两项：`/api/demo/enter` 由带副作用 GET 改为 POST（303，从 `/demo` 表单提交）避免预取/CSRF；demo 种子学生作业改 `GRADED`（与已批改答案 + 错题回流一致，符合 Plan 10 状态机）+ `verifyDemoData` 同步）—— 无独立 spec/plan，属 Plan 16 收尾
 - **靶向训练 v1**（免费·复用优先的薄弱点练习会话：`TrainingAttempt` 表 + `TrainingItemSource` 枚举；analytics `PerfSample.sourceWeight` + `profileForStudent` 降权混入自评样本闭合 训练→学情；`training.startSession`（FOCUS 排序自错题本+变式、不足回退 dueForReview、空态 INSUFFICIENT_DATA）+ `submitAttempt`（自评、KNOW 推进复习阶梯、跨用户 NOT_FOUND）；抽出共享 `advanceReviewLadder`；`/training` hint-first 自评 UI + 训练导航 + 画像 CTA）—— 见 `docs/superpowers/plans/2026-06-03-targeted-training.md`，spec 在 `docs/superpowers/specs/2026-06-03-targeted-training-design.md`
+- **图片/OCR 拍照答疑 v1**（mock-first 对象存储 + authed 图片上传、`TUTOR_ASK_IMAGE` 多模态转写并讲解、2 credits 计费、owner-scoped image key、转写落 USER_ADHOC Question + `stemImageKeys`、TutorForm 图片入口 + 可编辑转写重答、E2E）—— 见 `docs/superpowers/plans/2026-06-03-image-ocr-tutor.md`，spec 在 `docs/superpowers/specs/2026-06-03-image-ocr-tutor-design.md`
 
 ## 实现现状
 
-各 Plan 落地后的工作知识（红线 / 不变量 / 设计代价）已拆到 **`docs/claude/implementation-state.md`** —— 触碰相关模块前先读对应"现状"段（学情画像 Plan 11 / 教师作业 Plan 10 / 计费 / 鉴权 / 错题本变式 Plan 4 / 答疑持久化 Plan 8 / 知识点 Plan 9 / KP 树 Plan 13 / VariantItem Plan 12 / 未成年同意 Plan 14a / PII 扫描器 Plan 14c / DSAR Plan 14b / PII 治理 Plan 6 / 靶向训练 / E2E 现状）。新 Plan 落地后在该文件追加，不写回本文件。
+各 Plan 落地后的工作知识（红线 / 不变量 / 设计代价）已拆到 **`docs/claude/implementation-state.md`** —— 触碰相关模块前先读对应"现状"段（学情画像 Plan 11 / 教师作业 Plan 10 / 计费 / 鉴权 / 错题本变式 Plan 4 / 答疑持久化 Plan 8 / 知识点 Plan 9 / KP 树 Plan 13 / VariantItem Plan 12 / 未成年同意 Plan 14a / PII 扫描器 Plan 14c / DSAR Plan 14b / PII 治理 Plan 6 / 靶向训练 / 图片/OCR 拍照答疑 / E2E 现状）。新 Plan 落地后在该文件追加，不写回本文件。
 
 **常用命令**：
 
@@ -131,10 +132,9 @@ pnpm --filter @zhijiao/web  test -- tests/integration/auth-register-race.test.ts
 
 ## Merge 后必跑（不是"绿测试"就行）
 
-73 条回归探针已拆到 **`docs/claude/merge-verification.md`** —— 每次 merge 后逐条核对；新探针追加到该文件，不写回本文件。
+81 条回归探针已拆到 **`docs/claude/merge-verification.md`** —— 每次 merge 后逐条核对；新探针追加到该文件，不写回本文件。
 
-**下一步候选 Plan**（Plan 4 + Plan 6 + Plan 8 + Plan 9 + Plan 10 + Plan 11 + Plan 12 + Plan 13 + Plan 14a + Plan 14b + Plan 14c + Plan 16 + 靶向训练 v1 已落地）：
-- **图片/OCR 输入**（发布计划里 MVP 收尾的下一项：答疑/错题支持拍照/截图/公式图片，OCR 接入编排层）—— 上线前最后一个 MVP 闭环项
+**下一步候选 Plan**（Plan 4 + Plan 6 + Plan 8 + Plan 9 + Plan 10 + Plan 11 + Plan 12 + Plan 13 + Plan 14a + Plan 14b + Plan 14c + Plan 16 + 靶向训练 v1 + 图片/OCR 拍照答疑 v1 已落地）：
 - Plan 5: 真接阿里云 SMS + 微信公众号（ICP 备案通过后；**且 Plan 2 Hardening 必须先 ship**；替换 `RealSmsAdapter` / `RealWechatH5Adapter` 的 stub 实现）
 - Plan 7: 真接微信支付 V3 API（需 ICP 备案 + 商户号 + APIv3 + 商户证书；激活 `RealWechatPayAdapter.unifiedOrder` + `verifyNotify`）—— **Plan 3 prod ship prereq**
 - Plan 15: USER_ADHOC × PUBLISHED canonical dedup / 题库去重 / PUBLISHED 复用 / 统计归并（Plan 8 §6.2 punt）
