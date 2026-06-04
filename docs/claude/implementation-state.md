@@ -5,6 +5,7 @@
 > 真源仍是 docx 需求文档与各 `docs/superpowers/plans/*.md`。
 
 **Launch-prep 现状**（2026-06-04）：
+- Launch readiness acceptance 已按「先 B 后 A」完成：private prod-style Docker dry run 通过（compose config、web/migrator build、Postgres/Redis healthy、16 个 migration、`/readiness` DB+Redis ok、`/login` 200），local demo/internal-test 通过（`demo:reset`/`verify:demo` 13 checks、focused demo/product E2E、full web E2E 24/24、`turbo typecheck --force`、`turbo test --force`、高风险 merge probes）。落地修复：storage real-mode env gate 覆盖、migrator 改为在 `/app/packages/db` 执行 `pnpm exec prisma migrate deploy`。验收报告见 `docs/ops/launch-readiness-report.md`。公网发布仍被 ICP、域名/TLS、真实短信/微信/OSS、生产 secrets 与备份策略阻塞。
 - GitHub Actions CI 已落地并在 `master` 绿：push / PR 跑 `turbo typecheck`、`turbo test`、Playwright E2E、Docker image build。关键 CI 坑已修：Windows `.cmd` spawn 走 `execSync + PNPM_BIN`；`pnpm/action-setup` 必须早于 `setup-node cache: pnpm`；CI 全新 install 必须显式 `pnpm --filter @zhijiao/db db:generate`。
 - E2E 已接入 CI：workflow 起 `pgvector/pgvector:pg16` + `redis:7-alpine`，跑 `test:setup` 后执行 web E2E；失败时上传 Playwright artifacts。`docker compose` cleanup 放在 `always()` step。
 - Web production image 已落地：根 `Dockerfile` 构建 Next standalone web image；`NEXT_OUTPUT_STANDALONE=1` 只在 Docker build 打开，避免污染普通 `next build`。`apps/web/public/.gitkeep` 保证 standalone copy 目标稳定。

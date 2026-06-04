@@ -9,7 +9,7 @@ production-style skeleton, not a public launch checklist.
 - `docker-compose.prod.yml` runs `web`, `postgres` with pgvector, and `redis`.
 - The `web` service uses the root `Dockerfile` `runner` target.
 - The `migrate` service uses the same Dockerfile `migrator` target and runs
-  `pnpm --filter @zhijiao/db db:migrate:deploy`.
+  `pnpm exec prisma migrate deploy` from `/app/packages/db`.
 - Postgres and Redis are internal services only. Do not publish them publicly.
 - TLS/reverse proxy is intentionally out of scope until the real domain and ICP
   state are known.
