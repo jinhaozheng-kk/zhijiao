@@ -100,15 +100,36 @@ model PaperItem {
 
 ## 4. 生成流程（混合题源）
 
-`paper.generate`（teacher-gated + `chargedProcedure("PAPER_GEN")`）：
+**中间件链（教师门禁必须在扣费前，非教师不写 DEBIT）**：
+
+```
+authedProcedure
+  → requireTeacherPersona      // ctx.auth.persona !== "TEACHER" → FORBIDDEN（扣费前）
+  → requireGuardianConsent     // 与全站一致（教师 NOT_REQUIRED，NOOP；保持链一致）
+  → chargeMiddleware("PAPER_GEN")   // 显式链，不用 chargedProcedure 糖（糖缺教师门禁）
+  → resolver
+```
+
+- **不**用 `chargedProcedure("PAPER_GEN")` 糖——它是 `auth + requireGuardianConsent + charge`，**缺教师门禁**，会误成"先扣费再 resolver 查 persona"。必须显式链，把 `requireTeacherPersona` 插在 `chargeMiddleware` **之前**。
+- `requireTeacherPersona`：新中间件，读 `ctx.auth.persona`（已在 `AuthCtx`，零 DB 查询），非 `"TEACHER"` 抛 `FORBIDDEN / PERMISSION_DENIED`。注意 `PAPER_GEN` 是 `DEFAULT_LOGGED_IN_PERMS`（人人有），故**不能**用 `permissionProcedure("PAPER_GEN")` 限教师。
+
+`paper.generate` resolver：
 
 1. 校验参数（年级/KP/题型分布/难度/题量；题量上限如 30）。
-2. **BANK 选题（best-effort，可选）**：按 `status=PUBLISHED` + KP 命中 + 题型 + 难度 邻近，选不超过需求量的题（去重）。题库空/不足 → 选 0 道，不报错。
+2. **BANK 选题（best-effort 最小实现，可选）**：按 `status=PUBLISHED` + KP 命中（经 `QuestionKPLink`）+ 题型 + 难度 邻近，选不超过需求量的题（去重）。**最小实现红线**：只做 best-effort query；**无 `QuestionKPLink` 或题库不足 → 直接返回空**（全 AI 兜底）；不实现复杂配比/最优选择；**不依赖 Plan 15 schema**（不读 `normalizedStemHash`/`reuseHitCount`/`externalKey`，避免把 reshelved 的 Plan 15 又带回来）。
 3. **AI 补缺口**：`gap = count - bankCount`；`gap > 0` 调 `PAPER_GEN` 生成 gap 道（prompt 带已选 BANK 题摘要避免重复）。`gap == 0` 跳过 AI（仍按固定 5 credits 计费，v1 简化）。
 4. **事务落库**：`Paper(DRAFT)` + `PaperItem[]`（position 连续；BANK 题 `source=BANK, questionId=库题id`；AI 题先 `Question.create(DRAFT, source="PAPER_GENERATED", createdByUserId=teacherId, cognitiveLevel)` 再 `PaperItem(source=AI_GENERATED, questionId=新题id)`）。`generationLedgerId=ctx.debit.ledgerId`、`generationCallId=modelCallId`。
 5. **reconcile**：对 AI 落的 Question 跑 `reconcileHintsSync`（事务外，await+try/catch 不破坏主流程，仿 `persistGeneratedAssignment`）。
 
-计费在 resolver 前由 `chargedProcedure` 完成；AI 失败抛错 → 既有补偿退 5 credits（生成失败不落 Paper）。
+计费在 resolver 前由 `chargeMiddleware("PAPER_GEN")` 完成；AI 失败抛错 → 既有补偿退 5 credits（生成失败不落 Paper）。
+
+### 4.1 PaperStatus 状态流（v1 明确）
+
+- 生成后 `Paper.status = DRAFT`。
+- DRAFT 态教师可**删题 / 调分值**（`paper.removeItem` / `paper.updateItemPoints`，重排 position）。
+- `paper.markReady` 把 `DRAFT → READY`（教师确认态）。READY 不锁编辑（v1 不做强不可变，后续再收紧）。
+- **打印页 `DRAFT/READY 都允许访问**——`READY` 仅是教师确认语义，不做强门禁。
+- 所有 `paper.*`（含 markReady/removeItem/updateItemPoints）经 `requireTeacherPersona` + `validatePaperOwnership`，跨教师/不存在 → `NOT_FOUND`。
 
 ## 5. 双向细目表
 
@@ -116,7 +137,7 @@ model PaperItem {
 
 ## 6. 访问控制与 owner-only
 
-- `paper.*` 教师门禁（persona=TEACHER，复用 assignment 路由门禁范式）。
+- `paper.*` 教师门禁：`requireTeacherPersona`（`ctx.auth.persona==="TEACHER"`），**生成路径置于 `chargeMiddleware` 之前**（§4 链）。
 - Paper/PaperItem 读写经 `validatePaperOwnership`（paper 不存在 / 跨教师 → 合并 `NOT_FOUND`，不区分存在性侧信道；注入 ctx.paper）。
 - `source="PAPER_GENERATED"` 加入 `OWNER_ONLY_QUESTION_SOURCES`（`trpc.ts`）：经 `validateQuestionAccess` 的路由（如 `error.diagnose`）对他人的 PAPER_GENERATED 题返 `NOT_FOUND`，禁止 questionId 探测。教师只经 Paper 访问自己的题。
 
@@ -130,7 +151,7 @@ model PaperItem {
 
 - `/teacher/papers`：教师试卷列表（标题 / 题量 / 状态 / 时间）。
 - `/teacher/papers/new`：参数表单（年级 / KP 多选 / 题型分布 / 难度 / 题量）→ 生成（AI 生成中面板 + 重试，复用 `ui/ai-generating-panel`）。
-- `/teacher/papers/[id]`：预览（题目列表 + 答案解析折叠 + 双向细目表）；v1 支持删题 / 调分值（换题/重生成留后续）。
+- `/teacher/papers/[id]`：预览（题目列表 + 答案解析折叠 + 双向细目表 + DRAFT/READY 徽标）；v1 支持删题 / 调分值 + "确认完成"（`paper.markReady`）；换题/重生成留后续。
 - `/teacher/papers/[id]/print`：打印友好页（`@media print`），题卷 → 答案解析分页 → 双向细目表。
 - 教师导航/班级工作台把"AI 出卷"预览卡占位替换为真入口（`teacher/classes/[classroomId]/page.tsx` 现 `Plan 17` 占位段）。
 
@@ -146,7 +167,8 @@ model PaperItem {
 2. 新表 `Paper`、`PaperItem`。
 3. `Question` 加 `cognitiveLevel CognitiveLevel?` + relation `paperItems`。
 4. `User` 加 relation `papers Paper[]`（`TeacherPapers`）。
-5. `trpc.ts` `OWNER_ONLY_QUESTION_SOURCES` 加 `"PAPER_GENERATED"`（非 schema，列此备忘）。
+5. `trpc.ts` `OWNER_ONLY_QUESTION_SOURCES` 加 `"PAPER_GENERATED"`（非 schema，备忘）。
+6. `trpc.ts` 新中间件 `requireTeacherPersona`（非 schema，备忘）。
 
 均为加表/加列/加枚举，无破坏性迁移。
 
@@ -160,7 +182,9 @@ model PaperItem {
 - 生成失败（AI 抛错）→ 不落 Paper、补偿退 5。
 - 跨教师访问他人 Paper → `NOT_FOUND`。
 - 他人 `error.diagnose` 探测 PAPER_GENERATED questionId → `NOT_FOUND`（owner-only 回归）。
-- 非教师 persona 调 `paper.generate` → 门禁拒。
+- 非教师 persona 调 `paper.generate` → **扣费前 FORBIDDEN，不写 DEBIT**（断言无新 ledger 行）。
+- `paper.markReady` DRAFT→READY；READY 后打印页仍 200；DRAFT 打印页也 200（无强门禁）。
+- `paper.removeItem` / `updateItemPoints` 仅 owner 教师可改，跨教师 → `NOT_FOUND`。
 - 注销教师 → Paper 级联删、PAPER_GENERATED 题 `createdByUserId` 置 null 保留。
 
 **E2E**：教师登录 → 出卷参数 → 生成 → 预览见题/解析/细目表 → 打印页 200。
