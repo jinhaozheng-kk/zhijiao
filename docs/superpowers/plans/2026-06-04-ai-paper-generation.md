@@ -749,10 +749,10 @@ const GenInput = z.object({
 
 export const paperRouter = router({
   generate: authedProcedure
+    .input(GenInput)                           // 先校验参数——畸形参数在扣费前失败（见 assignment.generateDraftFromCriteria 范式）
     .use(requireTeacherPersona)               // 扣费前教师门禁
     .use(requireGuardianConsent)
     .use(chargeMiddleware("PAPER_GEN"))        // 固定 5 credits
-    .input(GenInput)
     .mutation(async ({ ctx, input }) => {
       const math = await ctx.db.subject.findUniqueOrThrow({ where: { code: "math" } });
       const bank = await selectBankQuestions(ctx.db, {

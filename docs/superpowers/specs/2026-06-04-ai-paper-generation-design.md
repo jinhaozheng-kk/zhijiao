@@ -104,6 +104,7 @@ model PaperItem {
 
 ```
 authedProcedure
+  .input(GenInput)             // 参数校验在中间件前——畸形参数在扣费前失败（范式见 assignment.generateDraftFromCriteria）
   → requireTeacherPersona      // ctx.auth.persona !== "TEACHER" → FORBIDDEN（扣费前）
   → requireGuardianConsent     // 与全站一致（教师 NOT_REQUIRED，NOOP；保持链一致）
   → chargeMiddleware("PAPER_GEN")   // 显式链，不用 chargedProcedure 糖（糖缺教师门禁）
