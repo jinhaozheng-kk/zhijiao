@@ -56,7 +56,8 @@ export interface SeedQuestion {
 - 先跑 `validateSeedQuestions`。
 - 对每题：`normalizedStemHash = sha256(normalizeStem(stemMd))`（复用 Plan 8 的 `normalizeStem`：trim + 折叠空白，不 lowercase）。
 - 幂等 upsert：按 `externalKey` 找现有 Question（在 stem 里不存 externalKey，故另存——见 2.4），upsert `Question(source="PUBLISHED", status=PUBLISHED, normalizedStemHash, subjectId=math)` + `QuestionAnswer` + `QuestionKPLink`（weight 默认 1.0）。
-- 校验脚本 `verify:question-bank`：断言 PUBLISHED（source="PUBLISHED"）题数 ≥ 30 且每题有 answer + ≥1 KP link。
+- **同步补 hash**：现有 `2_questions.ts` 的 3 道 PUBLISHED 题加 `normalizedStemHash: stemHashHex(stem)`，使其也可被 canonical 匹配（否则 hash=null 不参与）。
+- 校验脚本 `verify:question-bank`：断言 `status=PUBLISHED` 题数 ≥ 30 且每题有 answer + ≥1 KP link + `normalizedStemHash` 非空。
 
 ### 2.4 externalKey 落点
 
@@ -76,9 +77,11 @@ model Question {
 
 ### 3.1 匹配
 
-- 在 `tutor.ask` 落 USER_ADHOC **之前**，用脱敏后题面的 `normalizedStemHash` 查 PUBLISHED canonical：
-  `findFirst({ where: { source: "PUBLISHED", status: "PUBLISHED", normalizedStemHash: hash } })`。
-- 为查询性能加索引：`@@index([source, status, normalizedStemHash])`（或 partial idx）。
+- 在 `tutor.ask` 落 USER_ADHOC **之前**，用脱敏后题面的 `normalizedStemHash` 查 canonical：
+  `findFirst({ where: { status: "PUBLISHED", normalizedStemHash: hash }, orderBy: { createdAt: "asc" } })`。
+- **匹配谓词不依赖 `source` 字符串**：现有 PUBLISHED 题的 `source` 值不一致（seed `2_questions.ts` 用 `"自有"`、新语料用 `"PUBLISHED"`、旧测试甚至为 null）。改用 `status="PUBLISHED"` 作判据——owner-only 的 USER_ADHOC / VARIANT_GENERATED 恒为 `DRAFT`，天然被排除，不会被误当 canonical。
+- **前提**：所有 PUBLISHED 题必须有 `normalizedStemHash`。新语料 loader 落库即算（§2.3）；现有 `2_questions.ts` 的 3 道 PUBLISHED 题同步补 hash（§2.3）。`normalizedStemHash=null` 的 PUBLISHED 行不参与匹配（安全降级）。
+- 为查询性能加索引：`@@index([status, normalizedStemHash])`。
 - v1 仅精确 hash 匹配。多个 PUBLISHED 撞同 hash 取最早一条（稳定）。
 
 ### 3.2 讲解缓存表
@@ -103,7 +106,7 @@ model QuestionExplanationCache {
 }
 ```
 
-- band 映射：`studentGrade` 输入（缺则 `user.gradeLevel`，再缺则 `NEUTRAL`）→ G5–G6=PRIMARY / G7–G9=JUNIOR / G10–G12=SENIOR。
+- band 映射：由 `tutor.ask` 的 `studentGrade` 输入派生（缺则 `NEUTRAL`，**不额外查 user 表**避免热路径多一次 round trip）→ G5–G6=PRIMARY / G7–G9=JUNIOR / G10–G12=SENIOR。
 - `tutoringJson` 存通过 PII 脱敏 + 合规校验后的讲解（与现有 `router.ts` 输出侧脱敏一致；缓存的内容已是脱敏后的）。
 
 ### 3.3 中间件链重构
@@ -157,7 +160,7 @@ authedProcedure
 
 1. `Question.externalKey String? @unique`（seed/导入幂等键）。
 2. `Question.reuseHitCount Int @default(0)`（热度统计消费者）。
-3. `Question` 加索引 `@@index([source, status, normalizedStemHash])`（canonical 查找）。
+3. `Question` 加索引 `@@index([status, normalizedStemHash])`（canonical 查找）。
 4. 新枚举 `GradeBand`。
 5. 新表 `QuestionExplanationCache`（`@@unique([questionId, gradeBand])`）。
 
@@ -178,6 +181,8 @@ authedProcedure
 - `error.diagnose` 对 canonical 范题正常（访问放行回归）。
 
 **数据**：`verify:question-bank` 断言 PUBLISHED 题数 ≥ 30、每题有 answer + ≥1 KP link。
+
+**回归反转**：现有 `apps/web/tests/integration/tutor-ask-published-untouched.test.ts` 钉的是 Plan 15 punt 的旧行为（命中 PUBLISHED 仍新建 USER_ADHOC、不复用）。Plan 15 反转该语义，故此测试**重写**为断言复用（命中 → 返 canonical id、不建 USER_ADHOC）。`docs/claude/merge-verification.md` 与 `implementation-state.md` 对应探针同步更新。
 
 ## 8. 合规
 
