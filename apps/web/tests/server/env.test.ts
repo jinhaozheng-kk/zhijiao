@@ -19,6 +19,7 @@ const RELEVANT_KEYS = [
   "SMS_USE_MOCK",
   "WECHAT_OAUTH_USE_MOCK",
   "WECHAT_PAY_USE_MOCK",
+  "STORAGE_USE_MOCK",
   "DASHSCOPE_API_KEY",
   "DASHSCOPE_BASE_URL",
   "ALIYUN_SMS_ACCESS_KEY_ID",
@@ -34,6 +35,11 @@ const RELEVANT_KEYS = [
   "WECHAT_PAY_CERT_SERIAL",
   "WECHAT_PAY_PUB_KEY_FILE",
   "WECHAT_PAY_NOTIFY_HOST",
+  "ALIYUN_OSS_ACCESS_KEY_ID",
+  "ALIYUN_OSS_ACCESS_KEY_SECRET",
+  "ALIYUN_OSS_BUCKET",
+  "ALIYUN_OSS_REGION",
+  "ALIYUN_OSS_ENDPOINT",
   "MOCK_WECHAT_PAY_SECRET",
   "CREDIT_PER_YUAN",
   "MINOR_MONTHLY_LIMIT_YUAN",
@@ -58,6 +64,7 @@ const VALID_BASE = {
   SMS_USE_MOCK: "true",
   WECHAT_OAUTH_USE_MOCK: "true",
   WECHAT_PAY_USE_MOCK: "true",
+  STORAGE_USE_MOCK: "true",
   MOCK_WECHAT_PAY_SECRET: "test-mock-pay-secret-32bytes-padding",
   WECHAT_PAY_APPID: "wxpay-test-app",
   WECHAT_PAY_MCHID: "1900000000",
@@ -102,6 +109,7 @@ describe("server/env.ts (fail-fast validator)", () => {
     expect(mod.env.SMS_USE_MOCK).toBe("true");
     expect(mod.env.WECHAT_OAUTH_USE_MOCK).toBe("true");
     expect(mod.env.WECHAT_PAY_USE_MOCK).toBe("true");
+    expect(mod.env.STORAGE_USE_MOCK).toBe("true");
   });
 
   it("missing ACCESS_JWT_SECRET → throws at import", async () => {
@@ -239,6 +247,26 @@ describe("server/env.ts (fail-fast validator)", () => {
     expect(mod.env.WECHAT_PAY_USE_MOCK).toBe("false");
     expect(mod.env.WECHAT_PAY_APPID).toBe("wxpay-live");
     expect(mod.env.WECHAT_PAY_NOTIFY_HOST).toBe("https://zhijiao.example.com");
+  });
+
+  it("STORAGE_USE_MOCK=false + missing ALIYUN_OSS_* throws", async () => {
+    applyBase();
+    process.env.STORAGE_USE_MOCK = "false";
+    process.env.ALIYUN_OSS_ACCESS_KEY_ID = "id-only";
+    await expect(importEnv()).rejects.toThrow(/Real object storage requires ALIYUN_OSS/i);
+  });
+
+  it("STORAGE_USE_MOCK=false + complete ALIYUN_OSS_* passes", async () => {
+    applyBase();
+    process.env.STORAGE_USE_MOCK = "false";
+    process.env.ALIYUN_OSS_ACCESS_KEY_ID = "id";
+    process.env.ALIYUN_OSS_ACCESS_KEY_SECRET = "secret";
+    process.env.ALIYUN_OSS_BUCKET = "zhijiao-private";
+    process.env.ALIYUN_OSS_REGION = "oss-cn-beijing";
+    process.env.ALIYUN_OSS_ENDPOINT = "https://oss-cn-beijing.aliyuncs.com";
+    const mod = await importEnv();
+    expect(mod.env.STORAGE_USE_MOCK).toBe("false");
+    expect(mod.env.ALIYUN_OSS_BUCKET).toBe("zhijiao-private");
   });
 
   it("credit pricing env defaults are numeric", async () => {
