@@ -163,6 +163,8 @@ normal traffic.
 
 ## Launch Blockers Still Outside This Skeleton
 
+The actionable checklist lives in `docs/ops/public-launch-blockers.md`.
+
 - ICP/domain/TLS/reverse proxy.
 - Real Aliyun SMS credentials and `SMS_USE_MOCK=false`.
 - Real WeChat OAuth credentials and `WECHAT_OAUTH_USE_MOCK=false`.
