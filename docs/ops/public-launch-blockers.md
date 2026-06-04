@@ -20,8 +20,8 @@ implementation status, smoke evidence, and rollback notes.
 | Workstream | Type | Current State | Exit Criteria |
 | --- | --- | --- | --- |
 | ICP, domain, TLS, reverse proxy | External + ops | Not done | Public HTTPS domain resolves to the app, ICP details are publishable, `/readiness` and `/login` pass through the public URL. |
-| Production secrets injection | Ops | Env template exists | Deployment host has non-dev `.env.production`, secret ownership is documented, no placeholder values remain. |
-| Database backup and restore | Ops | Runbook exists | A backup file is created, restore is rehearsed on non-production data, and the operator records the restore stamp. |
+| Production secrets injection | Ops | Env checker exists; production `.env.production` still must be supplied on the host | Deployment host has non-dev `.env.production`, `scripts/check-production-env.ps1` passes, secret ownership is documented, no placeholder values remain. |
+| Database backup and restore | Ops | Local rehearsal passed; production-host rehearsal still required | A backup file is created, restore is rehearsed on production-equivalent data, and the operator records the restore stamp. |
 | Real AI | External + smoke | Adapter exists; needs credentials | `AI_USE_MOCK=false` with DashScope credentials boots and a paid tutor flow succeeds. |
 | Real SMS | External + code | Credentials env gate exists; adapter send path is still not implemented | Aliyun SMS send is implemented, `SMS_USE_MOCK=false` boots, login OTP delivery succeeds to an allowlisted phone. |
 | Real WeChat OAuth | External + code | OAuth URL build exists; code exchange is still not implemented | `WECHAT_OAUTH_USE_MOCK=false` boots, bind/login callback exchanges a real code and stores `AuthIdentity`. |
@@ -198,13 +198,18 @@ Required private values:
 Suggested verification:
 
 ```powershell
-Select-String -Path .env.production -Pattern "replace-with|placeholder|test-only|e2e|dev-only"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\check-production-env.ps1 -Path .env.production
 docker compose --env-file .env.production -f docker-compose.prod.yml config
 ```
 
 ### 2. Backup/Restore Rehearsal
 
 Use `docs/ops/production-deploy.md` as the command source.
+
+Local rehearsal evidence is recorded in
+`docs/ops/backup-restore-rehearsal.md`. This proves the runbook shape works in
+an isolated Docker project, but it does not replace the final rehearsal on the
+real production host.
 
 Exit evidence:
 

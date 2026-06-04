@@ -43,6 +43,7 @@ Replace every placeholder in `.env.production`. At minimum, change:
 Validate the compose file:
 
 ```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\check-production-env.ps1 -Path .env.production
 docker compose --env-file .env.production -f docker-compose.prod.yml config
 ```
 
@@ -117,6 +118,10 @@ Get-Item "backups\zhijiao-$stamp.sql" | Select-Object FullName,Length
 
 Keep at least the latest pre-migration dump outside the deployment directory so
 a failed host disk or accidental cleanup cannot remove the only recovery copy.
+
+The local rehearsal evidence is recorded in
+`docs/ops/backup-restore-rehearsal.md`. Repeat the same flow on the production
+host before public launch.
 
 ## Update Deploy
 
