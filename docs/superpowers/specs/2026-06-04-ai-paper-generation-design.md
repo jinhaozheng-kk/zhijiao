@@ -114,11 +114,13 @@ authedProcedure
 - **不**用 `chargedProcedure("PAPER_GEN")` 糖——它是 `auth + requireGuardianConsent + charge`，**缺教师门禁**，会误成"先扣费再 resolver 查 persona"。必须显式链，把 `requireTeacherPersona` 插在 `chargeMiddleware` **之前**。
 - `requireTeacherPersona`：新中间件，读 `ctx.auth.persona`（已在 `AuthCtx`，零 DB 查询），非 `"TEACHER"` 抛 `FORBIDDEN / PERMISSION_DENIED`。注意 `PAPER_GEN` 是 `DEFAULT_LOGGED_IN_PERMS`（人人有），故**不能**用 `permissionProcedure("PAPER_GEN")` 限教师。
 
+**input 接 `subjectId + kpIds`（不接裸 `kpNames`）**：`GenInput = {subjectId, kpIds[].min(1), gradeLevel, questionTypes[], difficultyRange, count, clientRequestId}`。客户端只传可信 id，避免传任意 kpNames 绕过 KP 树/subject 校验、并保证 `paramsJson` 是可信快照。
+
 `paper.generate` resolver：
 
-1. 校验参数（年级/KP/题型分布/难度/题量；题量上限如 30）。
-2. **BANK 选题（best-effort 最小实现，可选）**：按 `status=PUBLISHED` + KP 命中（经 `QuestionKPLink`）+ 题型 + 难度 邻近，选不超过需求量的题（去重）。**最小实现红线**：只做 best-effort query；**无 `QuestionKPLink` 或题库不足 → 直接返回空**（全 AI 兜底）；不实现复杂配比/最优选择；**不依赖 Plan 15 schema**（不读 `normalizedStemHash`/`reuseHitCount`/`externalKey`，避免把 reshelved 的 Plan 15 又带回来）。
-3. **AI 补缺口**：`gap = count - bankCount`；`gap > 0` 调 `PAPER_GEN` 生成 gap 道（prompt 带已选 BANK 题摘要避免重复）。`gap == 0` 跳过 AI（仍按固定 5 credits 计费，v1 简化）。
+1. **校验 KP**：`kps = knowledgePoint.findMany({ where: { id: { in: kpIds }, subjectId } })`，`kps.length !== kpIds.length` → `BAD_REQUEST/KP_SUBJECT_MISMATCH`（范式同 `assignment.generateDraftFromCriteria`；已过 charge 故写 DEBIT 后补偿退 5、不落 Paper、不调 AI）。派生 `kpNames = kps.map(k=>k.name)` 喂 AI prompt。
+2. **BANK 选题（best-effort 最小实现，可选）**：按 `status=PUBLISHED` + KP 命中（经 `QuestionKPLink` 的 `kpId in kpIds`）+ 题型 + 难度 邻近，选不超过需求量的题（去重）。**最小实现红线**：只做 best-effort query；**无 `QuestionKPLink` 或题库不足 → 直接返回空**（全 AI 兜底）；不实现复杂配比/最优选择；**不依赖 Plan 15 schema**（不读 `normalizedStemHash`/`reuseHitCount`/`externalKey`，避免把 reshelved 的 Plan 15 又带回来）。
+3. **AI 补缺口**：`gap = count - bankCount`；`gap > 0` 调 `PAPER_GEN`（传派生 `kpNames`）生成 gap 道（prompt 带已选 BANK 题摘要避免重复）。`gap == 0` 跳过 AI（仍按固定 5 credits 计费，v1 简化）。
 4. **事务落库**：`Paper(DRAFT)` + `PaperItem[]`（position 连续；BANK 题 `source=BANK, questionId=库题id`；AI 题先 `Question.create(DRAFT, source="PAPER_GENERATED", createdByUserId=teacherId, cognitiveLevel)` 再 `PaperItem(source=AI_GENERATED, questionId=新题id)`）。`generationLedgerId=ctx.debit.ledgerId`、`generationCallId=modelCallId`。
 5. **reconcile**：对 AI 落的 Question 跑 `reconcileHintsSync`（事务外，await+try/catch 不破坏主流程，仿 `persistGeneratedAssignment`）。
 

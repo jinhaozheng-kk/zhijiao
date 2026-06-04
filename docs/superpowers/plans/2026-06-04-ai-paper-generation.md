@@ -527,7 +527,7 @@ afterAll(async () => { await prisma.$disconnect(); });
 describe("paper-generation", () => {
   it("selectBankQuestions 题库空返回空（不报错）", async () => {
     const subjectId = await mathId();
-    const r = await selectBankQuestions(prisma, { subjectId, kpNames: ["一次函数"], questionTypes: ["CALCULATION"], difficultyRange: [1,3], limit: 5 });
+    const r = await selectBankQuestions(prisma, { subjectId, kpIds: ["nonexistent-kp"], questionTypes: ["CALCULATION"], difficultyRange: [1,3], limit: 5 });
     expect(r).toEqual([]);
   });
 
@@ -562,19 +562,20 @@ import "server-only";
 import type { Prisma, PrismaClient, QuestionType } from "@prisma/client";
 import { reconcileHintsSync } from "./kp-reconcile.js";
 
-export interface BankSelectArgs { subjectId: string; kpNames: string[]; questionTypes: QuestionType[]; difficultyRange: [number, number]; limit: number; }
+export interface BankSelectArgs { subjectId: string; kpIds: string[]; questionTypes: QuestionType[]; difficultyRange: [number, number]; limit: number; }
 export interface BankItem { questionId: string; stemMd: string; type: QuestionType; optionsJson: unknown; answerMd: string; solutionMd: string; rubricMd: string | null; difficulty: number; cognitiveLevel: string; kpHints: string[]; }
 
 // 最小实现：best-effort，无命中/不足直接返回空；不依赖 Plan 15 schema。
+// KP 命中按 kpId（不按 name）——上游已校验 kpIds 属于 subject。
 export async function selectBankQuestions(db: PrismaClient, args: BankSelectArgs): Promise<BankItem[]> {
-  if (args.limit <= 0) return [];
+  if (args.limit <= 0 || args.kpIds.length === 0) return [];
   const rows = await db.question.findMany({
     where: {
       subjectId: args.subjectId,
       status: "PUBLISHED",
       type: { in: args.questionTypes },
       difficulty: { gte: args.difficultyRange[0], lte: args.difficultyRange[1] },
-      knowledgePoints: { some: { kp: { name: { in: args.kpNames } } } },
+      knowledgePoints: { some: { kpId: { in: args.kpIds } } },
     },
     include: { answer: true, knowledgePoints: { include: { kp: true } } },
     take: args.limit,
@@ -675,8 +676,13 @@ const { appRouter } = await import("@/server/routers/_root");
 async function seedTeacher(balance: number) {
   const u = await prisma.user.create({ data: { persona: "TEACHER" } });
   await prisma.wallet.create({ data: { userId: u.id, balance } });
-  await prisma.subject.upsert({ where: { code: "math" }, create: { code: "math", name: "数学" }, update: {} });
-  return u;
+  const subject = await prisma.subject.upsert({ where: { code: "math" }, create: { code: "math", name: "数学" }, update: {} });
+  const kp = await prisma.knowledgePoint.upsert({
+    where: { subjectId_code: { subjectId: subject.id, code: "math-g8-linear-eq-solve" } },
+    create: { subjectId: subject.id, code: "math-g8-linear-eq-solve", name: "一次方程求解" },
+    update: {},
+  });
+  return { id: u.id, subjectId: subject.id, kpId: kp.id };
 }
 
 beforeEach(async () => { await resetDb(); });
@@ -686,7 +692,7 @@ describe("paper.generate", () => {
   it("教师全 AI 出卷：落 Paper + Question(PAPER_GENERATED)、扣 5", async () => {
     const t = await seedTeacher(100);
     const caller = appRouter.createCaller(makeCtx(t.id));
-    const r = await caller.paper.generate({ gradeLevel: "G8", kpNames: ["一次函数"], questionTypes: ["CALCULATION"], difficultyRange: [1,3], count: 1, clientRequestId: crypto.randomUUID() });
+    const r = await caller.paper.generate({ subjectId: t.subjectId, kpIds: [t.kpId], gradeLevel: "G8", questionTypes: ["CALCULATION"], difficultyRange: [1,3], count: 1, clientRequestId: crypto.randomUUID() });
     expect(r.paperId).toBeTruthy();
     const items = await prisma.paperItem.count({ where: { paperId: r.paperId } });
     expect(items).toBe(1);
@@ -695,18 +701,29 @@ describe("paper.generate", () => {
   });
 
   it("非教师调用：扣费前 FORBIDDEN、不写 DEBIT", async () => {
+    const t = await seedTeacher(100);   // 借其 subjectId/kpId 组合法参数
     const student = await seedUserWithBalance(100); // persona STUDENT
     const caller = appRouter.createCaller(makeCtx(student.id));
-    await expect(caller.paper.generate({ gradeLevel: "G8", kpNames: ["一次函数"], questionTypes: ["CALCULATION"], difficultyRange: [1,3], count: 1, clientRequestId: crypto.randomUUID() }))
+    await expect(caller.paper.generate({ subjectId: t.subjectId, kpIds: [t.kpId], gradeLevel: "G8", questionTypes: ["CALCULATION"], difficultyRange: [1,3], count: 1, clientRequestId: crypto.randomUUID() }))
       .rejects.toMatchObject({ code: "FORBIDDEN" });
     const ledgers = await prisma.creditLedger.count({ where: { wallet: { userId: student.id } } });
     expect(ledgers).toBe(0);
   });
 
+  it("kpIds 不属于 subject：写 DEBIT 后补偿（净零）、不落 Paper", async () => {
+    const t = await seedTeacher(100);
+    const caller = appRouter.createCaller(makeCtx(t.id));
+    await expect(caller.paper.generate({ subjectId: t.subjectId, kpIds: ["clxnonexistentkp00000000"], gradeLevel: "G8", questionTypes: ["CALCULATION"], difficultyRange: [1,3], count: 1, clientRequestId: crypto.randomUUID() }))
+      .rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(await prisma.paper.count({ where: { teacherUserId: t.id } })).toBe(0);
+    const w = await prisma.wallet.findFirstOrThrow({ where: { userId: t.id } });
+    expect(w.balance).toBe(100); // DEBIT+COMPENSATION 净零
+  });
+
   it("markReady DRAFT→READY；跨教师 NOT_FOUND", async () => {
     const t = await seedTeacher(100);
     const caller = appRouter.createCaller(makeCtx(t.id));
-    const r = await caller.paper.generate({ gradeLevel: "G8", kpNames: ["一次函数"], questionTypes: ["CALCULATION"], difficultyRange: [1,3], count: 1, clientRequestId: crypto.randomUUID() });
+    const r = await caller.paper.generate({ subjectId: t.subjectId, kpIds: [t.kpId], gradeLevel: "G8", questionTypes: ["CALCULATION"], difficultyRange: [1,3], count: 1, clientRequestId: crypto.randomUUID() });
     await caller.paper.markReady({ paperId: r.paperId });
     expect((await prisma.paper.findUniqueOrThrow({ where: { id: r.paperId } })).status).toBe("READY");
     const other = await seedTeacher(100);
@@ -739,8 +756,9 @@ import { logger } from "../logger.js";
 
 const QType = z.enum(["SINGLE_CHOICE","MULTI_CHOICE","FILL_BLANK","CALCULATION","PROOF","ESSAY"]);
 const GenInput = z.object({
+  subjectId: z.string().cuid(),
+  kpIds: z.array(z.string().cuid()).min(1),
   gradeLevel: z.enum(["G5","G6","G7","G8","G9","G10","G11","G12"]),
-  kpNames: z.array(z.string()).min(1),
   questionTypes: z.array(QType).min(1),
   difficultyRange: z.tuple([z.number().int().min(1).max(5), z.number().int().min(1).max(5)]),
   count: z.number().int().min(1).max(30),
@@ -754,9 +772,17 @@ export const paperRouter = router({
     .use(requireGuardianConsent)
     .use(chargeMiddleware("PAPER_GEN"))        // 固定 5 credits
     .mutation(async ({ ctx, input }) => {
-      const math = await ctx.db.subject.findUniqueOrThrow({ where: { code: "math" } });
+      // KP 校验 + 派生 kpNames（不信任客户端 kpNames）。已过 charge → 失败由既有补偿退 5。
+      const kps = await ctx.db.knowledgePoint.findMany({
+        where: { id: { in: input.kpIds }, subjectId: input.subjectId },
+        select: { id: true, name: true },
+      });
+      if (kps.length !== input.kpIds.length) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "知识点与学科不匹配", cause: { reason: "KP_SUBJECT_MISMATCH" } });
+      }
+      const kpNames = kps.map((k) => k.name);
       const bank = await selectBankQuestions(ctx.db, {
-        subjectId: math.id, kpNames: input.kpNames, questionTypes: input.questionTypes,
+        subjectId: input.subjectId, kpIds: input.kpIds, questionTypes: input.questionTypes,
         difficultyRange: input.difficultyRange, limit: input.count,
       });
       const gap = input.count - bank.length;
@@ -767,7 +793,7 @@ export const paperRouter = router({
         let ai;
         try {
           ai = await getAiRouter(ctx.auth.userId).generatePaper({
-            subject: "数学", gradeLevel: input.gradeLevel, kpNames: input.kpNames,
+            subject: "数学", gradeLevel: input.gradeLevel, kpNames,
             questionTypes: input.questionTypes, difficultyRange: input.difficultyRange,
             count: gap, excludeStems: bank.map((b) => b.stemMd.slice(0, 40)),
           });
@@ -782,7 +808,7 @@ export const paperRouter = router({
         modelCallId = ai.modelCallId;
       }
       const paper = await persistGeneratedPaper(ctx.db, {
-        teacherUserId: ctx.auth.userId, subjectId: math.id, title,
+        teacherUserId: ctx.auth.userId, subjectId: input.subjectId, title,
         paramsJson: input as unknown as Record<string, unknown>,
         debitLedgerId: ctx.debit.ledgerId, modelCallId,
         bankItems: bank.map((b) => ({ ...b, points: 5 })),   // v1 默认每题 5 分，可在预览页调

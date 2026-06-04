@@ -64,6 +64,7 @@ model CoursewareSection {
   title        String
   contentMd    String                @db.Text @map("content_md")
   createdAt    DateTime              @default(now()) @map("created_at")
+  updatedAt    DateTime              @updatedAt @map("updated_at")   // v1 支持 updateSection，记录修改时间
 
   courseware Courseware @relation(fields: [coursewareId], references: [id], onDelete: Cascade)
 
@@ -109,14 +110,16 @@ model CoursewareSection {
 
 ```
 authedProcedure
-  .input(GenerateCoursewareInput)     // {gradeLevel, kpNames[].min(1), teachingGoal?, clientRequestId}
+  .input(GenerateCoursewareInput)     // {subjectId, kpIds[].min(1), gradeLevel, teachingGoal?, clientRequestId}
   .use(requireTeacherPersona)         // 复用 Plan 17：persona!=="TEACHER" → FORBIDDEN（扣费前）
   .use(requireGuardianConsent)
   .use(chargeMiddleware("LESSON_PLAN_GEN"))   // 固定 3 credits
   .mutation(resolver)
 ```
 
-resolver：调 `generateLessonPlan` → 成功事务落 `Courseware(DRAFT)` + 5 个 `CoursewareSection`（按 type 固定顺序 position 1..5），`generationLedgerId=ctx.debit.ledgerId`、`generationCallId=modelCallId`。AI 失败（含五段校验失败 PARSE_FAILED）抛错 → 既有补偿退 3，不落 Courseware。
+**input 接 `subjectId + kpIds`（不接裸 `kpNames`）**：客户端只传可信 id；server 端 `kps = knowledgePoint.findMany({ where: { id: { in: kpIds }, subjectId } })`，`kps.length !== kpIds.length` → `BAD_REQUEST/KP_SUBJECT_MISMATCH`（范式同 `assignment.generateDraftFromCriteria`）。**再由 server 派生 `kpNames = kps.map(k=>k.name)` 喂 AI prompt**——避免客户端传任意 kpNames 绕过 KP 树/subject 校验、并保证 `paramsJson` 是可信快照（存 `{subjectId, kpIds, gradeLevel, teachingGoal}`）。
+
+resolver：校验 KP（上）→ 调 `generateLessonPlan({gradeLevel, kpNames, teachingGoal})` → 成功事务落 `Courseware(DRAFT, paramsJson=可信快照)` + 5 个 `CoursewareSection`（按 type 固定顺序 position 1..5），`generationLedgerId=ctx.debit.ledgerId`、`generationCallId=modelCallId`。AI 失败（含五段校验失败 PARSE_FAILED）抛错 → 既有补偿退 3，不落 Courseware。
 
 ## 4.1 状态流（v1）
 
@@ -163,7 +166,8 @@ resolver：调 `generateLessonPlan` → 成功事务落 `Courseware(DRAFT)` + 5 
 **集成（@zhijiao/web）**：
 - `courseware.generate` 教师 → 落 Courseware + 5 段（position 1..5 按固定 type 顺序）；扣 3 credits。
 - 非教师 persona → **扣费前 FORBIDDEN，不写 DEBIT**。
-- 参数非法（空 kpNames）→ 扣费前 BAD_REQUEST，不写 DEBIT。
+- 空 `kpIds`（zod 形状）→ `.input()` 扣费前 `BAD_REQUEST`，不写 DEBIT。
+- `kpIds` 含不属于 `subjectId` 的 KP / 不存在的 id（需查库，resolver 内）→ `BAD_REQUEST/KP_SUBJECT_MISMATCH`：此时已过 chargeMiddleware，故**写 DEBIT 后补偿退 3（净零）**、不落 Courseware、不调 AI（KP 校验在 `generateLessonPlan` 之前）。断言 DEBIT+COMPENSATION 配对且 Courseware=0。
 - AI 返四段（mock 注入畸形）→ PARSE_FAILED → 补偿退 3、不落 Courseware。
 - `updateSection` 改 content；跨教师 → NOT_FOUND。
 - `markReady` DRAFT→READY；打印页 DRAFT/READY 都 200。
