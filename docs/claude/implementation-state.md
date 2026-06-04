@@ -2,7 +2,14 @@
 
 > 本文件从 `CLAUDE.md` 拆出（CLAUDE.md 超 40k 性能阈值）。它是各 Plan 落地后的承重工作知识 ——
 > 承载红线、不变量、设计代价。**新 Plan 落地后在此追加现状段，不要写回 CLAUDE.md。**
-> 真源仍是 docx 需求文档与各 `docs/superpowers/plans/*.md`。
+> 当前产品方向真源是 `需求与架构文档.md`、`docs/product/product-direction.md` 与各 `docs/superpowers/{specs,plans}/*.md`。原 2026-05-18 docx 是历史快照，不再覆盖 2026-06-04 后的教师生产力转向。
+
+**产品重心转向现状**（2026-06-04）：
+- 项目重心已从“学生 AI 学习闭环（答疑 / 错因 / 举一反三 / 训练 / 错题本 / 学情）”转向“教师生产力工具”。学生端进入维护态：除稳定性、合规、安全、存量闭环和支撑教师工具的数据需求外，不继续扩展学生端新能力。
+- 近期产品主线只有两条：Plan 17 `AI 出卷` 和 Plan 18 `AI 课件`。Plan 17 是第一突破口；Plan 18 是第二支柱。
+- Plan 17 已有 spec + implementation plan：独立 `Paper`/`PaperItem`，复用现有 `PAPER_GEN` 固定计费，题库 best-effort 复用 + AI 补 gap，`PAPER_GENERATED` owner-only，双向细目表渲染时计算，打印页浏览器另存 PDF。
+- Plan 18 已有 spec：独立 `Courseware`/`CoursewareSection`，复用 `LESSON_PLAN_GEN` 固定 3 credits，五段强校验（INTRO / EXPLANATION / EXAMPLE / PITFALL / EXERCISE），分段编辑，打印页，例题/练习 inline markdown 不落 `Question`。
+- 新实现默认遵守扣费链顺序：`.input(...) -> requireTeacherPersona -> requireGuardianConsent -> chargeMiddleware(...) -> resolver`，畸形输入和非教师身份不得先扣费。
 
 **Launch-prep 现状**（2026-06-04）：
 - Launch readiness acceptance 已按「先 B 后 A」完成：private prod-style Docker dry run 通过（compose config、web/migrator build、Postgres/Redis healthy、16 个 migration、`/readiness` DB+Redis ok、`/login` 200），local demo/internal-test 通过（`demo:reset`/`verify:demo` 13 checks、focused demo/product E2E、full web E2E 24/24、`turbo typecheck --force`、`turbo test --force`、高风险 merge probes）。落地修复：storage real-mode env gate 覆盖、migrator 改为在 `/app/packages/db` 执行 `pnpm exec prisma migrate deploy`。验收报告见 `docs/ops/launch-readiness-report.md`。公网发布仍被 ICP、域名/TLS、真实短信/微信/OSS、生产 secrets 与备份策略阻塞。
