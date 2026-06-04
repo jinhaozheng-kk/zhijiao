@@ -115,11 +115,17 @@ export default async function TeacherClassPage({
             </div>
           </section>
           <section id="ai-paper" className="rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-200">
-            <p className="text-sm font-medium text-slate-500">Plan 17</p>
+            <p className="text-sm font-medium text-emerald-700">已上线</p>
             <h2 className="mt-2 text-xl font-semibold tracking-tight">AI 出卷</h2>
             <p className="mt-3 text-sm leading-6 text-slate-600">
-              将支持按年级、知识点、题型、难度和题量生成练习卷，并带答案解析与双向细目表。
+              按年级、知识点、题型、难度和题量生成练习卷，并带答案解析与双向细目表。
             </p>
+            <Link
+              href="/teacher/papers"
+              className="mt-4 inline-flex rounded-full bg-slate-950 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800"
+            >
+              去出卷
+            </Link>
           </section>
           <section id="ai-courseware" className="rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-200">
             <p className="text-sm font-medium text-slate-500">Plan 18</p>
