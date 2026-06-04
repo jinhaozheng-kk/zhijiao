@@ -1,0 +1,65 @@
+import { describe, expect, it } from "vitest";
+import { afterAll, beforeEach } from "vitest";
+import { PrismaClient, ModelCallStatus } from "@prisma/client";
+import { AiRouter, MockAdapter } from "../src/index.js";
+
+const TEST_DB_URL = process.env.DATABASE_URL;
+if (!TEST_DB_URL) {
+  throw new Error(
+    "generate-paper.test.ts: DATABASE_URL must come from vitest.config.ts `test.env`",
+  );
+}
+
+const prisma = new PrismaClient({ datasources: { db: { url: TEST_DB_URL } } });
+
+async function resetDb() {
+  await prisma.$executeRawUnsafe(
+    `TRUNCATE TABLE "model_calls" RESTART IDENTITY CASCADE;`,
+  );
+  await prisma.$executeRawUnsafe(
+    `TRUNCATE TABLE "prompt_templates" RESTART IDENTITY CASCADE;`,
+  );
+}
+
+beforeEach(async () => {
+  await resetDb();
+});
+afterAll(async () => {
+  await prisma.$disconnect();
+});
+
+describe("AiRouter.generatePaper", () => {
+  it("returns parsed items, modelCallId, and writes a SUCCESS audit", async () => {
+    const router = new AiRouter({
+      prisma,
+      adapter: new MockAdapter(),
+      userId: "dev-teacher-01",
+    });
+
+    const out = await router.generatePaper({
+      subject: "数学",
+      gradeLevel: "G8",
+      kpNames: ["一次函数"],
+      questionTypes: ["CALCULATION", "SINGLE_CHOICE"],
+      difficultyRange: [1, 3],
+      count: 2,
+      excludeStems: [],
+    });
+
+    expect(out.items.length).toBeGreaterThan(0);
+    expect(out.modelCallId).toBeTruthy();
+    expect(out.items[0]!.cognitiveLevel).toBeTruthy();
+
+    const calls = await prisma.modelCall.findMany();
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.id).toBe(out.modelCallId);
+    expect(calls[0]!.taskKind).toBe("PAPER_GEN");
+    expect(calls[0]!.status).toBe(ModelCallStatus.SUCCESS);
+    expect(calls[0]!.userId).toBe("dev-teacher-01");
+
+    const templates = await prisma.promptTemplate.findMany();
+    expect(templates).toHaveLength(1);
+    expect(templates[0]!.name).toBe("paper-gen");
+    expect(templates[0]!.version).toBe("v1");
+  });
+});

@@ -21,6 +21,9 @@ import {
   AssignmentQuestionGenerationInputSchema,
   AssignmentQuestionGenerationOutputSchema,
   type AssignmentQuestionGenerationOutput,
+  PaperGenerationInputSchema,
+  PaperGenerationOutputSchema,
+  type PaperGenerationOutput,
   KpReconciliationInputSchema,
   KpReconciliationOutputSchema,
   type KpReconciliationOutput,
@@ -93,6 +96,14 @@ function scanAssignmentQuestionGenerationForForbidden(
         ...item.knowledgePointHints,
       ]),
     ]),
+  ].join("\n");
+  return findForbidden(corpus);
+}
+
+function scanPaperGenerationForForbidden(out: PaperGenerationOutput): string[] {
+  const corpus = [
+    out.title,
+    ...out.items.flatMap((i) => [i.stemMd, i.answerMd, i.solutionMd, i.rubricMd ?? ""]),
   ].join("\n");
   return findForbidden(corpus);
 }
@@ -660,6 +671,46 @@ export class AiRouter {
       request,
       schema: AssignmentQuestionGenerationOutputSchema,
       scanForbidden: scanAssignmentQuestionGenerationForForbidden,
+    });
+  }
+
+  // Plan 17: paper generation backing call.
+  // Returns the validated PaperGenerationOutput plus the audit ModelCall.id.
+  async generatePaper(
+    input: unknown,
+  ): Promise<PaperGenerationOutput & { modelCallId: string }> {
+    const parsed = PaperGenerationInputSchema.parse(input);
+    const taskKind: TaskKind = "PAPER_GEN";
+    const prompt = await loadPrompt("paper-gen", this.opts.promptVersion ?? "v1");
+    const promptTemplateId = await ensurePromptInDb(this.opts.prisma, prompt);
+
+    const userContent = prompt.interpolate({
+      subject: parsed.subject,
+      gradeLevel: parsed.gradeLevel,
+      kpNames: parsed.kpNames.join(", "),
+      questionTypes: parsed.questionTypes.join(", "),
+      difficultyRange: `${parsed.difficultyRange[0]}-${parsed.difficultyRange[1]}`,
+      count: String(parsed.count),
+      excludeStems: parsed.excludeStems.length ? parsed.excludeStems.join(" / ") : "(无)",
+    });
+
+    const model = this.opts.modelOverride ?? TASK_MODEL_MAP[taskKind];
+    const request = {
+      model,
+      messages: [
+        { role: "system" as const, content: "你是严谨的 K12 数学练习卷命题助手。" },
+        { role: "user" as const, content: userContent },
+      ],
+      responseFormat: "json_object" as const,
+      temperature: 0.35,
+    };
+
+    return this.runJsonTaskWithAudit({
+      taskKind,
+      promptTemplateId,
+      request,
+      schema: PaperGenerationOutputSchema,
+      scanForbidden: scanPaperGenerationForForbidden,
     });
   }
 
