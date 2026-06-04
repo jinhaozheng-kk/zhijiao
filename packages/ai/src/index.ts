@@ -41,4 +41,12 @@ export {
   LearningAdviceOutputSchema,
   type LearningAdviceInput,
   type LearningAdviceOutput,
+  // Plan 17:
+  PaperItemTypeEnum,
+  CognitiveLevelEnum,
+  PaperGenerationInputSchema,
+  PaperGenItemSchema,
+  PaperGenerationOutputSchema,
+  type PaperGenerationInput,
+  type PaperGenerationOutput,
 } from "./schemas.js";

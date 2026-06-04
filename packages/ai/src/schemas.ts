@@ -216,6 +216,39 @@ export type AssignmentQuestionGenerationOutput = z.infer<
   typeof AssignmentQuestionGenerationOutputSchema
 >;
 
+// === PaperGeneration (Plan 17) ===
+export const PaperItemTypeEnum = z.enum(["SINGLE_CHOICE","MULTI_CHOICE","FILL_BLANK","CALCULATION","PROOF","ESSAY"]);
+export const CognitiveLevelEnum = z.enum(["REMEMBER","UNDERSTAND","APPLY","ANALYZE"]);
+
+export const PaperGenerationInputSchema = z.object({
+  subject: z.string(),
+  gradeLevel: z.string(),
+  kpNames: z.array(z.string()).min(1),
+  questionTypes: z.array(PaperItemTypeEnum).min(1),
+  difficultyRange: z.tuple([z.number().int().min(1).max(5), z.number().int().min(1).max(5)]),
+  count: z.number().int().min(1).max(30),
+  excludeStems: z.array(z.string()).default([]),
+});
+export type PaperGenerationInput = z.infer<typeof PaperGenerationInputSchema>;
+
+export const PaperGenItemSchema = z.object({
+  stemMd: z.string().min(1),
+  type: PaperItemTypeEnum,
+  options: z.array(z.string()).optional(),
+  answerMd: z.string().min(1),
+  solutionMd: z.string().min(1),
+  rubricMd: z.string().optional(),
+  difficulty: z.number().int().min(1).max(5),
+  cognitiveLevel: CognitiveLevelEnum,
+  points: z.number().int().min(1).max(100),
+  knowledgePointHints: z.array(z.string()).default([]),
+});
+export const PaperGenerationOutputSchema = z.object({
+  title: z.string().min(1),
+  items: z.array(PaperGenItemSchema).min(1),
+});
+export type PaperGenerationOutput = z.infer<typeof PaperGenerationOutputSchema>;
+
 // Plan 11: LEARNING_ADVICE 的输入与输出契约
 export const LearningAdviceInputSchema = z.object({
   studentGrade: z.string().optional(),
