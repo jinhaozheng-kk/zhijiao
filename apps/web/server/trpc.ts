@@ -93,6 +93,22 @@ export const validatePaperOwnership = t.middleware(async ({ ctx, next, getRawInp
   return next({ ctx: { ...ctx, auth: ctx.auth, paper } });
 });
 
+// Plan 18: courseware 读写归属校验。跨教师/不存在 → 合并 NOT_FOUND（无存在性侧信道）。注入 ctx.courseware（含 sections 按 position）。
+export const validateCoursewareOwnership = t.middleware(async ({ ctx, next, getRawInput }) => {
+  if (!ctx.auth) {
+    throw new TRPCError({ code: "UNAUTHORIZED", message: "请先登录", cause: { reason: ctx.authError ?? "NO_SESSION" } });
+  }
+  const parsed = z.object({ coursewareId: z.string().cuid() }).safeParse(await getRawInput());
+  if (!parsed.success) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: "缺少 coursewareId", cause: { reason: "COURSEWARE_ID_REQUIRED" } });
+  }
+  const courseware = await ctx.db.courseware.findUnique({ where: { id: parsed.data.coursewareId }, include: { sections: { orderBy: { position: "asc" } } } });
+  if (!courseware || courseware.teacherUserId !== ctx.auth.userId) {
+    throw new TRPCError({ code: "NOT_FOUND", message: "课件不存在", cause: { reason: "COURSEWARE_NOT_FOUND" } });
+  }
+  return next({ ctx: { ...ctx, auth: ctx.auth, courseware } });
+});
+
 export const permissionProcedure = (perm: Permission) =>
   authedProcedure.use(({ ctx, next }) => {
     if (!hasPermission(ctx.auth.roles, perm)) {
