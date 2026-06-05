@@ -12,7 +12,7 @@ describe("role navigation", () => {
     ]);
   });
 
-  it("returns teacher nav with AI paper as a real entry and courseware as preview", () => {
+  it("returns teacher nav with AI paper and AI courseware as real direct entries", () => {
     expect(navForRole("TEACHER").map((item) => item.label)).toEqual([
       "班级",
       "作业",
@@ -24,9 +24,10 @@ describe("role navigation", () => {
       label: "AI 出卷",
       href: "/teacher/papers",
     });
-    expect(navForRole("TEACHER").find((i) => i.label === "AI 课件")?.preview).toBe(
-      true,
-    );
+    expect(navForRole("TEACHER").find((i) => i.label === "AI 课件")).toEqual({
+      label: "AI 课件",
+      href: "/teacher/coursewares",
+    });
   });
 
   it("returns parent nav", () => {
