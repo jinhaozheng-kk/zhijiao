@@ -80,6 +80,7 @@ model User {
   opsActionLogs       OpsActionLog[]     @relation("OpsActionTarget")
   dsarRequests        DsarRequest[]      @relation("UserDsarRequests")
   papers              Paper[]            @relation("TeacherPapers")    // Plan 17
+  teacherCoursewares  Courseware[]       @relation("TeacherCoursewares") // Plan 18
 
   @@index([deletedAt])
   @@map("users")
@@ -177,6 +178,7 @@ model Subject {
   classrooms      Classroom[]
   kpAliases       KpAlias[]            // Plan 9
   papers          Paper[]              // Plan 17
+  coursewares     Courseware[]         // Plan 18
 
   @@map("subjects")
 }
@@ -220,6 +222,20 @@ enum PaperStatus {
 enum PaperItemSource {
   BANK
   AI_GENERATED
+}
+
+// Plan 18: AI 课件枚举
+enum CoursewareStatus {
+  DRAFT
+  READY
+}
+
+enum CoursewareSectionType {
+  INTRO
+  EXPLANATION
+  EXAMPLE
+  PITFALL
+  EXERCISE
 }
 
 enum QuestionType {
@@ -992,4 +1008,43 @@ model PaperItem {
   @@unique([paperId, position])
   @@index([questionId])
   @@map("paper_items")
+}
+
+// === Plan 18: AI 课件 ===
+
+model Courseware {
+  id                 String           @id @default(cuid())
+  teacherUserId      String           @map("teacher_user_id")
+  subjectId          String           @map("subject_id")
+  title              String
+  gradeLevel         GradeLevel?      @map("grade_level")
+  status             CoursewareStatus @default(DRAFT)
+  paramsJson         Json             @map("params_json")
+  generationLedgerId String?          @map("generation_ledger_id")
+  generationCallId   String?          @map("generation_call_id")
+  createdAt          DateTime         @default(now()) @map("created_at")
+  updatedAt          DateTime         @updatedAt @map("updated_at")
+
+  teacher  User                @relation("TeacherCoursewares", fields: [teacherUserId], references: [id], onDelete: Restrict)
+  subject  Subject             @relation(fields: [subjectId], references: [id])
+  sections CoursewareSection[]
+
+  @@index([teacherUserId, status, createdAt])
+  @@map("coursewares")
+}
+
+model CoursewareSection {
+  id           String                @id @default(cuid())
+  coursewareId String                @map("courseware_id")
+  position     Int
+  type         CoursewareSectionType
+  title        String
+  contentMd    String                @db.Text @map("content_md")
+  createdAt    DateTime              @default(now()) @map("created_at")
+  updatedAt    DateTime              @updatedAt @map("updated_at")
+
+  courseware Courseware @relation(fields: [coursewareId], references: [id], onDelete: Cascade)
+
+  @@unique([coursewareId, position])
+  @@map("courseware_sections")
 }
