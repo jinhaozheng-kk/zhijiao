@@ -24,6 +24,7 @@ export interface DeactivatePayload {
     assignmentPerformance: number;
     studentAssignments: number;
     papers: number;
+    coursewares: number;
     familyLinks: number;
     guardianConsentsAsChild: number;
     guardianConsentsAsGuardian: number;
@@ -154,6 +155,19 @@ export interface UserDataExport {
       kpHints: string[];
     }>;
   }>;
+  coursewares: Array<{
+    id: string;
+    title: string;
+    status: string;
+    gradeLevel: string | null;
+    createdAt: Date;
+    sections: Array<{
+      position: number;
+      type: string;
+      title: string;
+      contentMd: string;
+    }>;
+  }>;
   familyLinks: Array<{
     id: string;
     role: "parent" | "student";
@@ -269,6 +283,7 @@ export async function exportUserData(
     assignmentAnswers,
     assignmentPerformance,
     papers,
+    coursewares,
     familyLinks,
     guardianConsents,
     dsarRequests,
@@ -425,6 +440,26 @@ export async function exportUserData(
         },
       },
     }),
+    prisma.courseware.findMany({
+      where: { teacherUserId: userId },
+      orderBy: { createdAt: "asc" },
+      select: {
+        id: true,
+        title: true,
+        status: true,
+        gradeLevel: true,
+        createdAt: true,
+        sections: {
+          orderBy: { position: "asc" },
+          select: {
+            position: true,
+            type: true,
+            title: true,
+            contentMd: true,
+          },
+        },
+      },
+    }),
     prisma.familyLink.findMany({
       where: { OR: [{ parentUserId: userId }, { studentUserId: userId }] },
       orderBy: { createdAt: "asc" },
@@ -476,6 +511,14 @@ export async function exportUserData(
     assignmentAnswers,
     assignmentPerformance,
     papers,
+    coursewares: coursewares.map((cw) => ({
+      id: cw.id,
+      title: cw.title,
+      status: cw.status,
+      gradeLevel: cw.gradeLevel,
+      createdAt: cw.createdAt,
+      sections: cw.sections,
+    })),
     familyLinks: familyLinks.map((l) => ({
       id: l.id,
       role: l.parentUserId === userId ? ("parent" as const) : ("student" as const),
@@ -690,6 +733,9 @@ export async function deactivateUser(
     const papers = await tx.paper.deleteMany({
       where: { teacherUserId: args.userId },
     });
+    const coursewares = await tx.courseware.deleteMany({
+      where: { teacherUserId: args.userId },
+    });
     const paperGeneratedQuestions = await tx.question.updateMany({
       where: { source: "PAPER_GENERATED", createdByUserId: args.userId },
       data: { createdByUserId: null },
@@ -777,6 +823,7 @@ export async function deactivateUser(
         assignmentPerformance: assignmentPerformance.count,
         studentAssignments: studentAssignments.count,
         papers: papers.count,
+        coursewares: coursewares.count,
         familyLinks: familyLinks.count,
         guardianConsentsAsChild: consentsAsChild.count,
         guardianConsentsAsGuardian: consentsAsGuardian.count,
@@ -846,6 +893,7 @@ async function buildDeactivatePlan(
       assignmentPerformance: 0,
       studentAssignments: 0,
       papers: 0,
+      coursewares: 0,
       familyLinks: 0,
       guardianConsentsAsChild: 0,
       guardianConsentsAsGuardian: 0,
@@ -896,6 +944,7 @@ async function buildDeactivatePlan(
     assignmentPerformance,
     studentAssignments,
     papers,
+    coursewares,
     familyLinks,
     guardianConsentsAsChild,
     guardianConsentsAsGuardian,
@@ -924,6 +973,7 @@ async function buildDeactivatePlan(
     prisma.assignmentPerformance.count({ where: { studentUserId: userId } }),
     prisma.studentAssignment.count({ where: { studentUserId: userId } }),
     prisma.paper.count({ where: { teacherUserId: userId } }),
+    prisma.courseware.count({ where: { teacherUserId: userId } }),
     prisma.familyLink.count({
       where: { OR: [{ parentUserId: userId }, { studentUserId: userId }] },
     }),
@@ -957,6 +1007,7 @@ async function buildDeactivatePlan(
         assignmentPerformance,
         studentAssignments,
         papers,
+        coursewares,
         familyLinks,
         guardianConsentsAsChild,
         guardianConsentsAsGuardian,
