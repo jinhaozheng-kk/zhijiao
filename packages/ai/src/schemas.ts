@@ -249,6 +249,54 @@ export const PaperGenerationOutputSchema = z.object({
 });
 export type PaperGenerationOutput = z.infer<typeof PaperGenerationOutputSchema>;
 
+// === LessonPlanGeneration / Courseware (Plan 18) ===
+export const CoursewareSectionTypeEnum = z.enum([
+  "INTRO",
+  "EXPLANATION",
+  "EXAMPLE",
+  "PITFALL",
+  "EXERCISE",
+]);
+export const LESSON_SECTION_ORDER = [
+  "INTRO",
+  "EXPLANATION",
+  "EXAMPLE",
+  "PITFALL",
+  "EXERCISE",
+] as const;
+
+export const LessonPlanGenerationInputSchema = z.object({
+  gradeLevel: z.string(),
+  kpNames: z.array(z.string()).min(1),
+  teachingGoal: z.string().optional(),
+});
+export type LessonPlanGenerationInput = z.infer<typeof LessonPlanGenerationInputSchema>;
+
+export const LessonPlanGenerationOutputSchema = z
+  .object({
+    title: z.string().min(1),
+    sections: z
+      .array(
+        z.object({
+          type: CoursewareSectionTypeEnum,
+          title: z.string().min(1),
+          contentMd: z.string().min(1),
+        }),
+      )
+      .length(5),
+  })
+  .superRefine((v, ctx) => {
+    const set = new Set(v.sections.map((s) => s.type));
+    if (set.size !== 5 || !LESSON_SECTION_ORDER.every((t) => set.has(t))) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "sections 必须恰好五段且 INTRO/EXPLANATION/EXAMPLE/PITFALL/EXERCISE 各一",
+      });
+    }
+  });
+export type LessonPlanGenerationOutput = z.infer<typeof LessonPlanGenerationOutputSchema>;
+
 // Plan 11: LEARNING_ADVICE 的输入与输出契约
 export const LearningAdviceInputSchema = z.object({
   studentGrade: z.string().optional(),
