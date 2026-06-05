@@ -10,6 +10,7 @@ export interface DeactivatePayload {
     kpAliases: number;
     kpReconcileMatches: number;
     variantGeneratedQuestions: number;
+    paperGeneratedQuestions: number;
     authIdentities: number;
     otpRequests: number;
     dsarRequests: number;
@@ -22,6 +23,8 @@ export interface DeactivatePayload {
     assignmentAnswers: number;
     assignmentPerformance: number;
     studentAssignments: number;
+    papers: number;
+    coursewares: number;
     familyLinks: number;
     guardianConsentsAsChild: number;
     guardianConsentsAsGuardian: number;
@@ -132,6 +135,38 @@ export interface UserDataExport {
     gradeStatus: string;
     kpIds: string[];
     createdAt: Date;
+  }>;
+  papers: Array<{
+    id: string;
+    title: string;
+    status: string;
+    paramsJson: Prisma.JsonValue;
+    createdAt: Date;
+    items: Array<{
+      position: number;
+      source: string;
+      stemMd: string;
+      type: string;
+      answerMd: string;
+      solutionMd: string;
+      points: number;
+      difficulty: number;
+      cognitiveLevel: string;
+      kpHints: string[];
+    }>;
+  }>;
+  coursewares: Array<{
+    id: string;
+    title: string;
+    status: string;
+    gradeLevel: string | null;
+    createdAt: Date;
+    sections: Array<{
+      position: number;
+      type: string;
+      title: string;
+      contentMd: string;
+    }>;
   }>;
   familyLinks: Array<{
     id: string;
@@ -247,6 +282,8 @@ export async function exportUserData(
     studentAssignments,
     assignmentAnswers,
     assignmentPerformance,
+    papers,
+    coursewares,
     familyLinks,
     guardianConsents,
     dsarRequests,
@@ -377,6 +414,52 @@ export async function exportUserData(
         createdAt: true,
       },
     }),
+    prisma.paper.findMany({
+      where: { teacherUserId: userId },
+      orderBy: { createdAt: "asc" },
+      select: {
+        id: true,
+        title: true,
+        status: true,
+        paramsJson: true,
+        createdAt: true,
+        items: {
+          orderBy: { position: "asc" },
+          select: {
+            position: true,
+            source: true,
+            stemMd: true,
+            type: true,
+            answerMd: true,
+            solutionMd: true,
+            points: true,
+            difficulty: true,
+            cognitiveLevel: true,
+            kpHints: true,
+          },
+        },
+      },
+    }),
+    prisma.courseware.findMany({
+      where: { teacherUserId: userId },
+      orderBy: { createdAt: "asc" },
+      select: {
+        id: true,
+        title: true,
+        status: true,
+        gradeLevel: true,
+        createdAt: true,
+        sections: {
+          orderBy: { position: "asc" },
+          select: {
+            position: true,
+            type: true,
+            title: true,
+            contentMd: true,
+          },
+        },
+      },
+    }),
     prisma.familyLink.findMany({
       where: { OR: [{ parentUserId: userId }, { studentUserId: userId }] },
       orderBy: { createdAt: "asc" },
@@ -427,6 +510,15 @@ export async function exportUserData(
     studentAssignments,
     assignmentAnswers,
     assignmentPerformance,
+    papers,
+    coursewares: coursewares.map((cw) => ({
+      id: cw.id,
+      title: cw.title,
+      status: cw.status,
+      gradeLevel: cw.gradeLevel,
+      createdAt: cw.createdAt,
+      sections: cw.sections,
+    })),
     familyLinks: familyLinks.map((l) => ({
       id: l.id,
       role: l.parentUserId === userId ? ("parent" as const) : ("student" as const),
@@ -638,6 +730,16 @@ export async function deactivateUser(
       where: { source: "VARIANT_GENERATED", createdByUserId: args.userId },
       data: { createdByUserId: null },
     });
+    const papers = await tx.paper.deleteMany({
+      where: { teacherUserId: args.userId },
+    });
+    const coursewares = await tx.courseware.deleteMany({
+      where: { teacherUserId: args.userId },
+    });
+    const paperGeneratedQuestions = await tx.question.updateMany({
+      where: { source: "PAPER_GENERATED", createdByUserId: args.userId },
+      data: { createdByUserId: null },
+    });
     const assignmentAnswers = await tx.assignmentAnswer.count({
       where: { studentAssignment: { studentUserId: args.userId } },
     });
@@ -710,6 +812,7 @@ export async function deactivateUser(
         kpAliases: kpAliases.count,
         kpReconcileMatches: kpReconcileMatches.count,
         variantGeneratedQuestions: variantGeneratedQuestions.count,
+        paperGeneratedQuestions: paperGeneratedQuestions.count,
         authIdentities: authIdentities.count,
         otpRequests: otpRequests.count,
         dsarRequests: dsarReasonScrub.count,
@@ -719,6 +822,8 @@ export async function deactivateUser(
         assignmentAnswers,
         assignmentPerformance: assignmentPerformance.count,
         studentAssignments: studentAssignments.count,
+        papers: papers.count,
+        coursewares: coursewares.count,
         familyLinks: familyLinks.count,
         guardianConsentsAsChild: consentsAsChild.count,
         guardianConsentsAsGuardian: consentsAsGuardian.count,
@@ -774,6 +879,7 @@ async function buildDeactivatePlan(
       kpAliases: 0,
       kpReconcileMatches: 0,
       variantGeneratedQuestions: 0,
+      paperGeneratedQuestions: 0,
       authIdentities: 0,
       otpRequests: 0,
       dsarRequests: 0,
@@ -786,6 +892,8 @@ async function buildDeactivatePlan(
       assignmentAnswers: 0,
       assignmentPerformance: 0,
       studentAssignments: 0,
+      papers: 0,
+      coursewares: 0,
       familyLinks: 0,
       guardianConsentsAsChild: 0,
       guardianConsentsAsGuardian: 0,
@@ -829,11 +937,14 @@ async function buildDeactivatePlan(
     kpAliases,
     kpReconcileMatches,
     variantGeneratedQuestions,
+    paperGeneratedQuestions,
     authIdentities,
     otpRequests,
     assignmentAnswers,
     assignmentPerformance,
     studentAssignments,
+    papers,
+    coursewares,
     familyLinks,
     guardianConsentsAsChild,
     guardianConsentsAsGuardian,
@@ -851,6 +962,9 @@ async function buildDeactivatePlan(
     prisma.question.count({
       where: { source: "VARIANT_GENERATED", createdByUserId: userId },
     }),
+    prisma.question.count({
+      where: { source: "PAPER_GENERATED", createdByUserId: userId },
+    }),
     prisma.authIdentity.count({ where: { userId } }),
     phoneNumbers.length ? prisma.otpRequest.count({ where: { phone: { in: phoneNumbers } } }) : 0,
     prisma.assignmentAnswer.count({
@@ -858,6 +972,8 @@ async function buildDeactivatePlan(
     }),
     prisma.assignmentPerformance.count({ where: { studentUserId: userId } }),
     prisma.studentAssignment.count({ where: { studentUserId: userId } }),
+    prisma.paper.count({ where: { teacherUserId: userId } }),
+    prisma.courseware.count({ where: { teacherUserId: userId } }),
     prisma.familyLink.count({
       where: { OR: [{ parentUserId: userId }, { studentUserId: userId }] },
     }),
@@ -877,6 +993,7 @@ async function buildDeactivatePlan(
         kpAliases,
         kpReconcileMatches,
         variantGeneratedQuestions,
+        paperGeneratedQuestions,
         authIdentities,
         otpRequests,
         dsarRequests,
@@ -889,6 +1006,8 @@ async function buildDeactivatePlan(
         assignmentAnswers,
         assignmentPerformance,
         studentAssignments,
+        papers,
+        coursewares,
         familyLinks,
         guardianConsentsAsChild,
         guardianConsentsAsGuardian,

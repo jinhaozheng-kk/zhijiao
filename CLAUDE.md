@@ -105,10 +105,13 @@
 - **Plan 16 residuals**（收口最后两项：`/api/demo/enter` 由带副作用 GET 改为 POST（303，从 `/demo` 表单提交）避免预取/CSRF；demo 种子学生作业改 `GRADED`（与已批改答案 + 错题回流一致，符合 Plan 10 状态机）+ `verifyDemoData` 同步）—— 无独立 spec/plan，属 Plan 16 收尾
 - **靶向训练 v1**（免费·复用优先的薄弱点练习会话：`TrainingAttempt` 表 + `TrainingItemSource` 枚举；analytics `PerfSample.sourceWeight` + `profileForStudent` 降权混入自评样本闭合 训练→学情；`training.startSession`（FOCUS 排序自错题本+变式、不足回退 dueForReview、空态 INSUFFICIENT_DATA）+ `submitAttempt`（自评、KNOW 推进复习阶梯、跨用户 NOT_FOUND）；抽出共享 `advanceReviewLadder`；`/training` hint-first 自评 UI + 训练导航 + 画像 CTA）—— 见 `docs/superpowers/plans/2026-06-03-targeted-training.md`，spec 在 `docs/superpowers/specs/2026-06-03-targeted-training-design.md`
 - **图片/OCR 拍照答疑 v1**（mock-first 对象存储 + authed 图片上传、`TUTOR_ASK_IMAGE` 多模态转写并讲解、2 credits 计费、owner-scoped image key、转写落 USER_ADHOC Question + `stemImageKeys`、TutorForm 图片入口 + 可编辑转写重答、E2E）—— 见 `docs/superpowers/plans/2026-06-03-image-ocr-tutor.md`，spec 在 `docs/superpowers/specs/2026-06-03-image-ocr-tutor-design.md`
+- **Launch-prep 工程化 v1**（CI + 生产部署骨架 + 就绪护栏，2026-06-04）：GitHub Actions CI（push/PR 跑 `turbo typecheck` + `turbo test` + Playwright E2E + Docker image build，`master` 绿）见 `docs/superpowers/plans/2026-06-03-ci-github-actions.md`；Web 生产镜像（Next standalone 根 `Dockerfile` runner/migrator 双 target，`NEXT_OUTPUT_STANDALONE=1` 仅 Docker build 打开）；生产部署骨架（`.env.production.example` + `docker-compose.prod.yml`，Postgres/Redis 仅内网、migrate 用 profile 单独跑 `db:migrate:deploy`）；生产就绪护栏（`/readiness` 健康检查 `database.ok` + `redis.ok` + prod env 校验）—— ops 提交无独立 superpowers plan，runbook 在 `docs/ops/production-deploy.md`。**仍非公网上线**：ICP/域名/TLS、真实 SMS/微信 OAuth/微信支付商户、OSS、生产 secrets 注入+备份策略仍需独立推进（见下方「上线前置」）。
+- **Plan 17 生产 AI 出卷**（教师独立练习卷生成：`Paper`/`PaperItem`、复用 `PAPER_GEN` 固定 5 credits、题库 best-effort + AI 补 gap、`PAPER_GENERATED` owner-only、列表/新建/预览/打印 UI、双向细目表、PII 注销/导出覆盖、E2E）—— 见 `docs/superpowers/plans/2026-06-04-ai-paper-generation.md`，spec 在 `docs/superpowers/specs/2026-06-04-ai-paper-generation-design.md`
+- **Plan 18 生产 AI 课件**（教师结构化课件生成：独立 `Courseware`/`CoursewareSection`、复用 `LESSON_PLAN_GEN` 固定 3 credits、五段强校验 INTRO/EXPLANATION/EXAMPLE/PITFALL/EXERCISE + 落库固定 type 顺序、不落 Question、`validateCoursewareOwnership` owner-only、列表/新建/预览分段编辑/打印 UI、PII 注销/导出覆盖、E2E）—— 见 `docs/superpowers/plans/2026-06-04-ai-courseware-generation.md`，spec 在 `docs/superpowers/specs/2026-06-04-ai-courseware-generation-design.md`
 
 ## 实现现状
 
-各 Plan 落地后的工作知识（红线 / 不变量 / 设计代价）已拆到 **`docs/claude/implementation-state.md`** —— 触碰相关模块前先读对应"现状"段（学情画像 Plan 11 / 教师作业 Plan 10 / 计费 / 鉴权 / 错题本变式 Plan 4 / 答疑持久化 Plan 8 / 知识点 Plan 9 / KP 树 Plan 13 / VariantItem Plan 12 / 未成年同意 Plan 14a / PII 扫描器 Plan 14c / DSAR Plan 14b / PII 治理 Plan 6 / 靶向训练 / 图片/OCR 拍照答疑 / E2E 现状）。新 Plan 落地后在该文件追加，不写回本文件。
+各 Plan 落地后的工作知识（红线 / 不变量 / 设计代价）已拆到 **`docs/claude/implementation-state.md`** —— 触碰相关模块前先读对应"现状"段（AI 出卷 Plan 17 / Launch-prep 工程化 / 学情画像 Plan 11 / 教师作业 Plan 10 / 计费 / 鉴权 / 错题本变式 Plan 4 / 答疑持久化 Plan 8 / 知识点 Plan 9 / KP 树 Plan 13 / VariantItem Plan 12 / 未成年同意 Plan 14a / PII 扫描器 Plan 14c / DSAR Plan 14b / PII 治理 Plan 6 / 靶向训练 / 图片/OCR 拍照答疑 / E2E 现状）。新 Plan 落地后在该文件追加，不写回本文件。
 
 **常用命令**：
 
@@ -132,11 +135,16 @@ pnpm --filter @zhijiao/web  test -- tests/integration/auth-register-race.test.ts
 
 ## Merge 后必跑（不是"绿测试"就行）
 
-81 条回归探针已拆到 **`docs/claude/merge-verification.md`** —— 每次 merge 后逐条核对；新探针追加到该文件，不写回本文件。
+86 条回归探针已拆到 **`docs/claude/merge-verification.md`** —— 每次 merge 后逐条核对；新探针追加到该文件，不写回本文件。
 
-**下一步候选 Plan**（Plan 4 + Plan 6 + Plan 8 + Plan 9 + Plan 10 + Plan 11 + Plan 12 + Plan 13 + Plan 14a + Plan 14b + Plan 14c + Plan 16 + 靶向训练 v1 + 图片/OCR 拍照答疑 v1 已落地）：
-- Plan 5: 真接阿里云 SMS + 微信公众号（ICP 备案通过后；**且 Plan 2 Hardening 必须先 ship**；替换 `RealSmsAdapter` / `RealWechatH5Adapter` 的 stub 实现）
-- Plan 7: 真接微信支付 V3 API（需 ICP 备案 + 商户号 + APIv3 + 商户证书；激活 `RealWechatPayAdapter.unifiedOrder` + `verifyNotify`）—— **Plan 3 prod ship prereq**
-- Plan 15: USER_ADHOC × PUBLISHED canonical dedup / 题库去重 / PUBLISHED 复用 / 统计归并（Plan 8 §6.2 punt）
-- Plan 17: 生产 AI 出卷（Plan 16 §6 预览卡占位；当前仅 roadmap）
-- Plan 18: 生产 AI 课件（Plan 16 §6 预览卡占位；当前仅 roadmap）
+**已落地汇总**：Plan 4 + Plan 6 + Plan 8 + Plan 9 + Plan 10 + Plan 11 + Plan 12 + Plan 13 + Plan 14a + Plan 14b + Plan 14c + Plan 16 + 靶向训练 v1 + 图片/OCR 拍照答疑 v1 + Launch-prep 工程化 v1（CI + 部署骨架 + 就绪护栏）+ Plan 17 生产 AI 出卷 + Plan 18 生产 AI 课件。**MVP 产品闭环 + 教师 AI 出卷 + 教师 AI 课件 + 可演练部署骨架均已完成**。
+
+**上线前置（非代码 / 外部依赖，公网上线卡点）**——详见 `docs/ops/production-deploy.md` 末尾「Launch Blockers」：
+- ICP 备案 + 域名 / TLS / 反向代理（一切真实凭证的总前置）
+- Plan 5: 真接阿里云 SMS + 微信公众号（ICP 通过后；**且 Plan 2 Hardening 必须先 ship**；替换 `RealSmsAdapter` / `RealWechatH5Adapter` 的 stub，`SMS_USE_MOCK=false` / `WECHAT_OAUTH_USE_MOCK=false`）
+- Plan 7: 真接微信支付 V3 API（需 ICP + 商户号 + APIv3 + 商户证书；激活 `RealWechatPayAdapter.unifiedOrder` + `verifyNotify`，`WECHAT_PAY_USE_MOCK=false`）—— **Plan 3 prod ship prereq**
+- 真实 OSS bucket / CDN（`STORAGE_USE_MOCK=false`）+ 生产 secrets 注入与备份策略 + 官方 support 页（运营主体 + ICP 号）
+
+**上线后候选 Plan**：
+- Plan 15: USER_ADHOC × PUBLISHED canonical dedup / 题库去重 / PUBLISHED 复用 / 统计归并（Plan 8 §6.2 punt；当前语料供给不足，偏早）
+- 命题趋势预测中心 / 题库批量录入（发布计划中 cut 到上线后）

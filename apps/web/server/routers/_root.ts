@@ -10,6 +10,8 @@ import { analyticsRouter } from "./analytics.js";
 import { familyRouter } from "./family.js";
 import { dsarRouter } from "./dsar.js";
 import { trainingRouter } from "./training.js";
+import { paperRouter } from "./paper.js";
+import { coursewareRouter } from "./courseware.js";
 
 export const appRouter = router({
   auth: authRouter,
@@ -22,5 +24,7 @@ export const appRouter = router({
   family: familyRouter,
   dsar: dsarRouter,
   training: trainingRouter,
+  paper: paperRouter,
+  courseware: coursewareRouter,
 });
 export type AppRouter = typeof appRouter;

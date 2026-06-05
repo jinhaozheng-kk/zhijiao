@@ -12,7 +12,7 @@ describe("role navigation", () => {
     ]);
   });
 
-  it("returns teacher nav with Plan 17 and 18 preview entries", () => {
+  it("returns teacher nav with AI paper and AI courseware as real direct entries", () => {
     expect(navForRole("TEACHER").map((item) => item.label)).toEqual([
       "班级",
       "作业",
@@ -20,6 +20,14 @@ describe("role navigation", () => {
       "AI 出卷",
       "AI 课件",
     ]);
+    expect(navForRole("TEACHER").find((i) => i.label === "AI 出卷")).toEqual({
+      label: "AI 出卷",
+      href: "/teacher/papers",
+    });
+    expect(navForRole("TEACHER").find((i) => i.label === "AI 课件")).toEqual({
+      label: "AI 课件",
+      href: "/teacher/coursewares",
+    });
   });
 
   it("returns parent nav", () => {
@@ -30,7 +38,7 @@ describe("role navigation", () => {
     ]);
   });
 
-  it("teacher nav anchors into the class workspace when a classroom is known", () => {
+  it("teacher nav anchors class-local sections and links paper generation directly", () => {
     const items = navForRole("TEACHER", "cls-1");
     expect(items.find((i) => i.label === "作业")?.href).toBe(
       "/teacher/classes/cls-1#assignments",
@@ -39,7 +47,7 @@ describe("role navigation", () => {
       "/teacher/classes/cls-1#students",
     );
     expect(items.find((i) => i.label === "AI 出卷")?.href).toBe(
-      "/teacher/classes/cls-1#ai-paper",
+      "/teacher/papers",
     );
   });
 

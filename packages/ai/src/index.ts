@@ -41,4 +41,19 @@ export {
   LearningAdviceOutputSchema,
   type LearningAdviceInput,
   type LearningAdviceOutput,
+  // Plan 17:
+  PaperItemTypeEnum,
+  CognitiveLevelEnum,
+  PaperGenerationInputSchema,
+  PaperGenItemSchema,
+  PaperGenerationOutputSchema,
+  type PaperGenerationInput,
+  type PaperGenerationOutput,
+  // Plan 18:
+  CoursewareSectionTypeEnum,
+  LESSON_SECTION_ORDER,
+  LessonPlanGenerationInputSchema,
+  LessonPlanGenerationOutputSchema,
+  type LessonPlanGenerationInput,
+  type LessonPlanGenerationOutput,
 } from "./schemas.js";

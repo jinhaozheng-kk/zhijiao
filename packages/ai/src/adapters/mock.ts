@@ -71,6 +71,27 @@ const DEFAULT_ASSIGNMENT_QUESTION_GENERATION = {
 
 const DEFAULT_KP_RECONCILIATION: unknown = [];
 
+// Plan 17: paper-gen 默认 mock —— 两道典型一次函数题。
+const DEFAULT_PAPER = {
+  title: "Mock 一次函数练习卷",
+  items: [
+    { stemMd: "求 y=2x+1 当 x=2 的值", type: "CALCULATION", answerMd: "5", solutionMd: "代入得 5", difficulty: 2, cognitiveLevel: "APPLY", points: 5, knowledgePointHints: ["一次函数求值"] },
+    { stemMd: "下列是一次函数的是（ ）", type: "SINGLE_CHOICE", options: ["y=x^2","y=2x+1","y=1/x","y=|x|"], answerMd: "B", solutionMd: "y=2x+1 形如 y=kx+b", difficulty: 1, cognitiveLevel: "UNDERSTAND", points: 5, knowledgePointHints: ["一次函数概念"] },
+  ],
+};
+
+// Plan 18: lesson-plan / courseware 默认 mock —— 五段齐全、合规。
+const DEFAULT_LESSON_PLAN = {
+  title: "Mock 一次函数课件",
+  sections: [
+    { type: "INTRO", title: "课堂导入", contentMd: "从生活中的匀速行驶引入。" },
+    { type: "EXPLANATION", title: "讲解结构", contentMd: "一次函数 y=kx+b 的定义与图象。" },
+    { type: "EXAMPLE", title: "例题", contentMd: "例：求 y=2x+1 当 x=2 的值。解：5。" },
+    { type: "PITFALL", title: "易错点", contentMd: "混淆 k 与 b 的几何意义。" },
+    { type: "EXERCISE", title: "课堂练习", contentMd: "练习：画出 y=-x+3 的图象。" },
+  ],
+};
+
 // Plan 11: learning-advice 默认 mock —— schema 合法、措辞合规。
 const DEFAULT_LEARNING_ADVICE = {
   summaryMd: "你最近在方程类题目上稳步推进，错题集中在少数知识点，方向很清晰。",
@@ -96,6 +117,8 @@ function pickDefault(req: AdapterRequest): unknown {
   }
   if (sys.includes("学习顾问")) return DEFAULT_LEARNING_ADVICE;
   if (sys.includes("拍照辅导助手")) return DEFAULT_TUTORING_IMAGE;
+  if (sys.includes("练习卷命题助手")) return DEFAULT_PAPER;
+  if (sys.includes("课件生成助手")) return DEFAULT_LESSON_PLAN;
   return DEFAULT_TUTORING;
 }
 

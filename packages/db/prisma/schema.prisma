@@ -79,6 +79,8 @@ model User {
   initiatedOpsActions OpsActionLog[]     @relation("OpsActionInitiator")
   opsActionLogs       OpsActionLog[]     @relation("OpsActionTarget")
   dsarRequests        DsarRequest[]      @relation("UserDsarRequests")
+  papers              Paper[]            @relation("TeacherPapers")    // Plan 17
+  teacherCoursewares  Courseware[]       @relation("TeacherCoursewares") // Plan 18
 
   @@index([deletedAt])
   @@map("users")
@@ -175,6 +177,8 @@ model Subject {
   questions       Question[]
   classrooms      Classroom[]
   kpAliases       KpAlias[]            // Plan 9
+  papers          Paper[]              // Plan 17
+  coursewares     Courseware[]         // Plan 18
 
   @@map("subjects")
 }
@@ -201,6 +205,38 @@ model KnowledgePoint {
 }
 
 // === Question Bank ===
+
+// Plan 17: AI 出卷枚举
+enum CognitiveLevel {
+  REMEMBER
+  UNDERSTAND
+  APPLY
+  ANALYZE
+}
+
+enum PaperStatus {
+  DRAFT
+  READY
+}
+
+enum PaperItemSource {
+  BANK
+  AI_GENERATED
+}
+
+// Plan 18: AI 课件枚举
+enum CoursewareStatus {
+  DRAFT
+  READY
+}
+
+enum CoursewareSectionType {
+  INTRO
+  EXPLANATION
+  EXAMPLE
+  PITFALL
+  EXERCISE
+}
 
 enum QuestionType {
   SINGLE_CHOICE
@@ -234,6 +270,9 @@ model Question {
   normalizedStemHash  String?          @map("normalized_stem_hash")
   createdAt           DateTime         @default(now()) @map("created_at")
   updatedAt           DateTime         @updatedAt @map("updated_at")
+
+  cognitiveLevel     CognitiveLevel?    @map("cognitive_level")  // Plan 17
+  paperItems         PaperItem[]                                       // Plan 17
 
   subject            Subject            @relation(fields: [subjectId], references: [id])
   createdBy          User?              @relation("CreatedQuestions", fields: [createdByUserId], references: [id], onDelete: SetNull)
@@ -921,4 +960,91 @@ model TrainingAttempt {
 
   @@index([studentUserId, createdAt])
   @@map("training_attempts")
+}
+
+// === Plan 17: AI 出卷 ===
+
+model Paper {
+  id                 String      @id @default(cuid())
+  teacherUserId      String      @map("teacher_user_id")
+  subjectId          String      @map("subject_id")
+  title              String
+  status             PaperStatus @default(DRAFT)
+  paramsJson         Json        @map("params_json")
+  generationLedgerId String?     @map("generation_ledger_id")
+  generationCallId   String?     @map("generation_call_id")
+  createdAt          DateTime    @default(now()) @map("created_at")
+  updatedAt          DateTime    @updatedAt @map("updated_at")
+
+  teacher User        @relation("TeacherPapers", fields: [teacherUserId], references: [id], onDelete: Restrict)
+  subject Subject     @relation(fields: [subjectId], references: [id])
+  items   PaperItem[]
+
+  @@index([teacherUserId, status, createdAt])
+  @@map("papers")
+}
+
+model PaperItem {
+  id             String          @id @default(cuid())
+  paperId        String          @map("paper_id")
+  position       Int
+  questionId     String?         @map("question_id")
+  source         PaperItemSource
+  stemMd         String          @db.Text @map("stem_md")
+  type           QuestionType
+  optionsJson    Json?           @map("options_json")
+  answerMd       String          @db.Text @map("answer_md")
+  solutionMd     String          @db.Text @map("solution_md")
+  rubricMd       String?         @db.Text @map("rubric_md")
+  points         Int             @default(0)
+  difficulty     Int             @default(3)
+  cognitiveLevel CognitiveLevel  @map("cognitive_level")
+  kpHints        String[]        @default([]) @map("kp_hints")
+  createdAt      DateTime        @default(now()) @map("created_at")
+
+  paper    Paper     @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  question Question? @relation(fields: [questionId], references: [id], onDelete: SetNull)
+
+  @@unique([paperId, position])
+  @@index([questionId])
+  @@map("paper_items")
+}
+
+// === Plan 18: AI 课件 ===
+
+model Courseware {
+  id                 String           @id @default(cuid())
+  teacherUserId      String           @map("teacher_user_id")
+  subjectId          String           @map("subject_id")
+  title              String
+  gradeLevel         GradeLevel?      @map("grade_level")
+  status             CoursewareStatus @default(DRAFT)
+  paramsJson         Json             @map("params_json")
+  generationLedgerId String?          @map("generation_ledger_id")
+  generationCallId   String?          @map("generation_call_id")
+  createdAt          DateTime         @default(now()) @map("created_at")
+  updatedAt          DateTime         @updatedAt @map("updated_at")
+
+  teacher  User                @relation("TeacherCoursewares", fields: [teacherUserId], references: [id], onDelete: Restrict)
+  subject  Subject             @relation(fields: [subjectId], references: [id])
+  sections CoursewareSection[]
+
+  @@index([teacherUserId, status, createdAt])
+  @@map("coursewares")
+}
+
+model CoursewareSection {
+  id           String                @id @default(cuid())
+  coursewareId String                @map("courseware_id")
+  position     Int
+  type         CoursewareSectionType
+  title        String
+  contentMd    String                @db.Text @map("content_md")
+  createdAt    DateTime              @default(now()) @map("created_at")
+  updatedAt    DateTime              @updatedAt @map("updated_at")
+
+  courseware Courseware @relation(fields: [coursewareId], references: [id], onDelete: Cascade)
+
+  @@unique([coursewareId, position])
+  @@map("courseware_sections")
 }

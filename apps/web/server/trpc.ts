@@ -65,6 +65,50 @@ export const requireGuardianConsent = t.middleware(({ ctx, next }) => {
 // 受同意门禁保护的 authed procedure（数据读写用它；白名单 auth/family 继续用 authedProcedure）。
 export const consentGatedProcedure = authedProcedure.use(requireGuardianConsent);
 
+// Plan 17: 教师 persona 门禁（zero DB query，读 JWT claims 的 persona）。
+// 必须置于 chargeMiddleware 之前——非教师不写 DEBIT。
+export const requireTeacherPersona = t.middleware(({ ctx, next }) => {
+  if (!ctx.auth) {
+    throw new TRPCError({ code: "UNAUTHORIZED", message: "请先登录", cause: { reason: ctx.authError ?? "NO_SESSION" } });
+  }
+  if (ctx.auth.persona !== "TEACHER") {
+    throw new TRPCError({ code: "FORBIDDEN", message: "仅教师可用", cause: { reason: "PERMISSION_DENIED" } });
+  }
+  return next({ ctx: { ...ctx, auth: ctx.auth } });
+});
+
+// Plan 17: paper 读写归属校验。跨教师/不存在 → 合并 NOT_FOUND（无存在性侧信道）。
+export const validatePaperOwnership = t.middleware(async ({ ctx, next, getRawInput }) => {
+  if (!ctx.auth) {
+    throw new TRPCError({ code: "UNAUTHORIZED", message: "请先登录", cause: { reason: ctx.authError ?? "NO_SESSION" } });
+  }
+  const parsed = z.object({ paperId: z.string().cuid() }).safeParse(await getRawInput());
+  if (!parsed.success) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: "缺少 paperId", cause: { reason: "PAPER_ID_REQUIRED" } });
+  }
+  const paper = await ctx.db.paper.findUnique({ where: { id: parsed.data.paperId }, include: { items: { orderBy: { position: "asc" } } } });
+  if (!paper || paper.teacherUserId !== ctx.auth.userId) {
+    throw new TRPCError({ code: "NOT_FOUND", message: "试卷不存在", cause: { reason: "PAPER_NOT_FOUND" } });
+  }
+  return next({ ctx: { ...ctx, auth: ctx.auth, paper } });
+});
+
+// Plan 18: courseware 读写归属校验。跨教师/不存在 → 合并 NOT_FOUND（无存在性侧信道）。注入 ctx.courseware（含 sections 按 position）。
+export const validateCoursewareOwnership = t.middleware(async ({ ctx, next, getRawInput }) => {
+  if (!ctx.auth) {
+    throw new TRPCError({ code: "UNAUTHORIZED", message: "请先登录", cause: { reason: ctx.authError ?? "NO_SESSION" } });
+  }
+  const parsed = z.object({ coursewareId: z.string().cuid() }).safeParse(await getRawInput());
+  if (!parsed.success) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: "缺少 coursewareId", cause: { reason: "COURSEWARE_ID_REQUIRED" } });
+  }
+  const courseware = await ctx.db.courseware.findUnique({ where: { id: parsed.data.coursewareId }, include: { sections: { orderBy: { position: "asc" } } } });
+  if (!courseware || courseware.teacherUserId !== ctx.auth.userId) {
+    throw new TRPCError({ code: "NOT_FOUND", message: "课件不存在", cause: { reason: "COURSEWARE_NOT_FOUND" } });
+  }
+  return next({ ctx: { ...ctx, auth: ctx.auth, courseware } });
+});
+
 export const permissionProcedure = (perm: Permission) =>
   authedProcedure.use(({ ctx, next }) => {
     if (!hasPermission(ctx.auth.roles, perm)) {
@@ -477,7 +521,7 @@ export const validateEntryOwnership = t.middleware(
   },
 );
 
-const OWNER_ONLY_QUESTION_SOURCES = new Set(["USER_ADHOC", "VARIANT_GENERATED"]);
+const OWNER_ONLY_QUESTION_SOURCES = new Set(["USER_ADHOC", "VARIANT_GENERATED", "PAPER_GENERATED"]);
 
 // Plan 8 hotfix (P1 from review): error.diagnose 必须在扣费前校验 questionId 归属，
 // 否则用户 A 可拿用户 B 的 USER_ADHOC / VARIANT_GENERATED questionId 调 diagnose，被扣费 + 信息泄露

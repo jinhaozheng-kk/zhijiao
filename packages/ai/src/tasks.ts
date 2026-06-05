@@ -6,6 +6,7 @@ export type TaskKind =
   | "ASSIGNMENT_QUESTION_GEN"   // Plan 10: teacher tiered assignment question generation
   | "PAPER_GEN"
   | "FORECAST_PAPER_GEN"
+  | "LESSON_PLAN_GEN"           // Plan 18: 教师 AI 课件生成（五段结构化）
   | "EMBEDDING"
   | "KP_RECONCILE"              // Plan 9: kp:reconcile-pending CLI (hint→kp id LLM mapping)
   | "LEARNING_ADVICE";          // Plan 11: analytics.profile.generateAdvice (KP mastery → study method advice)
@@ -19,6 +20,7 @@ export const TASK_MODEL_MAP: Record<TaskKind, string> = {
   ASSIGNMENT_QUESTION_GEN: "qwen-plus",
   PAPER_GEN:           "qwen-max",
   FORECAST_PAPER_GEN:  "qwen-max",
+  LESSON_PLAN_GEN:     "qwen-max",
   EMBEDDING:           "text-embedding-v2",
   KP_RECONCILE:        "qwen-plus",        // Plan 9: 候选集小、JSON 输出，plus 足够
   LEARNING_ADVICE:     "qwen-plus",        // Plan 11: 方法论建议，JSON 输出，plus 足够

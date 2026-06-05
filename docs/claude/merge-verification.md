@@ -6,7 +6,7 @@
 1. `git status --short --branch` 干净（无 `??`）；若有 `.claude/worktrees/<old-plan>/` 残留 → 先 `git worktree list` 看 git 是否还认它：认就 `git worktree remove`（必要时 `git worktree prune`）；不认则 PowerShell `Remove-Item -Recurse -Force -LiteralPath` 物理删（先确认不是当前 worktree）
 2. `pnpm.cmd exec turbo typecheck --force`（不走 cache）
 3. `pnpm.cmd exec turbo test --force`（不走 cache）。Task -1 之后 5 个 per-package test DB 切干净；如再出现稳定 flake 须开独立 plan
-4. E2E：`pnpm.cmd --filter @zhijiao/web test:e2e`（**单独跑**，不要与 typecheck/test 并发 —— 会写 `.next` 冲突）。**全量应 24/24（17 个 spec 文件）一次跑绿**；以 `pnpm.cmd exec playwright test --list` 的 `Total` 为准（单 chromium project、零 skip）。source of truth 与 flake 不变量见 implementation-state「E2E 现状」。新增/删 spec 后同步这两处数字。
+4. E2E：`pnpm.cmd --filter @zhijiao/web test:e2e`（**单独跑**，不要与 typecheck/test 并发 —— 会写 `.next` 冲突）。**全量应 25/25（18 个 spec 文件）一次跑绿**；以 `pnpm.cmd exec playwright test --list` 的 `Total` 为准（单 chromium project、零 skip）。source of truth 与 flake 不变量见 implementation-state「E2E 现状」。新增/删 spec 后同步这两处数字。
 5. env 探针（fail-close）：把 `ACCESS_JWT_SECRET` 从 env 拿掉再 `pnpm.cmd --filter @zhijiao/web dev`，期望进程立刻 throw 并列出 zod issue（`env.ts` 在 module-load `Env.safeParse(process.env)` 失败即 `throw`，dev 首个 import `@/server/env` 的 route 编译时触发 → 500 + `[env] invalid environment: ACCESS_JWT_SECRET: Required`）。验证手法：dev 后台起，`curl -s --retry 40 --retry-connrefused -X POST http://localhost:3000/api/auth/refresh`（该 route 直接 import env，强制编译），读 dev 日志。**env-loading 坑（2026-06-03 实测）**：裸 `next dev` 的 cwd 是 `apps/web`，Next 只从 cwd 读 `.env.local`，而仓库 `.env.local` 在**根** `D:\智教\`（`apps/web` 下没有）—— 所以裸 dev 根本不加载根 `.env.local`，base env 来自 shell/OS 进程环境。**故"注释根 .env.local"不一定生效**；可靠做法是在命令前 inline 注入完整 base env 但省掉 `ACCESS_JWT_SECRET`（其余 `DATABASE_URL/REDIS_URL/NEXT_PUBLIC_APP_URL/OTP_PEPPER` + 四个 `*_USE_MOCK=true`），单测目标字段缺失。`NEXT_PHASE=phase-production-build`（即 `next build`）会走 placeholder 旁路**不**校验，只有 dev/start 真验。
 6. 路由契约：grep `apps/web/app/**/route.ts` 与 `packages/integrations/src/**/build.ts` 里写的 callback URL，统一到 `/wechat/callback`
 7. revoke 即时生效：手动 logout 后把旧 `__Host-zj_at` 重新塞回，调一个 authed tRPC endpoint（例 `auth.me`），期望 401 `SESSION_REVOKED`。**不要测 `/tutor`** —— 它不在 middleware 保护范围；要测 middleware 走 `/profile`
@@ -94,4 +94,21 @@
 - Open `/demo` with `DEMO_MODE=1` and confirm student, teacher, and parent entries work.
 - Confirm `/demo` is blocked when `DEMO_MODE=0`.
 - Run `pnpm --filter @zhijiao/web test:e2e -- e2e/demo.spec.ts`.
-- Confirm AI 出卷 and AI 课件 are preview-only entries in Plan 16.
+- Confirm Plan 16 demo shell still works after AI 出卷 became a real `/teacher/papers` workflow; AI 课件 remains preview-only until Plan 18.
+
+## Plan 17 AI 出卷 probes
+
+82. **非教师出卷扣费前拒绝**：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/paper-generate.test.ts` 应全绿；其中"非教师调用"测例必须断言 `FORBIDDEN` 且不写 `DEBIT`。
+83. **全 AI 出卷固定扣 5 credits 并落 Paper**：同 `paper-generate.test.ts`；"教师全 AI 出卷"测例必须断言 `PaperItem` 落库、教师钱包从 100 到 95。
+84. **PAPER_GENERATED owner-only**：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/paper-owner-only-question.test.ts` 应全绿；跨用户拿 `PAPER_GENERATED questionId` 经 `error.diagnose` 返回 `NOT_FOUND`，避免存在性侧信道。
+85. **教师注销覆盖 Paper + PAPER_GENERATED**：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/pii-deactivate-paper.test.ts` 应全绿；注销删 `Paper`/级联 `PaperItem`，并 scrub `Question(source="PAPER_GENERATED").createdByUserId=null`；导出只含本人 `papers` 白名单。
+86. **教师出卷 E2E**：`pnpm.cmd --filter @zhijiao/web test:e2e -- e2e/teacher-paper.spec.ts` 应 1 passed，覆盖教师登录 → 新建出卷 → 预览见题/答案解析/双向细目表 → 打印页可打开。
+
+## Plan 18 AI 课件 probes
+
+87. **非教师做课件扣费前拒绝 + 教师固定扣 3**：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/courseware-generate.test.ts` 应全绿；"非教师"测例断言 `FORBIDDEN` 且不写 `DEBIT`，"教师生成"测例断言落 5 段且钱包 100→97。
+88. **五段强校验**：`pnpm.cmd --filter @zhijiao/ai test -- tests/lesson-plan-schema.test.ts` 应全绿；缺段/重复段/六段都必须被 schema 拒绝（恰好五段、五类型各一）。
+89. **KP mismatch 补偿净零**：同 `courseware-generate.test.ts`；"kpIds 不属于 subject"测例必须断言扣费后补偿，钱包仍 100、不落 Courseware。
+90. **落库固定 type 顺序**：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/courseware-generation-lib.test.ts` 应全绿；即使 AI 返回乱序，section 也按 `INTRO/EXPLANATION/EXAMPLE/PITFALL/EXERCISE` 落 position 1..5。
+91. **教师注销级联 Courseware**：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/pii-deactivate-courseware.test.ts` 应全绿；注销删 `Courseware`/级联 `CoursewareSection`，导出只含本人 `coursewares` 白名单、不含他人。
+92. **教师课件 E2E**：`pnpm.cmd --filter @zhijiao/web test:e2e -- e2e/teacher-courseware.spec.ts` 应 1 passed，覆盖教师登录 → 新建课件 → 预览见五段 → 编辑一段 → markReady → 打印页可打开。

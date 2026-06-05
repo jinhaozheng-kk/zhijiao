@@ -21,6 +21,12 @@ import {
   AssignmentQuestionGenerationInputSchema,
   AssignmentQuestionGenerationOutputSchema,
   type AssignmentQuestionGenerationOutput,
+  PaperGenerationInputSchema,
+  PaperGenerationOutputSchema,
+  type PaperGenerationOutput,
+  LessonPlanGenerationInputSchema,
+  LessonPlanGenerationOutputSchema,
+  type LessonPlanGenerationOutput,
   KpReconciliationInputSchema,
   KpReconciliationOutputSchema,
   type KpReconciliationOutput,
@@ -93,6 +99,24 @@ function scanAssignmentQuestionGenerationForForbidden(
         ...item.knowledgePointHints,
       ]),
     ]),
+  ].join("\n");
+  return findForbidden(corpus);
+}
+
+function scanPaperGenerationForForbidden(out: PaperGenerationOutput): string[] {
+  const corpus = [
+    out.title,
+    ...out.items.flatMap((i) => [i.stemMd, i.answerMd, i.solutionMd, i.rubricMd ?? ""]),
+  ].join("\n");
+  return findForbidden(corpus);
+}
+
+function scanLessonPlanGenerationForForbidden(
+  out: LessonPlanGenerationOutput,
+): string[] {
+  const corpus = [
+    out.title,
+    ...out.sections.flatMap((s) => [s.title, s.contentMd]),
   ].join("\n");
   return findForbidden(corpus);
 }
@@ -660,6 +684,81 @@ export class AiRouter {
       request,
       schema: AssignmentQuestionGenerationOutputSchema,
       scanForbidden: scanAssignmentQuestionGenerationForForbidden,
+    });
+  }
+
+  // Plan 17: paper generation backing call.
+  // Returns the validated PaperGenerationOutput plus the audit ModelCall.id.
+  async generatePaper(
+    input: unknown,
+  ): Promise<PaperGenerationOutput & { modelCallId: string }> {
+    const parsed = PaperGenerationInputSchema.parse(input);
+    const taskKind: TaskKind = "PAPER_GEN";
+    const prompt = await loadPrompt("paper-gen", this.opts.promptVersion ?? "v1");
+    const promptTemplateId = await ensurePromptInDb(this.opts.prisma, prompt);
+
+    const userContent = prompt.interpolate({
+      subject: parsed.subject,
+      gradeLevel: parsed.gradeLevel,
+      kpNames: parsed.kpNames.join(", "),
+      questionTypes: parsed.questionTypes.join(", "),
+      difficultyRange: `${parsed.difficultyRange[0]}-${parsed.difficultyRange[1]}`,
+      count: String(parsed.count),
+      excludeStems: parsed.excludeStems.length ? parsed.excludeStems.join(" / ") : "(无)",
+    });
+
+    const model = this.opts.modelOverride ?? TASK_MODEL_MAP[taskKind];
+    const request = {
+      model,
+      messages: [
+        { role: "system" as const, content: "你是严谨的 K12 数学练习卷命题助手。" },
+        { role: "user" as const, content: userContent },
+      ],
+      responseFormat: "json_object" as const,
+      temperature: 0.35,
+    };
+
+    return this.runJsonTaskWithAudit({
+      taskKind,
+      promptTemplateId,
+      request,
+      schema: PaperGenerationOutputSchema,
+      scanForbidden: scanPaperGenerationForForbidden,
+    });
+  }
+
+  // Plan 18: 教师 AI 课件生成。返回校验过的五段课件 + 审计 ModelCall.id。
+  async generateLessonPlan(
+    input: unknown,
+  ): Promise<LessonPlanGenerationOutput & { modelCallId: string }> {
+    const parsed = LessonPlanGenerationInputSchema.parse(input);
+    const taskKind: TaskKind = "LESSON_PLAN_GEN";
+    const prompt = await loadPrompt("lesson-plan-gen", this.opts.promptVersion ?? "v1");
+    const promptTemplateId = await ensurePromptInDb(this.opts.prisma, prompt);
+
+    const userContent = prompt.interpolate({
+      gradeLevel: parsed.gradeLevel,
+      kpNames: parsed.kpNames.join(", "),
+      teachingGoal: parsed.teachingGoal ?? "(未提供)",
+    });
+
+    const model = this.opts.modelOverride ?? TASK_MODEL_MAP[taskKind];
+    const request = {
+      model,
+      messages: [
+        { role: "system" as const, content: "你是严谨的 K12 数学课件生成助手。" },
+        { role: "user" as const, content: userContent },
+      ],
+      responseFormat: "json_object" as const,
+      temperature: 0.4,
+    };
+
+    return this.runJsonTaskWithAudit({
+      taskKind,
+      promptTemplateId,
+      request,
+      schema: LessonPlanGenerationOutputSchema,
+      scanForbidden: scanLessonPlanGenerationForForbidden,
     });
   }
 

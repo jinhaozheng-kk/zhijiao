@@ -122,7 +122,7 @@ export async function seedErrorBookEntry(
 // the same auth / requestId / headers assumptions.
 export function makeCtx(
   userId: string,
-  overrides: Partial<{ requestId: string; isMinor: boolean; guardianConsentStatus: "NOT_REQUIRED" | "PENDING" | "GRANTED" }> = {},
+  overrides: Partial<{ requestId: string; isMinor: boolean; guardianConsentStatus: "NOT_REQUIRED" | "PENDING" | "GRANTED"; persona: "STUDENT" | "TEACHER" | "PARENT" }> = {},
 ) {
   return {
     db: prisma,
@@ -130,7 +130,7 @@ export function makeCtx(
     auth: {
       userId,
       sessionId: "test-session",
-      persona: "STUDENT" as const,
+      persona: (overrides.persona ?? "STUDENT") as import("@zhijiao/domain").Persona,
       roles: [] as import("@zhijiao/domain").Role[],
       isMinor: overrides.isMinor ?? false,
       guardianConsentStatus: overrides.guardianConsentStatus ?? "NOT_REQUIRED",
