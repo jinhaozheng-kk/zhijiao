@@ -128,11 +128,17 @@ export default async function TeacherClassPage({
             </Link>
           </section>
           <section id="ai-courseware" className="rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-200">
-            <p className="text-sm font-medium text-slate-500">Plan 18</p>
+            <p className="text-sm font-medium text-emerald-700">已上线</p>
             <h2 className="mt-2 text-xl font-semibold tracking-tight">AI 课件</h2>
             <p className="mt-3 text-sm leading-6 text-slate-600">
-              将支持按知识点生成课堂导入、讲解结构、例题、易错点和课堂练习。
+              按年级与知识点生成课堂导入、讲解结构、例题、易错点和课堂练习五段课件。
             </p>
+            <Link
+              href="/teacher/coursewares"
+              className="mt-4 inline-flex rounded-full bg-slate-950 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800"
+            >
+              去做课件
+            </Link>
           </section>
           <section id="students" className="rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-200">
             <h2 className="font-medium">学生</h2>

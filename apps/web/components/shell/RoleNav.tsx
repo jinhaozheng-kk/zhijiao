@@ -24,7 +24,7 @@ export function navForRole(role: Persona, classroomId?: string): NavItem[] {
       { label: "作业", href: anchor("assignments") },
       { label: "学生", href: anchor("students") },
       { label: "AI 出卷", href: "/teacher/papers" },
-      { label: "AI 课件", href: anchor("ai-courseware"), preview: true },
+      { label: "AI 课件", href: "/teacher/coursewares" },
     ];
   }
 
