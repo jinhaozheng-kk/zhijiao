@@ -6,7 +6,7 @@
 
 **产品重心转向现状**（2026-06-04）：
 - 项目重心已从“学生 AI 学习闭环（答疑 / 错因 / 举一反三 / 训练 / 错题本 / 学情）”转向“教师生产力工具”。学生端进入维护态：除稳定性、合规、安全、存量闭环和支撑教师工具的数据需求外，不继续扩展学生端新能力。
-- 近期产品主线只有两条：Plan 17 `AI 出卷` 和 Plan 18 `AI 课件`。Plan 17 已落地为第一突破口；Plan 18 是第二支柱。
+- 近期产品主线只有两条：Plan 17 `AI 出卷` 和 Plan 18 `AI 课件`。两者均已落地——Plan 17 第一突破口、Plan 18 第二支柱。
 - Plan 17 `AI 出卷` 已落地：独立 `Paper`/`PaperItem`，复用现有 `PAPER_GEN` 固定计费，题库 best-effort 复用 + AI 补 gap，`PAPER_GENERATED` owner-only，双向细目表渲染时计算，打印页浏览器另存 PDF。
 - Plan 18 已有 spec：独立 `Courseware`/`CoursewareSection`，复用 `LESSON_PLAN_GEN` 固定 3 credits，五段强校验（INTRO / EXPLANATION / EXAMPLE / PITFALL / EXERCISE），分段编辑，打印页，例题/练习 inline markdown 不落 `Question`。
 - 新实现默认遵守扣费链顺序：`.input(...) -> requireTeacherPersona -> requireGuardianConsent -> chargeMiddleware(...) -> resolver`，畸形输入和非教师身份不得先扣费。
@@ -50,6 +50,15 @@
 - UI：`/teacher/papers` 列表、`/teacher/papers/new` 参数表单、`/teacher/papers/[paperId]` 预览编辑、`/teacher/papers/[paperId]/print` 打印页已可用；教师导航 `AI 出卷` 指向 `/teacher/papers`，班级页原 Plan 17 占位卡已改为真实入口。打印页仍走 `paper.get` 权限链，DRAFT/READY 均可访问。
 - 双向细目表：由 `buildSpecTable` 渲染时聚合 `KP × cognitiveLevel × type × difficulty`，返回 rows + `totalCount` + `totalPoints`；不额外持久化，避免调分/删题后的派生数据漂移。
 - PII：注销教师删除其 `Paper`（级联 `PaperItem`），同时将本人 `PAPER_GENERATED Question.createdByUserId` 置 null 保留题目行；`exportUserData` 加 `papers` 白名单段（title/status/paramsJson/createdAt/items 的 stem/type/answer/solution/points/difficulty/cognitiveLevel/kpHints），不导出他人 Paper。
+
+**AI 课件现状**（Plan 18）：
+- 数据模型：独立 `Courseware` / `CoursewareSection`，教师自有、不绑班级；`CoursewareStatus` 只有 `DRAFT` / `READY`；`CoursewareSectionType` 固定五值 `INTRO/EXPLANATION/EXAMPLE/PITFALL/EXERCISE`，`@@unique([coursewareId, position])`。例题/课堂练习仅作段 `contentMd`（Markdown），**不落 Question**（与 Plan 17 出卷区别）。
+- AI 与计费：复用既有 `LESSON_PLAN_GEN` taskKind（`TASK_MODEL_MAP` 映 `qwen-max`），固定 3 credits；链顺序 `.input(...) -> requireTeacherPersona -> requireGuardianConsent -> chargeMiddleware("LESSON_PLAN_GEN") -> resolver`。非教师扣费前 `FORBIDDEN` 不写 DEBIT；KP 与 subject 不匹配在扣费后但补偿净零、不落 Courseware。
+- 五段强校验：`LessonPlanGenerationOutputSchema` `.length(5)` + superRefine 保证恰好五段且五类型各一（缺/重/六段都拒）。`scanLessonPlanGenerationForForbidden` 复用 `findForbidden`（与 paper/assignment 同一禁词扫描）。mock 按 system message 关键词 `课件生成助手` 派发 `DEFAULT_LESSON_PLAN`。
+- 落库顺序：`persistGeneratedCourseware` 按 `LESSON_SECTION_ORDER` 重排，position 固定 1..5（**不信任 AI 返回顺序**），schema 已保证五类型各一所以缺段会抛。
+- 权限：`requireTeacherPersona` 教师入口门禁；`validateCoursewareOwnership` 对 `get/markReady/updateSection` owner-only，跨教师/不存在合并 `NOT_FOUND/COURSEWARE_NOT_FOUND`，注入 `ctx.courseware`（含 sections 按 position）。
+- UI：`/teacher/coursewares` 列表、`/teacher/coursewares/new` 参数表单（年级 + KP 多选 + 可选教学目标）、`/teacher/coursewares/[id]` 预览分段编辑 + markReady、`/teacher/coursewares/[id]/print` 打印页已可用；教师导航 `AI 课件` 改指 `/teacher/coursewares`（不再 preview），班级页 `#ai-courseware` 占位卡改为「去做课件」真实入口。打印页走 `courseware.get` 权限链，DRAFT/READY 均可访问。
+- PII：注销教师删除其 `Courseware`（级联 `CoursewareSection`），无 Question 牵连；`exportUserData` 加 `coursewares` 白名单段（title/status/gradeLevel/createdAt + sections 的 type/title/contentMd），不导出他人 Courseware。
 
 **计费现状**：
 - `packages/billing` 新建：ensureWallet / chargeForAction（predicate-on-update + idemKey 防重，原子化）/ compensate（写 COMPENSATION ledger + refId 指回 DEBIT）/ applyWechatPayNotify（P2002 idemKey 重读 → ALREADY_PAID；P2002 transactionId 重读 → DUPLICATE_TRANSACTION_ID；spec §4.1 状态机；FAILED→PAID 拒绝走 TERMINAL_STATE_CONFLICT）/ expireStaleOrders / adminAdjust（OPS 调账；负 delta 也走 predicate-on-update 防透支 → InsufficientBalanceForAdjustError）/ sumMonthlyTopupCents（Asia/Shanghai 自然月 + CREATED+PENDING by createdAt + PAID by paidAt）
@@ -178,7 +187,7 @@
 - `/demo` is gated by `DEMO_MODE=1` and issues real sessions for fixed demo identities.
 - Demo data is reset by `pnpm demo:reset` and verified by `pnpm verify:demo`.
 - Main student/teacher/parent paths share the 初二数学 demo story and use the polished product shell.
-- Plan 16 originally showed AI 出卷 and AI 课件 as preview entries; Plan 17 has replaced AI 出卷 with the production `/teacher/papers` workflow. AI 课件 remains preview-only until Plan 18 lands.
+- Plan 16 originally showed AI 出卷 and AI 课件 as preview entries; Plan 17 replaced AI 出卷 with the production `/teacher/papers` workflow, and Plan 18 replaced AI 课件 with the production `/teacher/coursewares` workflow. Both teacher nav entries are now real direct links (no preview badge).
 
 **靶向训练现状（targeted training v1）：**
 - 免费、复用优先：`training.*` 走 `consentGatedProcedure`（**不** chargedProcedure），不调 AI。题源只读学生自己的 ACTIVE 错题 + 已生成变式（`VariantItem`→其晋升 Question 的 KP link），按 FOCUS KP 排序；不足 `MIN_TARGETED=3` 时回退 `dueForReview`，全空返 `INSUFFICIENT_DATA`。会话上限 `SESSION_ITEM_CAP=8`。

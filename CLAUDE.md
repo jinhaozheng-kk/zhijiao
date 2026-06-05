@@ -107,6 +107,7 @@
 - **图片/OCR 拍照答疑 v1**（mock-first 对象存储 + authed 图片上传、`TUTOR_ASK_IMAGE` 多模态转写并讲解、2 credits 计费、owner-scoped image key、转写落 USER_ADHOC Question + `stemImageKeys`、TutorForm 图片入口 + 可编辑转写重答、E2E）—— 见 `docs/superpowers/plans/2026-06-03-image-ocr-tutor.md`，spec 在 `docs/superpowers/specs/2026-06-03-image-ocr-tutor-design.md`
 - **Launch-prep 工程化 v1**（CI + 生产部署骨架 + 就绪护栏，2026-06-04）：GitHub Actions CI（push/PR 跑 `turbo typecheck` + `turbo test` + Playwright E2E + Docker image build，`master` 绿）见 `docs/superpowers/plans/2026-06-03-ci-github-actions.md`；Web 生产镜像（Next standalone 根 `Dockerfile` runner/migrator 双 target，`NEXT_OUTPUT_STANDALONE=1` 仅 Docker build 打开）；生产部署骨架（`.env.production.example` + `docker-compose.prod.yml`，Postgres/Redis 仅内网、migrate 用 profile 单独跑 `db:migrate:deploy`）；生产就绪护栏（`/readiness` 健康检查 `database.ok` + `redis.ok` + prod env 校验）—— ops 提交无独立 superpowers plan，runbook 在 `docs/ops/production-deploy.md`。**仍非公网上线**：ICP/域名/TLS、真实 SMS/微信 OAuth/微信支付商户、OSS、生产 secrets 注入+备份策略仍需独立推进（见下方「上线前置」）。
 - **Plan 17 生产 AI 出卷**（教师独立练习卷生成：`Paper`/`PaperItem`、复用 `PAPER_GEN` 固定 5 credits、题库 best-effort + AI 补 gap、`PAPER_GENERATED` owner-only、列表/新建/预览/打印 UI、双向细目表、PII 注销/导出覆盖、E2E）—— 见 `docs/superpowers/plans/2026-06-04-ai-paper-generation.md`，spec 在 `docs/superpowers/specs/2026-06-04-ai-paper-generation-design.md`
+- **Plan 18 生产 AI 课件**（教师结构化课件生成：独立 `Courseware`/`CoursewareSection`、复用 `LESSON_PLAN_GEN` 固定 3 credits、五段强校验 INTRO/EXPLANATION/EXAMPLE/PITFALL/EXERCISE + 落库固定 type 顺序、不落 Question、`validateCoursewareOwnership` owner-only、列表/新建/预览分段编辑/打印 UI、PII 注销/导出覆盖、E2E）—— 见 `docs/superpowers/plans/2026-06-04-ai-courseware-generation.md`，spec 在 `docs/superpowers/specs/2026-06-04-ai-courseware-generation-design.md`
 
 ## 实现现状
 
@@ -136,7 +137,7 @@ pnpm --filter @zhijiao/web  test -- tests/integration/auth-register-race.test.ts
 
 86 条回归探针已拆到 **`docs/claude/merge-verification.md`** —— 每次 merge 后逐条核对；新探针追加到该文件，不写回本文件。
 
-**已落地汇总**：Plan 4 + Plan 6 + Plan 8 + Plan 9 + Plan 10 + Plan 11 + Plan 12 + Plan 13 + Plan 14a + Plan 14b + Plan 14c + Plan 16 + 靶向训练 v1 + 图片/OCR 拍照答疑 v1 + Launch-prep 工程化 v1（CI + 部署骨架 + 就绪护栏）+ Plan 17 生产 AI 出卷。**MVP 产品闭环 + 教师 AI 出卷 + 可演练部署骨架均已完成**。
+**已落地汇总**：Plan 4 + Plan 6 + Plan 8 + Plan 9 + Plan 10 + Plan 11 + Plan 12 + Plan 13 + Plan 14a + Plan 14b + Plan 14c + Plan 16 + 靶向训练 v1 + 图片/OCR 拍照答疑 v1 + Launch-prep 工程化 v1（CI + 部署骨架 + 就绪护栏）+ Plan 17 生产 AI 出卷 + Plan 18 生产 AI 课件。**MVP 产品闭环 + 教师 AI 出卷 + 教师 AI 课件 + 可演练部署骨架均已完成**。
 
 **上线前置（非代码 / 外部依赖，公网上线卡点）**——详见 `docs/ops/production-deploy.md` 末尾「Launch Blockers」：
 - ICP 备案 + 域名 / TLS / 反向代理（一切真实凭证的总前置）
@@ -146,5 +147,4 @@ pnpm --filter @zhijiao/web  test -- tests/integration/auth-register-race.test.ts
 
 **上线后候选 Plan**：
 - Plan 15: USER_ADHOC × PUBLISHED canonical dedup / 题库去重 / PUBLISHED 复用 / 统计归并（Plan 8 §6.2 punt；当前语料供给不足，偏早）
-- Plan 18: 生产 AI 课件（Plan 16 §6 预览卡占位；当前仅 roadmap）
 - 命题趋势预测中心 / 题库批量录入（发布计划中 cut 到上线后）

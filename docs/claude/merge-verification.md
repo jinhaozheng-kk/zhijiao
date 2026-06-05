@@ -103,3 +103,12 @@
 84. **PAPER_GENERATED owner-only**：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/paper-owner-only-question.test.ts` 应全绿；跨用户拿 `PAPER_GENERATED questionId` 经 `error.diagnose` 返回 `NOT_FOUND`，避免存在性侧信道。
 85. **教师注销覆盖 Paper + PAPER_GENERATED**：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/pii-deactivate-paper.test.ts` 应全绿；注销删 `Paper`/级联 `PaperItem`，并 scrub `Question(source="PAPER_GENERATED").createdByUserId=null`；导出只含本人 `papers` 白名单。
 86. **教师出卷 E2E**：`pnpm.cmd --filter @zhijiao/web test:e2e -- e2e/teacher-paper.spec.ts` 应 1 passed，覆盖教师登录 → 新建出卷 → 预览见题/答案解析/双向细目表 → 打印页可打开。
+
+## Plan 18 AI 课件 probes
+
+87. **非教师做课件扣费前拒绝 + 教师固定扣 3**：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/courseware-generate.test.ts` 应全绿；"非教师"测例断言 `FORBIDDEN` 且不写 `DEBIT`，"教师生成"测例断言落 5 段且钱包 100→97。
+88. **五段强校验**：`pnpm.cmd --filter @zhijiao/ai test -- tests/lesson-plan-schema.test.ts` 应全绿；缺段/重复段/六段都必须被 schema 拒绝（恰好五段、五类型各一）。
+89. **KP mismatch 补偿净零**：同 `courseware-generate.test.ts`；"kpIds 不属于 subject"测例必须断言扣费后补偿，钱包仍 100、不落 Courseware。
+90. **落库固定 type 顺序**：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/courseware-generation-lib.test.ts` 应全绿；即使 AI 返回乱序，section 也按 `INTRO/EXPLANATION/EXAMPLE/PITFALL/EXERCISE` 落 position 1..5。
+91. **教师注销级联 Courseware**：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/pii-deactivate-courseware.test.ts` 应全绿；注销删 `Courseware`/级联 `CoursewareSection`，导出只含本人 `coursewares` 白名单、不含他人。
+92. **教师课件 E2E**：`pnpm.cmd --filter @zhijiao/web test:e2e -- e2e/teacher-courseware.spec.ts` 应 1 passed，覆盖教师登录 → 新建课件 → 预览见五段 → 编辑一段 → markReady → 打印页可打开。
