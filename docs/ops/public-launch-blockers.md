@@ -23,10 +23,10 @@ implementation status, smoke evidence, and rollback notes.
 | Production secrets injection | Ops | Env checker exists; production `.env.production` still must be supplied on the host | Deployment host has non-dev `.env.production`, `scripts/check-production-env.ps1` passes, secret ownership is documented, no placeholder values remain. |
 | Database backup and restore | Ops | Local rehearsal passed; production-host rehearsal still required | A backup file is created, restore is rehearsed on production-equivalent data, and the operator records the restore stamp. |
 | Real AI | External + smoke | Adapter exists; needs credentials | `AI_USE_MOCK=false` with DashScope credentials boots and a paid tutor flow succeeds. |
-| Real SMS | External + code | Credentials env gate exists; adapter send path is still not implemented | Aliyun SMS send is implemented, `SMS_USE_MOCK=false` boots, login OTP delivery succeeds to an allowlisted phone. |
-| Real WeChat OAuth | External + code | OAuth URL build exists; code exchange is still not implemented | `WECHAT_OAUTH_USE_MOCK=false` boots, bind/login callback exchanges a real code and stores `AuthIdentity`. |
+| Real SMS | External + code | Env gate exists; `send` implemented offline (Dysmsapi RPC v1), pending live smoke | Aliyun SMS send is implemented, `SMS_USE_MOCK=false` boots, login OTP delivery succeeds to an allowlisted phone. |
+| Real WeChat OAuth | External + code | Authorize URL + `exchangeCodeForUser` implemented offline, pending live smoke | `WECHAT_OAUTH_USE_MOCK=false` boots, bind/login callback exchanges a real code and stores `AuthIdentity`. |
 | Real WeChat Pay | External + code | Billing state machine exists; V3 adapter is still not implemented | `WECHAT_PAY_USE_MOCK=false` boots, unified order returns a real prepay result, notify verification credits wallet exactly once. |
-| Real OSS | External + code | Env gate exists; `put`/`getBytes` are still `NOT_IMPLEMENTED` | `STORAGE_USE_MOCK=false` boots, image upload stores bytes, AI tutor can read them back. |
+| Real OSS | External + code | Env gate exists; `put`/`getBytes` implemented offline (OSS V1 sig), pending live smoke | `STORAGE_USE_MOCK=false` boots, image upload stores bytes, AI tutor can read them back. |
 | Public legal/support details | External + product ops | Not done | Public support contact, operating entity, ICP number, privacy terms, and refund/support flow are visible. |
 
 ## External Application Track
@@ -69,8 +69,11 @@ Code status:
 
 - `apps/web/server/env.ts` already fail-closes when `SMS_USE_MOCK=false` and
   these values are missing.
-- `packages/integrations/src/sms/aliyun.ts` still throws
-  `AliyunSmsAdapter.send not implemented yet`.
+- `packages/integrations/src/sms/aliyun.ts` `send` is implemented offline
+  (Dysmsapi `SendSms` RPC v1 signature; mock stays default), pending live
+  smoke with real credentials + approved sign/template (commit b0ff0d1).
+  Caveat: the template variable is sent as `code` — it must match the
+  approved Aliyun template variable name.
 
 Exit smoke:
 
@@ -103,8 +106,9 @@ Code status:
 
 - `packages/integrations/src/wechat/h5-oauth/real.ts` can build an authorize
   URL.
-- `exchangeCodeForUser` still throws `RealWechatH5Adapter.exchangeCodeForUser
-  not implemented yet`.
+- `exchangeCodeForUser` is implemented offline (two-step access_token →
+  scope-conditional userinfo, `headimgurl`→`avatarUrl`, errcode handling;
+  mock stays default), pending live smoke (commit b0ff0d1).
 
 Exit smoke:
 
@@ -156,8 +160,9 @@ Code status:
 
 - `apps/web/server/env.ts` already fail-closes when `STORAGE_USE_MOCK=false`
   and OSS values are missing.
-- `packages/integrations/src/storage/real.ts` still throws `NOT_IMPLEMENTED`
-  for `put` and `getBytes`.
+- `packages/integrations/src/storage/real.ts` `put`/`getBytes` are implemented
+  offline (OSS V1 HMAC-SHA1 header signature, virtual-hosted URL, 404→null;
+  mock stays default), pending live smoke (commit b0ff0d1).
 
 Exit smoke:
 
@@ -223,10 +228,12 @@ Exit evidence:
 
 Implement in this order:
 
-1. OSS real adapter.
-2. Aliyun SMS adapter.
-3. WeChat OAuth real code exchange.
-4. WeChat Pay V3 unified order and notify verification.
+1. ~~OSS real adapter.~~ Done offline (commit b0ff0d1), pending live smoke.
+2. ~~Aliyun SMS adapter.~~ Done offline (commit b0ff0d1), pending live smoke.
+3. ~~WeChat OAuth real code exchange.~~ Done offline (commit b0ff0d1), pending live smoke.
+4. WeChat Pay V3 unified order and notify verification. **Remaining** — held
+   for a dedicated, heavily-reviewed pass (money movement, webhook replay,
+   certificate, and idempotency risk).
 
 Reasoning:
 
@@ -272,6 +279,9 @@ Do not switch public traffic until all gates pass:
 ## Recommended Next Engineering Task
 
 Start with production secrets and backup/restore rehearsal because both are
-required regardless of external approval timing. After that, implement the OSS
-real adapter first because image tutor already depends on storage roundtrips and
-the current real adapter explicitly throws `NOT_IMPLEMENTED`.
+required regardless of external approval timing. The OSS, Aliyun SMS, and
+WeChat OAuth real adapters are now implemented offline (commit b0ff0d1) with
+mock kept as default — each needs only live smoke once real credentials
+arrive. The remaining real-adapter engineering is WeChat Pay V3 (`unifiedOrder`
++ `verifyNotify`), deliberately held for a dedicated, heavily-reviewed pass
+because of money movement, webhook replay, certificate, and idempotency risk.
