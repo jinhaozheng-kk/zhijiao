@@ -232,3 +232,104 @@ describe("RealWechatPayAdapter.unifiedOrder (Native)", () => {
     ).rejects.toThrow(/PARAM_ERROR/);
   });
 });
+
+describe("RealWechatPayAdapter.verifyNotify", () => {
+  it("public-key mode: a valid signed+encrypted notify verifies and maps fields", async () => {
+    const { headers, rawBody } = buildNotify({
+      plaintext: SUCCESS_PLAINTEXT,
+      platformPrivKey: PLATFORM_PRIV,
+      serial: PLATFORM_SERIAL,
+    });
+    const adapter = makeAdapter(certProviderReturning(PLATFORM_SERIAL, PLATFORM_PUB));
+    const v = await adapter.verifyNotify(headers, rawBody);
+    expect(v).toEqual({
+      ok: true,
+      outTradeNo: "zj_t_1",
+      transactionId: "wx_txn_999",
+      tradeState: "SUCCESS",
+      amountCents: 1000,
+      appId: "wxappid",
+      mchId: "1900000001",
+      successTime: "2026-06-06T20:00:00+08:00",
+    });
+  });
+
+  it("cert mode: provider returns an X.509 cert PEM; publicKey is extracted and verifies", async () => {
+    const { headers, rawBody } = buildNotify({
+      plaintext: SUCCESS_PLAINTEXT,
+      platformPrivKey: TEST_PLATFORM_KEY,
+      serial: PLATFORM_SERIAL,
+    });
+    const adapter = makeAdapter(certProviderReturning(PLATFORM_SERIAL, TEST_PLATFORM_CERT));
+    const v = await adapter.verifyNotify(headers, rawBody);
+    expect(v.ok).toBe(true);
+  });
+
+  it("SIG_INVALID when signature is tampered", async () => {
+    const { headers, rawBody } = buildNotify({
+      plaintext: SUCCESS_PLAINTEXT,
+      platformPrivKey: PLATFORM_PRIV,
+      serial: PLATFORM_SERIAL,
+    });
+    const adapter = makeAdapter(certProviderReturning(PLATFORM_SERIAL, PLATFORM_PUB));
+    const v = await adapter.verifyNotify({ ...headers, signature: "dGFtcGVyZWQ=" }, rawBody);
+    expect(v).toEqual({ ok: false, reason: "SIG_INVALID" });
+  });
+
+  it("SIG_INVALID when signature header is missing", async () => {
+    const { headers, rawBody } = buildNotify({
+      plaintext: SUCCESS_PLAINTEXT,
+      platformPrivKey: PLATFORM_PRIV,
+      serial: PLATFORM_SERIAL,
+    });
+    const adapter = makeAdapter(certProviderReturning(PLATFORM_SERIAL, PLATFORM_PUB));
+    const v = await adapter.verifyNotify({ ...headers, signature: null }, rawBody);
+    expect(v).toEqual({ ok: false, reason: "SIG_INVALID" });
+  });
+
+  it("CERT_NOT_FOUND when serial header is missing", async () => {
+    const { headers, rawBody } = buildNotify({
+      plaintext: SUCCESS_PLAINTEXT,
+      platformPrivKey: PLATFORM_PRIV,
+      serial: PLATFORM_SERIAL,
+    });
+    const adapter = makeAdapter(certProviderReturning(PLATFORM_SERIAL, PLATFORM_PUB));
+    const v = await adapter.verifyNotify({ ...headers, serial: null }, rawBody);
+    expect(v).toEqual({ ok: false, reason: "CERT_NOT_FOUND" });
+  });
+
+  it("CERT_NOT_FOUND when provider has no cert for the serial", async () => {
+    const { headers, rawBody } = buildNotify({
+      plaintext: SUCCESS_PLAINTEXT,
+      platformPrivKey: PLATFORM_PRIV,
+      serial: "UNKNOWN_SERIAL",
+    });
+    const adapter = makeAdapter(certProviderReturning(PLATFORM_SERIAL, PLATFORM_PUB));
+    const v = await adapter.verifyNotify(headers, rawBody);
+    expect(v).toEqual({ ok: false, reason: "CERT_NOT_FOUND" });
+  });
+
+  it("PARSE_FAILED when apiV3Key is wrong (GCM auth tag fails) though signature is valid", async () => {
+    const { headers, rawBody } = buildNotify({
+      plaintext: SUCCESS_PLAINTEXT,
+      apiV3Key: "ffffffffffffffffffffffffffffffff", // wrong 32-byte key
+      platformPrivKey: PLATFORM_PRIV,
+      serial: PLATFORM_SERIAL,
+    });
+    const adapter = makeAdapter(certProviderReturning(PLATFORM_SERIAL, PLATFORM_PUB));
+    const v = await adapter.verifyNotify(headers, rawBody);
+    expect(v).toEqual({ ok: false, reason: "PARSE_FAILED" });
+  });
+
+  it("PARSE_FAILED when body is valid-signed but not parseable as a notify", async () => {
+    const { headers, rawBody } = buildNotify({
+      plaintext: SUCCESS_PLAINTEXT,
+      platformPrivKey: PLATFORM_PRIV,
+      serial: PLATFORM_SERIAL,
+      rawBodyOverride: "not-json",
+    });
+    const adapter = makeAdapter(certProviderReturning(PLATFORM_SERIAL, PLATFORM_PUB));
+    const v = await adapter.verifyNotify(headers, rawBody);
+    expect(v).toEqual({ ok: false, reason: "PARSE_FAILED" });
+  });
+});
