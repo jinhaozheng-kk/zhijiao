@@ -25,7 +25,7 @@ implementation status, smoke evidence, and rollback notes.
 | Real AI | External + smoke | Adapter exists; needs credentials | `AI_USE_MOCK=false` with DashScope credentials boots and a paid tutor flow succeeds. |
 | Real SMS | External + code | Env gate exists; `send` implemented offline (Dysmsapi RPC v1), pending live smoke | Aliyun SMS send is implemented, `SMS_USE_MOCK=false` boots, login OTP delivery succeeds to an allowlisted phone. |
 | Real WeChat OAuth | External + code | Authorize URL + `exchangeCodeForUser` implemented offline, pending live smoke | `WECHAT_OAUTH_USE_MOCK=false` boots, bind/login callback exchanges a real code and stores `AuthIdentity`. |
-| Real WeChat Pay | External + code | Billing state machine exists; V3 adapter is still not implemented | `WECHAT_PAY_USE_MOCK=false` boots, unified order returns a real prepay result, notify verification credits wallet exactly once. |
+| Real WeChat Pay | External + code | Billing state machine exists; Native `unifiedOrder` + `verifyNotify` implemented offline, pending live smoke | `WECHAT_PAY_USE_MOCK=false` boots, unified order returns a real prepay result, notify verification credits wallet exactly once. |
 | Real OSS | External + code | Env gate exists; `put`/`getBytes` implemented offline (OSS V1 sig), pending live smoke | `STORAGE_USE_MOCK=false` boots, image upload stores bytes, AI tutor can read them back. |
 | Public legal/support details | External + product ops | Not done | Public support contact, operating entity, ICP number, privacy terms, and refund/support flow are visible. |
 
@@ -133,8 +133,11 @@ Code status:
 
 - Billing order, ledger, idempotency, notify state machine, and mock pay path
   are implemented and tested.
-- `packages/integrations/src/wechat-pay/real.ts` still throws for
-  `unifiedOrder` and `verifyNotify`.
+- `packages/integrations/src/wechat-pay/real.ts` `unifiedOrder` (Native 扫码)
+  and `verifyNotify` (platform-cert RSA-SHA256 verify + APIv3-key AES-256-GCM
+  decrypt) are implemented offline with mock kept default; pending live smoke.
+  Replay defense delegated to billing idempotency. JSAPI/H5 and platform-cert
+  auto-rotation remain out of scope.
 
 Exit smoke:
 
@@ -231,9 +234,9 @@ Implement in this order:
 1. ~~OSS real adapter.~~ Done offline (commit b0ff0d1), pending live smoke.
 2. ~~Aliyun SMS adapter.~~ Done offline (commit b0ff0d1), pending live smoke.
 3. ~~WeChat OAuth real code exchange.~~ Done offline (commit b0ff0d1), pending live smoke.
-4. WeChat Pay V3 unified order and notify verification. **Remaining** — held
-   for a dedicated, heavily-reviewed pass (money movement, webhook replay,
-   certificate, and idempotency risk).
+4. ~~WeChat Pay V3 unified order and notify verification.~~ Native `unifiedOrder`
+   + `verifyNotify` done offline (this pass), pending live smoke. JSAPI/H5 and
+   platform-cert auto-rotation remain out of scope.
 
 Reasoning:
 
@@ -279,9 +282,10 @@ Do not switch public traffic until all gates pass:
 ## Recommended Next Engineering Task
 
 Start with production secrets and backup/restore rehearsal because both are
-required regardless of external approval timing. The OSS, Aliyun SMS, and
-WeChat OAuth real adapters are now implemented offline (commit b0ff0d1) with
-mock kept as default — each needs only live smoke once real credentials
-arrive. The remaining real-adapter engineering is WeChat Pay V3 (`unifiedOrder`
-+ `verifyNotify`), deliberately held for a dedicated, heavily-reviewed pass
-because of money movement, webhook replay, certificate, and idempotency risk.
+required regardless of external approval timing. All four real adapters — OSS,
+Aliyun SMS, WeChat OAuth (commit b0ff0d1), and WeChat Pay V3 Native — are now
+implemented offline with mock kept as default; each needs only live smoke once
+real credentials arrive. No real-adapter implementation work remains in scope
+(JSAPI/H5 and platform-cert auto-rotation are explicitly deferred). The
+critical-path engineering left is therefore live smoke + production secrets +
+backup/restore on a real host.
