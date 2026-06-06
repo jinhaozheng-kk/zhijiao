@@ -24,14 +24,16 @@ describe("buildStorageAdapter", () => {
     } as NodeJS.ProcessEnv);
     expect(s).toBeInstanceOf(MockStorageAdapter);
   });
-  it("real adapter throws NOT_IMPLEMENTED until OSS is configured", async () => {
-    const real = new AliyunOssAdapter({
-      accessKeyId: "",
-      accessKeySecret: "",
-      bucket: "",
-      region: "",
-      endpoint: "",
-    });
-    await expect(real.getBytes("k")).rejects.toThrow(/NOT_IMPLEMENTED/);
+  it("real adapter throws when OSS opts are empty (NotConfiguredError)", () => {
+    expect(
+      () =>
+        new AliyunOssAdapter({
+          accessKeyId: "",
+          accessKeySecret: "",
+          bucket: "",
+          region: "",
+          endpoint: "",
+        }),
+    ).toThrow();
   });
 });
