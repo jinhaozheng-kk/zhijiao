@@ -19,6 +19,19 @@ import {
 type KpOption = { id: string; name: string };
 type SectionConfig = { count: number; pointsPerItem: number };
 
+export function computePaperTotals(
+  sections: Partial<Record<QuestionTypeValue, { count: number; pointsPerItem: number }>>,
+): { totalCount: number; totalPoints: number } {
+  let totalCount = 0;
+  let totalPoints = 0;
+  for (const cfg of Object.values(sections)) {
+    if (!cfg) continue;
+    totalCount += cfg.count || 0;
+    totalPoints += (cfg.count || 0) * (cfg.pointsPerItem || 0);
+  }
+  return { totalCount, totalPoints };
+}
+
 const DEFAULT_POINTS: Record<QuestionTypeValue, number> = {
   SINGLE_CHOICE: 3,
   MULTI_CHOICE: 4,
@@ -81,11 +94,7 @@ export function PaperGenerationForm({
   }
 
   const activeTypes = QUESTION_TYPES.filter((t) => sections[t]);
-  const totalCount = activeTypes.reduce((n, t) => n + (sections[t]!.count || 0), 0);
-  const totalPoints = activeTypes.reduce(
-    (n, t) => n + (sections[t]!.count || 0) * (sections[t]!.pointsPerItem || 0),
-    0,
-  );
+  const { totalCount, totalPoints } = computePaperTotals(sections);
 
   const canSubmit =
     !generate.isPending &&
