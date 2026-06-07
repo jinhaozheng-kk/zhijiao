@@ -30,12 +30,63 @@ export async function selectBankQuestions(db: PrismaClient, args: BankSelectArgs
 
 export interface AiItem { stemMd: string; type: QuestionType; options?: string[]; answerMd: string; solutionMd: string; rubricMd?: string; difficulty: number; cognitiveLevel: string; points: number; knowledgePointHints: string[]; }
 
+export function normalizePaperStemForDedup(stem: string): string {
+  return stem
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/^\s*(?:第\s*)?\d+\s*[.、．]\s*/u, "")
+    .replace(/\s+/g, "")
+    .replace(/[，。！？；：、,.!?;:]/g, "");
+}
+
+export function paperStemTemplateKey(stem: string): string {
+  return normalizePaperStemForDedup(stem).replace(/\d+(?:\.\d+)?/g, "<num>");
+}
+
+export function paperStemDedupKeys(stem: string): string[] {
+  const normalized = normalizePaperStemForDedup(stem);
+  const template = paperStemTemplateKey(stem);
+  return [`stem:${normalized}`, `template:${template}`];
+}
+
+export function createPaperStemDeduper(initialStems: string[] = []) {
+  const seen = new Set<string>();
+
+  function accept(stemMd: string): boolean {
+    const keys = paperStemDedupKeys(stemMd);
+    if (keys.some((key) => seen.has(key))) return false;
+    for (const key of keys) seen.add(key);
+    return true;
+  }
+
+  for (const stem of initialStems) accept(stem);
+  return { accept };
+}
+
+function uniquePaperItems(args: {
+  bankItems: Array<BankItem & { points: number }>;
+  aiItems: AiItem[];
+}): {
+  bankItems: Array<BankItem & { points: number }>;
+  aiItems: AiItem[];
+} {
+  const deduper = createPaperStemDeduper();
+
+  const bankItems = args.bankItems.filter((item) => deduper.accept(item.stemMd));
+  const aiItems = args.aiItems.filter((item) => deduper.accept(item.stemMd));
+  return { bankItems, aiItems };
+}
+
 export async function persistGeneratedPaper(db: PrismaClient, args: {
   teacherUserId: string; subjectId: string; title: string; paramsJson: Prisma.InputJsonValue;
   debitLedgerId: string | null; modelCallId: string | null;
   bankItems: Array<BankItem & { points: number }>; aiItems: AiItem[];
 }) {
   const reconcileTargets: Array<{ questionId: string; hints: string[] }> = [];
+  const deduped = uniquePaperItems({
+    bankItems: args.bankItems,
+    aiItems: args.aiItems,
+  });
 
   const paper = await db.$transaction(async (tx) => {
     const paper = await tx.paper.create({
@@ -45,7 +96,7 @@ export async function persistGeneratedPaper(db: PrismaClient, args: {
       },
     });
     let position = 1;
-    for (const b of args.bankItems) {
+    for (const b of deduped.bankItems) {
       await tx.paperItem.create({ data: {
         paperId: paper.id, position: position++, questionId: b.questionId, source: "BANK",
         stemMd: b.stemMd, type: b.type, optionsJson: b.optionsJson as Prisma.InputJsonValue | undefined,
@@ -53,7 +104,7 @@ export async function persistGeneratedPaper(db: PrismaClient, args: {
         points: b.points, difficulty: b.difficulty, cognitiveLevel: b.cognitiveLevel as never, kpHints: b.kpHints,
       }});
     }
-    for (const a of args.aiItems) {
+    for (const a of deduped.aiItems) {
       const q = await tx.question.create({ data: {
         subjectId: args.subjectId, stemMd: a.stemMd, type: a.type, difficulty: a.difficulty,
         status: "DRAFT", source: "PAPER_GENERATED", createdByUserId: args.teacherUserId,

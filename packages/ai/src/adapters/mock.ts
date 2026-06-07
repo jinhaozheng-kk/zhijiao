@@ -71,22 +71,74 @@ const DEFAULT_ASSIGNMENT_QUESTION_GENERATION = {
 
 const DEFAULT_KP_RECONCILIATION: unknown = [];
 
+const MOCK_PAPER_VARIANTS: Record<string, Array<{
+  stemMd: string;
+  answerMd: string;
+  solutionMd: string;
+  options?: string[];
+  rubricMd?: string;
+  knowledgePointHints: string[];
+}>> = {
+  SINGLE_CHOICE: [
+    { stemMd: "下列函数中，属于一次函数的是（ ）", options: ["y=x^2", "y=2x+1", "y=1/x", "y=|x|"], answerMd: "B", solutionMd: "y=2x+1 形如 y=kx+b，且 k≠0。", knowledgePointHints: ["一次函数概念"] },
+    { stemMd: "函数 y=-3x+5 的图象大致经过哪个象限判断最合理（ ）", options: ["第一、二、三象限", "第一、二、四象限", "第一、三、四象限", "第二、三、四象限"], answerMd: "B", solutionMd: "k<0，b>0，图象过第一、二、四象限。", knowledgePointHints: ["一次函数图象"] },
+    { stemMd: "若一次函数 y=kx+2 随 x 增大而增大，则 k 的取值可为（ ）", options: ["-2", "0", "1", "无法确定"], answerMd: "C", solutionMd: "一次函数递增要求 k>0。", knowledgePointHints: ["一次函数性质"] },
+  ],
+  MULTI_CHOICE: [
+    { stemMd: "下列关系式中，属于一次函数的有（ ）", options: ["y=2x", "y=2x+1", "y=x^2", "y=3"], answerMd: "AB", solutionMd: "形如 y=kx+b 且 k≠0 的是 A、B。", knowledgePointHints: ["一次函数概念"] },
+    { stemMd: "关于函数 y=4x-1，下列说法正确的有（ ）", options: ["图象是一条直线", "y 随 x 增大而增大", "与 y 轴交于 -1", "经过原点"], answerMd: "ABC", solutionMd: "k=4>0，b=-1，不经过原点。", knowledgePointHints: ["一次函数图象", "一次函数性质"] },
+    { stemMd: "一次函数解析式 y=kx+b 中，下列判断可能成立的有（ ）", options: ["k=0", "b=0", "k<0", "图象为直线"], answerMd: "BCD", solutionMd: "一次函数要求 k≠0，b 可以为 0，图象为直线。", knowledgePointHints: ["一次函数概念"] },
+  ],
+  FILL_BLANK: [
+    { stemMd: "一次函数 y=2x+1 当 x=2 时，y=____。", answerMd: "5", solutionMd: "代入 x=2，得 y=2×2+1=5。", knowledgePointHints: ["一次函数求值"] },
+    { stemMd: "直线 y=-x+3 与 y 轴的交点坐标是____。", answerMd: "(0, 3)", solutionMd: "令 x=0，得 y=3。", knowledgePointHints: ["一次函数图象"] },
+    { stemMd: "若点 (1, m) 在直线 y=3x-2 上，则 m=____。", answerMd: "1", solutionMd: "代入 x=1，得 m=3×1-2=1。", knowledgePointHints: ["一次函数求值"] },
+  ],
+  CALCULATION: [
+    { stemMd: "求一次函数 y=2x+1 当 x=2 时的函数值。", answerMd: "5", solutionMd: "代入 x=2，得 y=2×2+1=5。", knowledgePointHints: ["一次函数求值"] },
+    { stemMd: "已知直线 y=kx+3 经过点 (2, 7)，求 k 的值。", answerMd: "2", solutionMd: "代入点坐标：7=2k+3，解得 k=2。", knowledgePointHints: ["待定系数法"] },
+    { stemMd: "一次函数图象经过 (0, 1) 和 (1, 4)，求它的解析式。", answerMd: "y=3x+1", solutionMd: "设 y=kx+b，由 (0,1) 得 b=1，由 (1,4) 得 k=3。", knowledgePointHints: ["待定系数法"] },
+  ],
+  PROOF: [
+    { stemMd: "证明函数 y=2x+1 是一次函数。", answerMd: "见解析", solutionMd: "该式符合 y=kx+b 且 k=2≠0，因此是一次函数。", rubricMd: "写出定义 5 分，指出 k≠0 5 分。", knowledgePointHints: ["一次函数概念"] },
+    { stemMd: "说明 y=-x+4 的图象是一条直线。", answerMd: "见解析", solutionMd: "该函数是一次函数，一次函数的图象为直线。", rubricMd: "识别一次函数 5 分，说明图象特征 5 分。", knowledgePointHints: ["一次函数图象"] },
+    { stemMd: "证明一次函数 y=3x-2 随 x 增大而增大。", answerMd: "见解析", solutionMd: "因为 k=3>0，所以函数值随自变量增大而增大。", rubricMd: "指出 k 值 4 分，说明单调性 6 分。", knowledgePointHints: ["一次函数性质"] },
+  ],
+  ESSAY: [
+    { stemMd: "结合图象说明一次函数 y=2x+1 的主要性质。", answerMd: "见解析", solutionMd: "可从斜率、截距、单调性以及与坐标轴交点说明。", rubricMd: "每个性质点 2 分，表达清楚 2 分。", knowledgePointHints: ["一次函数图象"] },
+    { stemMd: "用生活情境解释一次函数中 k 和 b 的含义。", answerMd: "见解析", solutionMd: "k 可表示变化率，b 可表示初始量。", rubricMd: "情境合理 4 分，解释 k 3 分，解释 b 3 分。", knowledgePointHints: ["一次函数应用"] },
+    { stemMd: "比较正比例函数与一次函数的联系和区别。", answerMd: "见解析", solutionMd: "正比例函数是 b=0 的特殊一次函数，一次函数一般形式为 y=kx+b。", rubricMd: "联系 5 分，区别 5 分。", knowledgePointHints: ["一次函数概念"] },
+  ],
+};
+
+function mockVariantForType(type: string, n: number) {
+  const fallback = MOCK_PAPER_VARIANTS.ESSAY;
+  if (!fallback) throw new Error("Mock paper ESSAY variants are not configured");
+  const variants = MOCK_PAPER_VARIANTS[type] ?? fallback;
+  const variant = variants[(n - 1) % variants.length]!;
+  const cycle = Math.floor((n - 1) / variants.length);
+  if (cycle === 0) return variant;
+  const label = cycle.toString(36).replace(/\d/g, (d) => "abcdefghij"[Number(d)]!);
+  return { ...variant, stemMd: `${variant.stemMd}（拓展${label}）` };
+}
+
 // Plan 17 / 统考排版：按请求 sections 造 mock 题，保证下游版式与题量正确。
 function mockItemForType(type: string, n: number) {
   const base = { difficulty: 2, cognitiveLevel: "UNDERSTAND" as const, points: 5 };
+  const variant = mockVariantForType(type, n);
   switch (type) {
     case "SINGLE_CHOICE":
-      return { ...base, stemMd: `下列是一次函数的是（ ）（第${n}题）`, type, options: ["y=x^2", "y=2x+1", "y=1/x", "y=|x|"], answerMd: "B", solutionMd: "y=2x+1 形如 y=kx+b", knowledgePointHints: ["一次函数概念"] };
+      return { ...base, ...variant, type };
     case "MULTI_CHOICE":
-      return { ...base, stemMd: `下列属于一次函数的有（ ）（第${n}题）`, type, options: ["y=2x", "y=2x+1", "y=x^2", "y=3"], answerMd: "AB", solutionMd: "形如 y=kx+b 且 k≠0", knowledgePointHints: ["一次函数概念"] };
+      return { ...base, ...variant, type };
     case "FILL_BLANK":
-      return { ...base, stemMd: `y=2x+1 当 x=2 时 y=____（第${n}题）`, type, answerMd: "5", solutionMd: "代入得 5", knowledgePointHints: ["一次函数求值"] };
+      return { ...base, ...variant, type };
     case "CALCULATION":
-      return { ...base, points: 8, stemMd: `求 y=2x+1 当 x=2 的值（第${n}题）`, type, answerMd: "5", solutionMd: "代入得 5", knowledgePointHints: ["一次函数求值"] };
+      return { ...base, ...variant, points: 8, type };
     case "PROOF":
-      return { ...base, points: 10, stemMd: `证明 y=2x+1 是一次函数（第${n}题）`, type, answerMd: "见解析", solutionMd: "符合 y=kx+b 定义", rubricMd: "定义对应 5 分，推理完整 5 分", knowledgePointHints: ["一次函数概念"] };
+      return { ...base, ...variant, points: 10, type };
     default: // ESSAY 及其它
-      return { ...base, points: 10, stemMd: `结合图象说明 y=2x+1 的性质（第${n}题）`, type, answerMd: "见解析", solutionMd: "斜率为 2，截距为 1，单调递增", rubricMd: "每个性质点 2 分", knowledgePointHints: ["一次函数图象"] };
+      return { ...base, ...variant, points: 10, type };
   }
 }
 

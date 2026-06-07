@@ -12,6 +12,16 @@ if (!TEST_DB_URL) {
 
 const prisma = new PrismaClient({ datasources: { db: { url: TEST_DB_URL } } });
 
+function paperStemTemplateKey(stem: string): string {
+  return stem
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/^\s*(?:第\s*)?\d+\s*[.、．]\s*/u, "")
+    .replace(/\s+/g, "")
+    .replace(/[，。！？；：、,.!?;:]/g, "")
+    .replace(/\d+(?:\.\d+)?/g, "<num>");
+}
+
 async function resetDb() {
   await prisma.$executeRawUnsafe(
     `TRUNCATE TABLE "model_calls" RESTART IDENTITY CASCADE;`,
@@ -86,5 +96,25 @@ describe("AiRouter.generatePaper", () => {
     });
     expect(out.items.filter((i) => i.type === "SINGLE_CHOICE")).toHaveLength(3);
     expect(out.items.filter((i) => i.type === "FILL_BLANK")).toHaveLength(2);
+  });
+
+  it("mock paper items do not repeat after numeric-template normalization", async () => {
+    const router = new AiRouter({
+      prisma,
+      adapter: new MockAdapter(),
+      userId: "dev-teacher-01",
+    });
+
+    const out = await router.generatePaper({
+      subject: "数学",
+      gradeLevel: "G8",
+      kpNames: ["一次函数"],
+      sections: [{ type: "CALCULATION", count: 3 }],
+      difficultyRange: [2, 4],
+      excludeStems: [],
+    });
+
+    const keys = out.items.map((item) => paperStemTemplateKey(item.stemMd));
+    expect(new Set(keys).size).toBe(out.items.length);
   });
 });

@@ -30,4 +30,63 @@ describe("paper-generation", () => {
     expect(q.source).toBe("PAPER_GENERATED");
     expect(q.createdByUserId).toBe(teacher.id);
   });
+
+  it("persistGeneratedPaper drops duplicate AI stems within one paper", async () => {
+    const subjectId = await mathId();
+    const teacher = await prisma.user.create({ data: { persona: "TEACHER" } });
+
+    const paper = await persistGeneratedPaper(prisma, {
+      teacherUserId: teacher.id, subjectId, debitLedgerId: null, modelCallId: "mc1",
+      paramsJson: { count: 2 }, title: "dedup",
+      bankItems: [],
+      aiItems: [
+        { stemMd: "Solve 2x + 1 = 5.", type: "CALCULATION", answerMd: "x=2", solutionMd: "s", difficulty: 2, cognitiveLevel: "APPLY", points: 5, knowledgePointHints: ["linear equations"] },
+        { stemMd: "  Solve   2x + 1 = 5.  ", type: "CALCULATION", answerMd: "x=2", solutionMd: "s", difficulty: 2, cognitiveLevel: "APPLY", points: 5, knowledgePointHints: ["linear equations"] },
+      ],
+    });
+
+    const items = await prisma.paperItem.findMany({ where: { paperId: paper.id }, orderBy: { position: "asc" } });
+    expect(items).toHaveLength(1);
+    expect(items[0]!.position).toBe(1);
+  });
+
+  it("persistGeneratedPaper prefers bank item over AI item with the same numeric template", async () => {
+    const subjectId = await mathId();
+    const teacher = await prisma.user.create({ data: { persona: "TEACHER" } });
+    const bankQuestion = await prisma.question.create({
+      data: {
+        subjectId,
+        stemMd: "求 y=2x+1 当 x=2 的值",
+        type: "CALCULATION",
+        difficulty: 2,
+        status: "PUBLISHED",
+      },
+    });
+
+    const paper = await persistGeneratedPaper(prisma, {
+      teacherUserId: teacher.id, subjectId, debitLedgerId: null, modelCallId: "mc1",
+      paramsJson: { count: 2 }, title: "dedup",
+      bankItems: [{
+        questionId: bankQuestion.id,
+        stemMd: "求 y=2x+1 当 x=2 的值",
+        type: "CALCULATION",
+        optionsJson: null,
+        answerMd: "5",
+        solutionMd: "substitute",
+        rubricMd: null,
+        difficulty: 2,
+        cognitiveLevel: "APPLY",
+        kpHints: ["linear functions"],
+        points: 5,
+      }],
+      aiItems: [
+        { stemMd: "求 y=2x+1 当 x=3 的值", type: "CALCULATION", answerMd: "7", solutionMd: "substitute", difficulty: 2, cognitiveLevel: "APPLY", points: 5, knowledgePointHints: ["linear functions"] },
+      ],
+    });
+
+    const items = await prisma.paperItem.findMany({ where: { paperId: paper.id }, orderBy: { position: "asc" } });
+    expect(items).toHaveLength(1);
+    expect(items[0]!.source).toBe("BANK");
+    expect(items[0]!.questionId).toBe(bankQuestion.id);
+  });
 });

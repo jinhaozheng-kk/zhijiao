@@ -11,7 +11,7 @@ import {
 import { TRPCError } from "@trpc/server";
 import { getAiRouter } from "@/lib/ai-client";
 import { ComplianceRejectedError, type PaperGenerationOutput } from "@zhijiao/ai";
-import { selectBankQuestions, persistGeneratedPaper } from "../lib/paper-generation.js";
+import { createPaperStemDeduper, selectBankQuestions, persistGeneratedPaper } from "../lib/paper-generation.js";
 import { buildSpecTable } from "../lib/paper-spec-table.js";
 
 const QType = z.enum(["SINGLE_CHOICE", "MULTI_CHOICE", "FILL_BLANK", "CALCULATION", "PROOF", "ESSAY"]);
@@ -36,6 +36,9 @@ const GenInput = z.object({
   clientRequestId: z.string().uuid(),
 });
 
+const MAX_PAPER_AI_ATTEMPTS = 3;
+const REFILL_OVERGEN_FACTOR = 2;
+
 export const paperRouter = router({
   generate: authedProcedure
     .input(GenInput)                    // schema validation before any middleware — malformed input fails before charge
@@ -59,10 +62,13 @@ export const paperRouter = router({
       }
       const kpNames = kps.map((k) => k.name);
       const pointsByType = new Map(input.sections.map((s) => [s.type, s.pointsPerItem]));
+      const desiredByType = new Map(input.sections.map((s) => [s.type, s.count]));
+      const deduper = createPaperStemDeduper();
 
       // 题库按题型分别 best-effort 命中；不足的题型攒成 AI 缺口。
       const bank: Awaited<ReturnType<typeof selectBankQuestions>> = [];
-      const aiSections: Array<{ type: (typeof input.sections)[number]["type"]; count: number }> = [];
+      let dedupDroppedCount = 0;
+      const excludeStems: string[] = [];
       for (const s of input.sections) {
         const hit = await selectBankQuestions(ctx.db, {
           subjectId: input.subjectId,
@@ -71,16 +77,35 @@ export const paperRouter = router({
           difficultyRange: input.difficultyRange,
           limit: s.count,
         });
-        bank.push(...hit);
-        const gap = s.count - hit.length;
-        if (gap > 0) aiSections.push({ type: s.type, count: gap });
+        for (const item of hit) {
+          excludeStems.push(item.stemMd);
+          if (deduper.accept(item.stemMd)) {
+            bank.push(item);
+          } else {
+            dedupDroppedCount++;
+          }
+        }
       }
 
       let aiItems: PaperGenerationOutput["items"] = [];
       let title = "练习卷";
       let modelCallId: string | null = null;
+      const modelCallIds: string[] = [];
 
-      if (aiSections.length > 0) {
+      function selectedCount(type: (typeof input.sections)[number]["type"]) {
+        return bank.filter((item) => item.type === type).length + aiItems.filter((item) => item.type === type).length;
+      }
+
+      function missingSections(multiplier: number) {
+        return input.sections.flatMap((section) => {
+          const gap = (desiredByType.get(section.type) ?? 0) - selectedCount(section.type);
+          if (gap <= 0) return [];
+          return [{ type: section.type, count: Math.min(gap * multiplier, 30) }];
+        });
+      }
+
+      let aiSections = missingSections(1);
+      for (let attempt = 0; aiSections.length > 0 && attempt < MAX_PAPER_AI_ATTEMPTS; attempt++) {
         let ai: PaperGenerationOutput & { modelCallId: string };
         try {
           ai = await getAiRouter(ctx.auth.userId).generatePaper({
@@ -90,7 +115,7 @@ export const paperRouter = router({
             sections: aiSections,
             difficultyRange: input.difficultyRange,
             textbookVersion: input.textbookVersion,
-            excludeStems: bank.map((b) => b.stemMd.slice(0, 40)),
+            excludeStems,
           });
         } catch (e) {
           if (e instanceof ComplianceRejectedError) {
@@ -106,16 +131,48 @@ export const paperRouter = router({
             cause: { reason: "PAPER_INTERNAL" },
           });
         }
-        aiItems = ai.items;
+        for (const item of ai.items) {
+          excludeStems.push(item.stemMd);
+          if (deduper.accept(item.stemMd)) {
+            const target = desiredByType.get(item.type) ?? 0;
+            if (selectedCount(item.type) < target) {
+              aiItems.push(item);
+            } else {
+              dedupDroppedCount++;
+            }
+          } else {
+            dedupDroppedCount++;
+          }
+        }
         title = ai.title;
-        modelCallId = ai.modelCallId;
+        if (!modelCallId) modelCallId = ai.modelCallId;
+        modelCallIds.push(ai.modelCallId);
+        aiSections = missingSections(REFILL_OVERGEN_FACTOR);
+      }
+
+      if (aiSections.length > 0) {
+        const shortfallByType = Object.fromEntries(
+          input.sections
+            .map((section) => [section.type, (desiredByType.get(section.type) ?? 0) - selectedCount(section.type)] as const)
+            .filter(([, gap]) => gap > 0),
+        );
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "题目重复率过高，未能生成满足题量要求的试卷，请调整题型或知识点后重试。",
+          cause: { reason: "PAPER_DEDUP_SHORTFALL", shortfallByType },
+        });
       }
 
       const paper = await persistGeneratedPaper(ctx.db, {
         teacherUserId: ctx.auth.userId,
         subjectId: input.subjectId,
         title,
-        paramsJson: input as import("@prisma/client").Prisma.InputJsonValue,
+        paramsJson: {
+          ...input,
+          dedupDroppedCount,
+          refillRounds: Math.max(0, modelCallIds.length - 1),
+          modelCallIds,
+        } as import("@prisma/client").Prisma.InputJsonValue,
         debitLedgerId: ctx.debit.ledgerId,
         modelCallId,
         bankItems: bank.map((b) => ({ ...b, points: pointsByType.get(b.type) ?? 5 })),
