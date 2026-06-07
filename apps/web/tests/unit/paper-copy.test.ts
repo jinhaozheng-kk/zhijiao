@@ -13,7 +13,7 @@ describe("paper-copy 统考扩展", () => {
     expect(textbookVersionLabel("GENERIC")).toBe("通用");
   });
 
-  it("大题标题把单选/多选都归到选择题口径", () => {
+  it("大题标题：单选题归选择题，其余沿用题型名", () => {
     expect(examSectionTitle("SINGLE_CHOICE")).toBe("选择题");
     expect(examSectionTitle("MULTI_CHOICE")).toBe("多选题");
     expect(examSectionTitle("FILL_BLANK")).toBe("填空题");

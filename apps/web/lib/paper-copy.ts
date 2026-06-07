@@ -128,24 +128,11 @@ export function textbookVersionLabel(v: TextbookVersion): string {
 
 // 大题标题：单选题在统考里归"选择题"，其余沿用题型名。
 export function examSectionTitle(type: QuestionTypeValue): string {
-  switch (type) {
-    case "SINGLE_CHOICE":
-      return "选择题";
-    case "MULTI_CHOICE":
-      return "多选题";
-    case "FILL_BLANK":
-      return "填空题";
-    case "CALCULATION":
-      return "计算题";
-    case "PROOF":
-      return "证明题";
-    case "ESSAY":
-      return "解答题";
-  }
+  return type === "SINGLE_CHOICE" ? "选择题" : questionTypeLabel(type);
 }
 
 // 静态注意事项模板（合规：无提分/分数/保过措辞）。
-export const EXAM_NOTICE: string[] = [
+export const EXAM_NOTICE: readonly string[] = [
   "答题前请将姓名、班级、考号填写清楚。",
   "选择题答案填涂在卷头答题栏内，其余各题在对应题目下方作答。",
   "请保持卷面整洁，字迹清楚。",
