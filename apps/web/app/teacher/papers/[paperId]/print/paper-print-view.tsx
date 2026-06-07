@@ -7,7 +7,7 @@ import { SkeletonList } from "@/components/ui/skeleton";
 import { StatePanel } from "@/components/ui/state-panel";
 import { PaperSpecTable } from "../../paper-detail-components";
 import { buildExamLayout } from "@/lib/paper-exam-layout";
-import { EXAM_NOTICE, gradeLevelLabel, type GradeLevel, type TextbookVersion } from "@/lib/paper-copy";
+import { EXAM_NOTICE, gradeLevelLabel, type GradeLevel, type TextbookVersion, type QuestionTypeValue } from "@/lib/paper-copy";
 import {
   EXAM_PRINT_CSS,
   SealLine,
@@ -38,7 +38,7 @@ export function PaperPrintView({ paperId }: { paperId: string }) {
   const layout = buildExamLayout(
     paper.items.map((i) => ({
       id: i.id,
-      type: i.type as never,
+      type: i.type as QuestionTypeValue,
       stemMd: i.stemMd,
       optionsJson: i.optionsJson,
       answerMd: i.answerMd,
