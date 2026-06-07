@@ -33,6 +33,7 @@ describe("buildExamLayout", () => {
     expect(layout.sections[1].items.map((i) => i.questionNo)).toEqual([3]);
     expect(layout.sections[2].items.map((i) => i.questionNo)).toEqual([4]);
     expect(layout.totalPoints).toBe(8 + 3 + 3 + 3);
+    expect(layout.sections.map((s) => s.title)).toEqual(["选择题", "填空题", "计算题"]);
   });
 
   it("同大题分值一致用'每小题X分'，不一致省略每小题分值", () => {
@@ -61,5 +62,14 @@ describe("buildExamLayout", () => {
 
   it("空题目返回空布局", () => {
     expect(buildExamLayout([])).toEqual({ sections: [], totalPoints: 0 });
+  });
+
+  it("同大题内按 position 排序，与输入顺序无关", () => {
+    const layout = buildExamLayout([
+      item({ id: "c2", type: "CALCULATION", position: 5, points: 8 }),
+      item({ id: "c1", type: "CALCULATION", position: 2, points: 8 }),
+    ]);
+    expect(layout.sections[0].items.map((i) => i.item.id)).toEqual(["c1", "c2"]);
+    expect(layout.sections[0].items.map((i) => i.questionNo)).toEqual([1, 2]);
   });
 });
