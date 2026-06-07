@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { PaperGenerationOutputSchema } from "../src/schemas.js";
+import { PaperGenerationOutputSchema, PaperGenerationInputSchema } from "../src/schemas.js";
 
 const valid = {
   title: "一次函数练习卷",
@@ -17,5 +17,23 @@ describe("PaperGenerationOutputSchema", () => {
   });
   it("拒空 items", () => {
     expect(() => PaperGenerationOutputSchema.parse({ ...valid, items: [] })).toThrow();
+  });
+});
+
+describe("PaperGenerationInputSchema", () => {
+  it("PaperGenerationInputSchema 接受 sections，拒绝空 sections", () => {
+    expect(() =>
+      PaperGenerationInputSchema.parse({
+        subject: "数学", gradeLevel: "G8", kpNames: ["x"],
+        sections: [{ type: "SINGLE_CHOICE", count: 3 }],
+        difficultyRange: [1, 5],
+      }),
+    ).not.toThrow();
+    expect(() =>
+      PaperGenerationInputSchema.parse({
+        subject: "数学", gradeLevel: "G8", kpNames: ["x"],
+        sections: [], difficultyRange: [1, 5],
+      }),
+    ).toThrow();
   });
 });

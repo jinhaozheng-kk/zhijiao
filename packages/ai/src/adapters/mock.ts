@@ -71,14 +71,46 @@ const DEFAULT_ASSIGNMENT_QUESTION_GENERATION = {
 
 const DEFAULT_KP_RECONCILIATION: unknown = [];
 
-// Plan 17: paper-gen 默认 mock —— 两道典型一次函数题。
-const DEFAULT_PAPER = {
-  title: "Mock 一次函数练习卷",
-  items: [
-    { stemMd: "求 y=2x+1 当 x=2 的值", type: "CALCULATION", answerMd: "5", solutionMd: "代入得 5", difficulty: 2, cognitiveLevel: "APPLY", points: 5, knowledgePointHints: ["一次函数求值"] },
-    { stemMd: "下列是一次函数的是（ ）", type: "SINGLE_CHOICE", options: ["y=x^2","y=2x+1","y=1/x","y=|x|"], answerMd: "B", solutionMd: "y=2x+1 形如 y=kx+b", difficulty: 1, cognitiveLevel: "UNDERSTAND", points: 5, knowledgePointHints: ["一次函数概念"] },
-  ],
-};
+// Plan 17 / 统考排版：按请求 sections 造 mock 题，保证下游版式与题量正确。
+function mockItemForType(type: string, n: number) {
+  const base = { difficulty: 2, cognitiveLevel: "UNDERSTAND" as const, points: 5 };
+  switch (type) {
+    case "SINGLE_CHOICE":
+      return { ...base, stemMd: `下列是一次函数的是（ ）（第${n}题）`, type, options: ["y=x^2", "y=2x+1", "y=1/x", "y=|x|"], answerMd: "B", solutionMd: "y=2x+1 形如 y=kx+b", knowledgePointHints: ["一次函数概念"] };
+    case "MULTI_CHOICE":
+      return { ...base, stemMd: `下列属于一次函数的有（ ）（第${n}题）`, type, options: ["y=2x", "y=2x+1", "y=x^2", "y=3"], answerMd: "AB", solutionMd: "形如 y=kx+b 且 k≠0", knowledgePointHints: ["一次函数概念"] };
+    case "FILL_BLANK":
+      return { ...base, stemMd: `y=2x+1 当 x=2 时 y=____（第${n}题）`, type, answerMd: "5", solutionMd: "代入得 5", knowledgePointHints: ["一次函数求值"] };
+    case "CALCULATION":
+      return { ...base, points: 8, stemMd: `求 y=2x+1 当 x=2 的值（第${n}题）`, type, answerMd: "5", solutionMd: "代入得 5", knowledgePointHints: ["一次函数求值"] };
+    case "PROOF":
+      return { ...base, points: 10, stemMd: `证明 y=2x+1 是一次函数（第${n}题）`, type, answerMd: "见解析", solutionMd: "符合 y=kx+b 定义", rubricMd: "定义对应 5 分，推理完整 5 分", knowledgePointHints: ["一次函数概念"] };
+    default: // ESSAY 及其它
+      return { ...base, points: 10, stemMd: `结合图象说明 y=2x+1 的性质（第${n}题）`, type, answerMd: "见解析", solutionMd: "斜率为 2，截距为 1，单调递增", rubricMd: "每个性质点 2 分", knowledgePointHints: ["一次函数图象"] };
+  }
+}
+
+function buildMockPaper(req: AdapterRequest): unknown {
+  const user = req.messages.find((m) => m.role === "user")?.content ?? "";
+  const m = user.match(/SECTIONS_JSON：(\[.*?\])/);
+  if (m) {
+    try {
+      const sections = JSON.parse(m[1]!) as Array<{ type: string; count: number }>;
+      const items: unknown[] = [];
+      let n = 0;
+      for (const s of sections) {
+        for (let i = 0; i < s.count; i++) items.push(mockItemForType(s.type, ++n));
+      }
+      if (items.length > 0) return { title: "Mock 一次函数练习卷", items };
+    } catch {
+      // 落到下方兜底
+    }
+  }
+  return {
+    title: "Mock 一次函数练习卷",
+    items: [mockItemForType("CALCULATION", 1), mockItemForType("SINGLE_CHOICE", 2)],
+  };
+}
 
 // Plan 18: lesson-plan / courseware 默认 mock —— 五段齐全、合规。
 const DEFAULT_LESSON_PLAN = {
@@ -117,7 +149,7 @@ function pickDefault(req: AdapterRequest): unknown {
   }
   if (sys.includes("学习顾问")) return DEFAULT_LEARNING_ADVICE;
   if (sys.includes("拍照辅导助手")) return DEFAULT_TUTORING_IMAGE;
-  if (sys.includes("练习卷命题助手")) return DEFAULT_PAPER;
+  if (sys.includes("练习卷命题助手")) return buildMockPaper(req);
   if (sys.includes("课件生成助手")) return DEFAULT_LESSON_PLAN;
   return DEFAULT_TUTORING;
 }

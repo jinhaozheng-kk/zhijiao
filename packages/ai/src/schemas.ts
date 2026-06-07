@@ -220,13 +220,17 @@ export type AssignmentQuestionGenerationOutput = z.infer<
 export const PaperItemTypeEnum = z.enum(["SINGLE_CHOICE","MULTI_CHOICE","FILL_BLANK","CALCULATION","PROOF","ESSAY"]);
 export const CognitiveLevelEnum = z.enum(["REMEMBER","UNDERSTAND","APPLY","ANALYZE"]);
 
+export const PaperGenSectionSchema = z.object({
+  type: PaperItemTypeEnum,
+  count: z.number().int().min(1).max(30),
+});
 export const PaperGenerationInputSchema = z.object({
   subject: z.string(),
   gradeLevel: z.string(),
   kpNames: z.array(z.string()).min(1),
-  questionTypes: z.array(PaperItemTypeEnum).min(1),
+  sections: z.array(PaperGenSectionSchema).min(1),
   difficultyRange: z.tuple([z.number().int().min(1).max(5), z.number().int().min(1).max(5)]),
-  count: z.number().int().min(1).max(30),
+  textbookVersion: z.string().optional(),
   excludeStems: z.array(z.string()).default([]),
 });
 export type PaperGenerationInput = z.infer<typeof PaperGenerationInputSchema>;

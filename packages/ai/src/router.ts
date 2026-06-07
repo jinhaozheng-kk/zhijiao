@@ -697,13 +697,17 @@ export class AiRouter {
     const prompt = await loadPrompt("paper-gen", this.opts.promptVersion ?? "v1");
     const promptTemplateId = await ensurePromptInDb(this.opts.prisma, prompt);
 
+    const sectionsHuman = parsed.sections
+      .map((s) => `${s.type}×${s.count}`)
+      .join("，");
     const userContent = prompt.interpolate({
       subject: parsed.subject,
       gradeLevel: parsed.gradeLevel,
       kpNames: parsed.kpNames.join(", "),
-      questionTypes: parsed.questionTypes.join(", "),
+      textbookVersion: parsed.textbookVersion ?? "通用",
+      sections: sectionsHuman,
+      sectionsJson: JSON.stringify(parsed.sections),
       difficultyRange: `${parsed.difficultyRange[0]}-${parsed.difficultyRange[1]}`,
-      count: String(parsed.count),
       excludeStems: parsed.excludeStems.length ? parsed.excludeStems.join(" / ") : "(无)",
     });
 

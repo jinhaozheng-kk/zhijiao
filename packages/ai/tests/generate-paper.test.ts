@@ -40,9 +40,11 @@ describe("AiRouter.generatePaper", () => {
       subject: "数学",
       gradeLevel: "G8",
       kpNames: ["一次函数"],
-      questionTypes: ["CALCULATION", "SINGLE_CHOICE"],
+      sections: [
+        { type: "CALCULATION", count: 1 },
+        { type: "SINGLE_CHOICE", count: 1 },
+      ],
       difficultyRange: [1, 3],
-      count: 2,
       excludeStems: [],
     });
 
@@ -61,5 +63,28 @@ describe("AiRouter.generatePaper", () => {
     expect(templates).toHaveLength(1);
     expect(templates[0]!.name).toBe("paper-gen");
     expect(templates[0]!.version).toBe("v1");
+  });
+
+  it("按 sections 的题型与数量产出对应 mock 题", async () => {
+    const router = new AiRouter({
+      prisma,
+      adapter: new MockAdapter(),
+      userId: "dev-teacher-01",
+    });
+
+    const out = await router.generatePaper({
+      subject: "数学",
+      gradeLevel: "G8",
+      kpNames: ["一次函数"],
+      sections: [
+        { type: "SINGLE_CHOICE", count: 3 },
+        { type: "FILL_BLANK", count: 2 },
+      ],
+      difficultyRange: [2, 4],
+      textbookVersion: "RENJIAO",
+      excludeStems: [],
+    });
+    expect(out.items.filter((i) => i.type === "SINGLE_CHOICE")).toHaveLength(3);
+    expect(out.items.filter((i) => i.type === "FILL_BLANK")).toHaveLength(2);
   });
 });
