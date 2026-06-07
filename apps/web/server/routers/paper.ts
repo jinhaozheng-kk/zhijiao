@@ -15,13 +15,24 @@ import { selectBankQuestions, persistGeneratedPaper } from "../lib/paper-generat
 import { buildSpecTable } from "../lib/paper-spec-table.js";
 
 const QType = z.enum(["SINGLE_CHOICE", "MULTI_CHOICE", "FILL_BLANK", "CALCULATION", "PROOF", "ESSAY"]);
+const Section = z.object({
+  type: QType,
+  count: z.number().int().min(1).max(30),
+  pointsPerItem: z.number().int().min(1).max(100),
+});
 const GenInput = z.object({
   subjectId: z.string().cuid(),
   kpIds: z.array(z.string().cuid()).min(1),
   gradeLevel: z.enum(["G5", "G6", "G7", "G8", "G9", "G10", "G11", "G12"]),
-  questionTypes: z.array(QType).min(1),
+  sections: z
+    .array(Section)
+    .min(1)
+    .refine((s) => new Set(s.map((x) => x.type)).size === s.length, "题型不可重复")
+    .refine((s) => s.reduce((n, x) => n + x.count, 0) <= 30, "总题量不超过 30 题")
+    .refine((s) => s.reduce((n, x) => n + x.count, 0) >= 1, "至少 1 题"),
   difficultyRange: z.tuple([z.number().int().min(1).max(5), z.number().int().min(1).max(5)]),
-  count: z.number().int().min(1).max(30),
+  durationMinutes: z.number().int().min(1).max(300).optional(),
+  textbookVersion: z.string().default("GENERIC"),
   clientRequestId: z.string().uuid(),
 });
 
@@ -47,30 +58,38 @@ export const paperRouter = router({
         });
       }
       const kpNames = kps.map((k) => k.name);
+      const pointsByType = new Map(input.sections.map((s) => [s.type, s.pointsPerItem]));
 
-      // Try to fill from bank first; only ask AI for the gap.
-      const bank = await selectBankQuestions(ctx.db, {
-        subjectId: input.subjectId,
-        kpIds: input.kpIds,
-        questionTypes: input.questionTypes,
-        difficultyRange: input.difficultyRange,
-        limit: input.count,
-      });
-      const gap = input.count - bank.length;
+      // 题库按题型分别 best-effort 命中；不足的题型攒成 AI 缺口。
+      const bank: Awaited<ReturnType<typeof selectBankQuestions>> = [];
+      const aiSections: Array<{ type: (typeof input.sections)[number]["type"]; count: number }> = [];
+      for (const s of input.sections) {
+        const hit = await selectBankQuestions(ctx.db, {
+          subjectId: input.subjectId,
+          kpIds: input.kpIds,
+          questionTypes: [s.type],
+          difficultyRange: input.difficultyRange,
+          limit: s.count,
+        });
+        bank.push(...hit);
+        const gap = s.count - hit.length;
+        if (gap > 0) aiSections.push({ type: s.type, count: gap });
+      }
+
       let aiItems: PaperGenerationOutput["items"] = [];
       let title = "练习卷";
       let modelCallId: string | null = null;
 
-      if (gap > 0) {
+      if (aiSections.length > 0) {
         let ai: PaperGenerationOutput & { modelCallId: string };
         try {
           ai = await getAiRouter(ctx.auth.userId).generatePaper({
             subject: "数学",
             gradeLevel: input.gradeLevel,
             kpNames,
-            questionTypes: input.questionTypes,
+            sections: aiSections,
             difficultyRange: input.difficultyRange,
-            count: gap,
+            textbookVersion: input.textbookVersion,
             excludeStems: bank.map((b) => b.stemMd.slice(0, 40)),
           });
         } catch (e) {
@@ -99,8 +118,8 @@ export const paperRouter = router({
         paramsJson: input as import("@prisma/client").Prisma.InputJsonValue,
         debitLedgerId: ctx.debit.ledgerId,
         modelCallId,
-        bankItems: bank.map((b) => ({ ...b, points: 5 })),
-        aiItems,
+        bankItems: bank.map((b) => ({ ...b, points: pointsByType.get(b.type) ?? 5 })),
+        aiItems: aiItems.map((a) => ({ ...a, points: pointsByType.get(a.type) ?? a.points })),
       });
       return { paperId: paper.id };
     }),
