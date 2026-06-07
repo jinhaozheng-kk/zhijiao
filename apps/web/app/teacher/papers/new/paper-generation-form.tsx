@@ -103,6 +103,8 @@ export function PaperGenerationForm({
     diffMin <= diffMax &&
     totalCount >= 1 &&
     totalCount <= 30 &&
+    durationMinutes >= 1 &&
+    durationMinutes <= 300 &&
     activeTypes.every((t) => sections[t]!.count >= 1 && sections[t]!.pointsPerItem >= 1);
 
   function submit() {

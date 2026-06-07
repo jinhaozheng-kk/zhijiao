@@ -1,6 +1,6 @@
 "use client";
 
-import { textbookVersionLabel, type TextbookVersion } from "@/lib/paper-copy";
+import { TEXTBOOK_VERSIONS, textbookVersionLabel, type TextbookVersion } from "@/lib/paper-copy";
 import type { ExamLayout, ExamLayoutSection } from "@/lib/paper-exam-layout";
 
 export const EXAM_PRINT_CSS = `
@@ -56,7 +56,12 @@ export function ExamHeader({
   const sub: string[] = [];
   if (durationMinutes) sub.push(`考试时长 ${durationMinutes} 分钟`);
   sub.push(`满分 ${totalPoints} 分`);
-  if (textbookVersion && textbookVersion !== "GENERIC") sub.push(textbookVersionLabel(textbookVersion));
+  if (
+    textbookVersion &&
+    textbookVersion !== "GENERIC" &&
+    TEXTBOOK_VERSIONS.includes(textbookVersion)
+  )
+    sub.push(textbookVersionLabel(textbookVersion));
   return (
     <header className="text-center">
       <h1 className="text-2xl font-bold tracking-tight">
