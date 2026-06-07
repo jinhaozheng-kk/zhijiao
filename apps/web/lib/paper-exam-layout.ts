@@ -75,9 +75,10 @@ export function buildExamLayout(items: ExamLayoutPaperItem[]): ExamLayout {
     const subtotal = group.reduce((n, it) => n + it.points, 0);
     totalPoints += subtotal;
 
-    const uniform = group.every((it) => it.points === group[0].points);
+    const headPoints = group[0]!.points;
+    const uniform = group.every((it) => it.points === headPoints);
     const caption = uniform
-      ? `（本大题共 ${group.length} 小题，每小题 ${group[0].points} 分，共 ${subtotal} 分）`
+      ? `（本大题共 ${group.length} 小题，每小题 ${headPoints} 分，共 ${subtotal} 分）`
       : `（本大题共 ${group.length} 小题，共 ${subtotal} 分）`;
 
     sections.push({

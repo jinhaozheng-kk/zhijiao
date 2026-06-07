@@ -29,9 +29,9 @@ describe("buildExamLayout", () => {
       "CALCULATION",
     ]);
     expect(layout.sections.map((s) => s.cnIndex)).toEqual(["一", "二", "三"]);
-    expect(layout.sections[0].items.map((i) => i.questionNo)).toEqual([1, 2]);
-    expect(layout.sections[1].items.map((i) => i.questionNo)).toEqual([3]);
-    expect(layout.sections[2].items.map((i) => i.questionNo)).toEqual([4]);
+    expect(layout.sections[0]!.items.map((i) => i.questionNo)).toEqual([1, 2]);
+    expect(layout.sections[1]!.items.map((i) => i.questionNo)).toEqual([3]);
+    expect(layout.sections[2]!.items.map((i) => i.questionNo)).toEqual([4]);
     expect(layout.totalPoints).toBe(8 + 3 + 3 + 3);
     expect(layout.sections.map((s) => s.title)).toEqual(["选择题", "填空题", "计算题"]);
   });
@@ -41,14 +41,14 @@ describe("buildExamLayout", () => {
       item({ id: "a", type: "SINGLE_CHOICE", position: 1, points: 3 }),
       item({ id: "b", type: "SINGLE_CHOICE", position: 2, points: 3 }),
     ]);
-    expect(uniform.sections[0].caption).toBe("（本大题共 2 小题，每小题 3 分，共 6 分）");
-    expect(uniform.sections[0].subtotalPoints).toBe(6);
+    expect(uniform.sections[0]!.caption).toBe("（本大题共 2 小题，每小题 3 分，共 6 分）");
+    expect(uniform.sections[0]!.subtotalPoints).toBe(6);
 
     const varied = buildExamLayout([
       item({ id: "a", type: "CALCULATION", position: 1, points: 8 }),
       item({ id: "b", type: "CALCULATION", position: 2, points: 10 }),
     ]);
-    expect(varied.sections[0].caption).toBe("（本大题共 2 小题，共 18 分）");
+    expect(varied.sections[0]!.caption).toBe("（本大题共 2 小题，共 18 分）");
   });
 
   it("客观题标记 isObjective", () => {
@@ -56,8 +56,8 @@ describe("buildExamLayout", () => {
       item({ id: "a", type: "SINGLE_CHOICE", position: 1 }),
       item({ id: "b", type: "FILL_BLANK", position: 2 }),
     ]);
-    expect(layout.sections[0].isObjective).toBe(true);
-    expect(layout.sections[1].isObjective).toBe(false);
+    expect(layout.sections[0]!.isObjective).toBe(true);
+    expect(layout.sections[1]!.isObjective).toBe(false);
   });
 
   it("空题目返回空布局", () => {
@@ -69,7 +69,7 @@ describe("buildExamLayout", () => {
       item({ id: "c2", type: "CALCULATION", position: 5, points: 8 }),
       item({ id: "c1", type: "CALCULATION", position: 2, points: 8 }),
     ]);
-    expect(layout.sections[0].items.map((i) => i.item.id)).toEqual(["c1", "c2"]);
-    expect(layout.sections[0].items.map((i) => i.questionNo)).toEqual([1, 2]);
+    expect(layout.sections[0]!.items.map((i) => i.item.id)).toEqual(["c1", "c2"]);
+    expect(layout.sections[0]!.items.map((i) => i.questionNo)).toEqual([1, 2]);
   });
 });
