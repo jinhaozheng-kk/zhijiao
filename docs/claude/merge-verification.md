@@ -112,3 +112,11 @@
 90. **落库固定 type 顺序**：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/courseware-generation-lib.test.ts` 应全绿；即使 AI 返回乱序，section 也按 `INTRO/EXPLANATION/EXAMPLE/PITFALL/EXERCISE` 落 position 1..5。
 91. **教师注销级联 Courseware**：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/pii-deactivate-courseware.test.ts` 应全绿；注销删 `Courseware`/级联 `CoursewareSection`，导出只含本人 `coursewares` 白名单、不含他人。
 92. **教师课件 E2E**：`pnpm.cmd --filter @zhijiao/web test:e2e -- e2e/teacher-courseware.spec.ts` 应 1 passed，覆盖教师登录 → 新建课件 → 预览见五段 → 编辑一段 → markReady → 打印页可打开。
+
+### 出卷·统考排版（2026-06-07）
+- [ ] `paper.generate` 用 `sections[{type,count,pointsPerItem}]` 入参；`PaperItem.points` 按题型 `pointsPerItem` 落库；`paramsJson` 含 `durationMinutes`/`textbookVersion`。
+- [ ] `buildExamLayout` 题型序固定、中文大题号、全卷小题号连续、同/异分值 caption 分支正确（`tests/unit/paper-exam-layout.test.ts`）。
+- [ ] 打印页学生卷有大题标题+选择题答题栏+解答题留空且不含「答案：」；教师卷含答案/解析+双向细目表（`e2e/teacher-paper.spec.ts`）。
+- [ ] mock 按 `SECTIONS_JSON`（全角冒号）题数/题型出题；KP↔subject mismatch 仍补偿净零不落 Paper；非教师扣费前 FORBIDDEN。
+- [ ] 旧 Paper（无新 paramsJson 字段）仍能在新打印页渲染（卷头省略时长/教材版本）。
+- [ ] 表单：`computePaperTotals` 满分汇总正确；未引入 jsdom/testing-library（沿用 `renderToStaticMarkup` 测试范式）。
