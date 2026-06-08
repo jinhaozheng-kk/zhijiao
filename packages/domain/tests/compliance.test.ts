@@ -25,3 +25,15 @@ describe("Compliance", () => {
     expect(FORECAST_APPROVED_LANGUAGE).toContain("考点方向分析");
   });
 });
+
+describe("findForbidden 中考相关黑词", () => {
+  it.each(["押题", "必考", "预测题", "原题还原", "考前答案"])(
+    "命中 %s",
+    (phrase) => {
+      expect(findForbidden(`这是${phrase}范例`)).toContain(phrase);
+    },
+  );
+  it("正常题干不误伤", () => {
+    expect(findForbidden("求一次函数 y=2x+1 的图象与 x 轴交点。")).toEqual([]);
+  });
+});

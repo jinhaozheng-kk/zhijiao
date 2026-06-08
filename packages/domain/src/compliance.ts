@@ -9,6 +9,12 @@ export const FORBIDDEN_PHRASES: readonly string[] = [
   "包过",
   "内幕",
   "代做作业",
+  "押题",
+  "必考",
+  "预测题",
+  "原题还原",
+  "还原原题",
+  "考前答案",
 ];
 
 // 命题预测中心的许可表述
