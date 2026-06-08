@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
+  EXAM_PRINT_CSS,
   ObjectiveAnswerGrid,
   StudentSection,
   TeacherSection,
@@ -49,6 +50,13 @@ describe("StudentSection zhongkao answer areas", () => {
     const html = renderToStaticMarkup(<StudentSection section={capstoneSection} />);
     expect(html).not.toContain("ANSWER_ONLY_TEACHER");
     expect(html).not.toContain("SOLUTION_ONLY_TEACHER");
+  });
+});
+
+describe("EXAM_PRINT_CSS binding gutter", () => {
+  it("reserves print-only left gutter so the seal line cannot cover content", () => {
+    expect(EXAM_PRINT_CSS).toContain(".exam-print-sheet");
+    expect(EXAM_PRINT_CSS).toContain("padding-left: 2.8cm");
   });
 });
 

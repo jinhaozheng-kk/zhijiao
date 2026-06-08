@@ -15,6 +15,11 @@ export const EXAM_PRINT_CSS = `
   body { background: white !important; }
   main { padding: 0 !important; }
   .seal-line { display: flex !important; }
+  .exam-print-sheet {
+    box-sizing: border-box;
+    padding-left: 2.8cm !important;
+    width: 100%;
+  }
   .answer-space { break-inside: avoid; }
   .print-break-before { break-before: page; page-break-before: always; }
 }

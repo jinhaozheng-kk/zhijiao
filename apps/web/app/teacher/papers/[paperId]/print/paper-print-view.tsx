@@ -91,7 +91,7 @@ export function PaperPrintView({ paperId }: { paperId: string }) {
 
       <SealLine />
 
-      <section className="rounded-lg bg-white p-6 shadow-sm ring-1 ring-slate-200 print:p-0 print:shadow-none print:ring-0" data-testid={`paper-${variant}`}>
+      <section className="exam-print-sheet rounded-lg bg-white p-6 shadow-sm ring-1 ring-slate-200 print:p-0 print:shadow-none print:ring-0" data-testid={`paper-${variant}`}>
         <ExamHeader
           title={paper.title}
           gradeLabel={gradeLabel}

@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { PaperSpecTable } from "@/app/teacher/papers/paper-detail-components";
 import { PaperGenerationForm, computePaperTotals } from "@/app/teacher/papers/new/paper-generation-form";
 import { PaperPreviewView } from "@/app/teacher/papers/[paperId]/paper-preview-view";
+import { PaperPrintView } from "@/app/teacher/papers/[paperId]/print/paper-print-view";
 
 const mocks = vi.hoisted(() => ({
   paperGetResult: {
@@ -175,6 +176,42 @@ describe("PaperPreviewView zhongkao blueprint panel", () => {
     expect(html).toContain("capstone intent");
     expect(html).toContain('data-testid="review-warnings"');
     expect(html).toContain("check stem length");
+  });
+});
+
+describe("PaperPrintView print layout", () => {
+  it("marks the printable sheet so print CSS can reserve the binding gutter", () => {
+    mocks.paperGetResult = {
+      isLoading: false,
+      isError: false,
+      data: {
+        paper: {
+          id: "p1",
+          title: "Printable Paper",
+          status: "DRAFT",
+          paramsJson: { gradeLevel: "G9", durationMinutes: 120 },
+          items: [
+            {
+              id: "i1",
+              type: "SINGLE_CHOICE",
+              stemMd: "Question",
+              optionsJson: ["A", "B", "C", "D"],
+              answerMd: "A",
+              solutionMd: "Because",
+              rubricMd: null,
+              points: 3,
+              position: 1,
+              source: "AI_GENERATED",
+            },
+          ],
+        },
+        specTable: { rows: [], totalCount: 1, totalPoints: 3 },
+      },
+    };
+
+    const html = renderToStaticMarkup(<PaperPrintView paperId="p1" />);
+
+    expect(html).toContain("exam-print-sheet");
   });
 });
 
