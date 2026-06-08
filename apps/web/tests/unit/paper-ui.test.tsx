@@ -21,7 +21,9 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("@/components/ui/ai-generating-panel", () => ({
-  AiGeneratingPanel: ({ label }: { label: string }) => <div>{label}</div>,
+  AiGeneratingPanel: ({ label }: { label?: string }) => (
+    <div data-testid="ai-generating-panel">{label ?? "ai-generating"}</div>
+  ),
 }));
 
 vi.mock("@/lib/trpc-client", () => ({
@@ -39,6 +41,7 @@ vi.mock("@/lib/trpc-client", () => ({
         useMutation: () => ({
           isPending: false,
           mutate: vi.fn(),
+          reset: vi.fn(),
         }),
       },
       markReady: {
@@ -128,6 +131,34 @@ describe("PaperGenerationForm 默认状态静态渲染", () => {
   });
 });
 
+describe("PaperPreviewView READY status (no DRAFT banner)", () => {
+  it("does not render DRAFT notice or warnings block when paper is READY", () => {
+    mocks.paperGetResult = {
+      isLoading: false,
+      isError: false,
+      data: {
+        paper: {
+          id: "p2",
+          title: "Ready Paper",
+          status: "READY",
+          paramsJson: {
+            styleTemplate: "JUNIOR_MATH_ZHONGKAO_GENERIC_V1",
+            reviewWarnings: [
+              { slotQuestionNo: 1, code: "STEM_TOO_LONG", message: "too long" },
+            ],
+          },
+          items: [],
+        },
+        specTable: { rows: [], totalCount: 0, totalPoints: 0 },
+      },
+    };
+
+    const html = renderToStaticMarkup(<PaperPreviewView paperId="p2" />);
+    expect(html).not.toContain('data-testid="ai-draft-notice"');
+    expect(html).not.toContain('data-testid="review-warnings"');
+  });
+});
+
 describe("PaperPreviewView zhongkao blueprint panel", () => {
   it("renders blueprint slots and review warnings from paramsJson", () => {
     mocks.paperGetResult = {
@@ -176,6 +207,10 @@ describe("PaperPreviewView zhongkao blueprint panel", () => {
     expect(html).toContain("capstone intent");
     expect(html).toContain('data-testid="review-warnings"');
     expect(html).toContain("check stem length");
+    // B1-UI: DRAFT notice banner is present for DRAFT status
+    expect(html).toContain('data-testid="ai-draft-notice"');
+    // B1-UI: warnings rendered as anchor links pointing to item anchors
+    expect(html).toContain('href="#paper-item-24"');
   });
 });
 

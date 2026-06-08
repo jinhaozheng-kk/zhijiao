@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { trpc } from "@/lib/trpc-client";
 import { AiGeneratingPanel } from "@/components/ui/ai-generating-panel";
 import {
@@ -63,17 +63,55 @@ export function PaperGenerationForm({
   const [diffMin, setDiffMin] = useState(2);
   const [diffMax, setDiffMax] = useState(4);
   const [error, setError] = useState<string | null>(null);
+  const [watchdogVisible, setWatchdogVisible] = useState(false);
+  // Track which submit function was last called so the "重试" button replays it
+  const lastSubmitRef = useRef<"normal" | "zhongkao">("normal");
 
   const generate = trpc.paper.generate.useMutation({
     onSuccess: (result) => router.push(`/teacher/papers/${result.paperId}`),
     onError: (e) => {
-      const reason = (e.data as { reason?: string } | undefined)?.reason;
-      if (reason === "INSUFFICIENT_BALANCE") setError("Credits 余额不足，请先充值后再出卷。");
-      else if (reason === "COMPLIANCE_REJECTED") setError("生成内容未通过合规检查，请调整参数重试。");
-      else if (reason === "KP_SUBJECT_MISMATCH") setError("选择的知识点与学科不匹配，请刷新后重试。");
-      else setError("出卷失败，请稍后再试。");
+      const data = e.data as { reason?: string; shortfallByType?: Record<string, number> } | undefined;
+      const reason = data?.reason;
+      if (reason === "INSUFFICIENT_BALANCE") {
+        setError("Credits 余额不足，请先充值后再出卷。");
+      } else if (reason === "COMPLIANCE_REJECTED") {
+        setError("生成内容未通过合规检查（已退还 credits），请调整知识点后重试。");
+      } else if (reason === "KP_SUBJECT_MISMATCH") {
+        setError("所选知识点与学科不匹配，请刷新后重试。");
+      } else if (reason === "PAPER_DEDUP_SHORTFALL") {
+        const shortfall = data?.shortfallByType;
+        let msg = "题目重复率过高，未能凑满题量（已退还 credits）。建议减少题量或更换/增加知识点后重试。";
+        if (shortfall && Object.keys(shortfall).length > 0) {
+          const parts = Object.entries(shortfall)
+            .filter(([, count]) => count > 0)
+            .map(([type, count]) => `${questionTypeLabel(type as QuestionTypeValue)} 缺 ${count} 题`);
+          if (parts.length > 0) {
+            msg += `缺口：${parts.join("、")}。`;
+          }
+        }
+        setError(msg);
+      } else if (reason === "PAPER_REVIEW_BLOCKED") {
+        setError("自动审题未通过（已退还 credits），请稍后重试。");
+      } else {
+        setError("出卷失败（若已扣除将自动退还 credits），请稍后再试。");
+      }
     },
   });
+
+  // C3: 180s watchdog — while pending, count up; show banner at 180s
+  useEffect(() => {
+    if (!generate.isPending) {
+      setWatchdogVisible(false);
+      return;
+    }
+    const start = Date.now();
+    const id = setInterval(() => {
+      if (Date.now() - start >= 180_000) {
+        setWatchdogVisible(true);
+      }
+    }, 1000);
+    return () => clearInterval(id);
+  }, [generate.isPending]);
 
   function toggleKp(id: string) {
     setSelectedKpIds((prev) =>
@@ -110,6 +148,7 @@ export function PaperGenerationForm({
 
   function submit() {
     setError(null);
+    lastSubmitRef.current = "normal";
     generate.mutate({
       subjectId,
       kpIds: selectedKpIds,
@@ -128,6 +167,7 @@ export function PaperGenerationForm({
 
   function submitZhongkao() {
     setError(null);
+    lastSubmitRef.current = "zhongkao";
     generate.mutate({
       subjectId,
       kpIds: selectedKpIds,
@@ -137,6 +177,11 @@ export function PaperGenerationForm({
       textbookVersion,
       clientRequestId: crypto.randomUUID(),
     });
+  }
+
+  function retry() {
+    if (lastSubmitRef.current === "zhongkao") submitZhongkao();
+    else submit();
   }
 
   return (
@@ -285,12 +330,30 @@ export function PaperGenerationForm({
         出卷消耗 5 credits（题库命中越多，AI 调用越少）。
       </p>
 
-      {generate.isPending && <AiGeneratingPanel label="AI 出卷中，请稍候…" />}
+      {generate.isPending && <AiGeneratingPanel />}
+
+      {generate.isPending && watchdogVisible && (
+        <div
+          className="rounded-lg bg-amber-50 p-4 text-sm text-amber-800"
+          data-testid="generate-watchdog"
+        >
+          出卷时间超过预期。可继续等待，或放弃等待（后台任务仍会继续，成功后可在「我的试卷」列表查看；本次 credits 不再退还）。
+          {" "}
+          <button
+            type="button"
+            onClick={() => { generate.reset(); setWatchdogVisible(false); }}
+            className="underline"
+            data-testid="abandon-wait"
+          >
+            放弃等待
+          </button>
+        </div>
+      )}
 
       {error && (
         <p className="rounded-lg bg-red-50 p-4 text-sm text-red-700" data-testid="generate-error">
           {error}{" "}
-          <button type="button" onClick={submit} className="underline" data-testid="generate-retry">重试</button>
+          <button type="button" onClick={retry} className="underline" data-testid="generate-retry">重试</button>
         </p>
       )}
 
