@@ -1,0 +1,11 @@
+exam_stage,coverage,year_scope,source_name,source_type,url,priority,rights_status,collection_action,notes
+gaokao,national_and_local,2025,中国教育在线·掌上高考试题中心,education_platform,https://gaokao.eol.cn/shiti/index_3.shtml,P1,platform_terms_required,index_links_only,"页面列出2025高考全国卷、天津卷、上海卷等试题和评析条目；正文需二次审核"
+gaokao,national_sample,2024,中国教育考试网高考综合改革适应性测试,official,https://www.neea.edu.cn/html1/report/2401/499-1.htm,P0,official_public,index_and_allowed_attachments,"官方适应性测试/解读入口，可作为官方样卷来源模板"
+gaokao,national_and_local,2025,笨小虎高考真题汇总,resource_aggregator,https://www.benxiaohu.com/article/1.html,P2,unclear,index_links_only,"聚合多省市多科目Word/PDF条目；不得默认转载正文"
+gaokao,31_provinces,2025,6617高考真题31省市汇总,resource_aggregator,https://www.6617.com/p_3704341580.html,P2,unclear,index_links_only,"适合发现省份/卷型结构，权威性和授权状态需逐条核验"
+gaokao,national_and_local,2008-2025,四季读书网高考真题汇总,netdisk_aggregator,https://sjds.net/646270.html,P3,high_risk,discovery_only,"网盘聚合与转载风险高，只记录线索"
+zhongkao,shanghai,2025,上海市教育考试院中招中考栏目,official,https://www.shmeea.edu.cn/page/03500/,P0,official_public,index_and_analysis_only,"官方栏目含上海2025初中学业水平考试多科试卷评析"
+zhongkao,guangzhou,2025,广州市教育局中考命题思路分析,official,https://jyj.gz.gov.cn/gk/zfxxgkml/ywgz/zsks/content/post_10341698.html,P0,official_public,index_and_analysis_only,"官方发布2025广州中考各学科命题思路分析"
+zhongkao,national,2025,四季读书网中考试卷真题汇总,netdisk_aggregator,https://sjds.net/618118.html,P3,high_risk,discovery_only,"全国中考网盘聚合，版权风险高，不直接下载入库"
+zhongkao,tianjin,2025,自主选拔在线天津中考试题汇总,resource_aggregator,https://www.zizzs.com/gk/zhongkao/202379.html,P2,unclear,index_links_only,"声称整理天津市教育招生考试院发布内容，需回查官方源"
+zhongkao,national_by_subject,2025,21世纪教育网中考真题资源,resource_platform,https://zy.21cnjy.com/,P2,platform_terms_required,index_links_only,"大量地区/科目资源，常涉及平台下载条款"
