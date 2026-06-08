@@ -99,3 +99,55 @@ describe("buildZhongkaoMathBlueprint", () => {
     ).toThrow(/至少一个知识点/);
   });
 });
+
+import { blueprintToAiSections, assignItemsToSlots, applySlotMetadata } from "@/lib/zhongkao-blueprint";
+
+describe("blueprintToAiSections", () => {
+  it("聚合 slot 为按题型计数 + slotHints（每题型一条）", () => {
+    const bp = buildZhongkaoMathBlueprint({ gradeLevel: "G9", durationMinutes: 120, textbookVersion: "GENERIC", kps: KPS });
+    const { sections, slotHints } = blueprintToAiSections(bp);
+    expect(sections).toEqual([
+      { type: "SINGLE_CHOICE", count: 10 },
+      { type: "FILL_BLANK", count: 6 },
+      { type: "ESSAY", count: 8 },
+    ]);
+    expect(slotHints.map((h) => h.type)).toEqual(["SINGLE_CHOICE", "FILL_BLANK", "ESSAY"]);
+  });
+});
+
+describe("assignItemsToSlots", () => {
+  it("按题型顺序把题 zip 到 slot，item 保留 RAW 值，slot 为权威元数据来源", () => {
+    const bp = buildZhongkaoMathBlueprint({ gradeLevel: "G9", durationMinutes: 120, textbookVersion: "GENERIC", kps: KPS });
+    const items = bp.slots.map((s) => ({
+      stemMd: `题 ${s.questionNo}`, type: s.questionType, answerMd: "ans",
+      solutionMd: "sol", difficulty: 99, cognitiveLevel: "REMEMBER" as const,
+      points: 999, knowledgePointHints: [],
+    }));
+    const pairs = assignItemsToSlots(bp, items);
+    expect(pairs).toHaveLength(24);
+    expect(pairs[0]!.item.difficulty).toBe(99); // RAW 未覆盖
+    expect(pairs[0]!.slot.points).toBe(bp.slots[0]!.points);
+    expect(pairs[0]!.slot.difficulty).toBe(bp.slots[0]!.difficulty);
+    expect(pairs[0]!.slot.cognitiveLevel).toBe(bp.slots[0]!.cognitiveLevel);
+  });
+
+  it("某题型题数不足时抛 INSUFFICIENT", () => {
+    const bp = buildZhongkaoMathBlueprint({ gradeLevel: "G9", durationMinutes: 120, textbookVersion: "GENERIC", kps: KPS });
+    expect(() => assignItemsToSlots(bp, [])).toThrow(/INSUFFICIENT/);
+  });
+});
+
+describe("applySlotMetadata", () => {
+  it("用 slot 权威值覆盖 item 的 points/difficulty/cognitiveLevel", () => {
+    const bp = buildZhongkaoMathBlueprint({ gradeLevel: "G9", durationMinutes: 120, textbookVersion: "GENERIC", kps: KPS });
+    const slot = bp.slots[0]!;
+    const item = applySlotMetadata({ slot, item: {
+      stemMd: "q", type: slot.questionType, answerMd: "a", solutionMd: "s",
+      difficulty: 99, cognitiveLevel: "REMEMBER" as const, points: 999, knowledgePointHints: [],
+    }});
+    expect(item.points).toBe(slot.points);
+    expect(item.difficulty).toBe(slot.difficulty);
+    expect(item.cognitiveLevel).toBe(slot.cognitiveLevel);
+    expect(item.stemMd).toBe("q"); // 非元数据字段保留
+  });
+});

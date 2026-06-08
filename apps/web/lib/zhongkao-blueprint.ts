@@ -153,3 +153,75 @@ export function buildZhongkaoMathBlueprint(args: {
     slots,
   };
 }
+
+// ── Task 7: blueprintToAiSections + assignItemsToSlots + applySlotMetadata ──
+
+export interface BlueprintAiInputs {
+  sections: Array<{ type: QuestionTypeValue; count: number }>;
+  slotHints: Array<{ type: QuestionTypeValue; intent: string; constraints: string[] }>;
+}
+
+export function blueprintToAiSections(bp: ZhongkaoMathBlueprint): BlueprintAiInputs {
+  const order: QuestionTypeValue[] = [];
+  const counts = new Map<QuestionTypeValue, number>();
+  const hints = new Map<QuestionTypeValue, { intent: string; constraints: string[] }>();
+  for (const slot of bp.slots) {
+    if (!counts.has(slot.questionType)) order.push(slot.questionType);
+    counts.set(slot.questionType, (counts.get(slot.questionType) ?? 0) + 1);
+    if (!hints.has(slot.questionType)) hints.set(slot.questionType, { intent: slot.intent, constraints: slot.constraints });
+  }
+  return {
+    sections: order.map((type) => ({ type, count: counts.get(type)! })),
+    slotHints: order.map((type) => ({ type, ...hints.get(type)! })),
+  };
+}
+
+// 生成回来的题（任意来源：题库 + AI）按题型顺序 zip 到 slot。
+export interface AssignableItem {
+  stemMd: string;
+  type: QuestionTypeValue;
+  options?: string[];
+  answerMd: string;
+  solutionMd: string;
+  rubricMd?: string;
+  difficulty: number;
+  cognitiveLevel: CognitiveLevelValue;
+  points: number;
+  knowledgePointHints: string[];
+}
+
+export interface AssignedPair {
+  slot: BlueprintSlot;   // 权威元数据：落库用 slot.points/difficulty/cognitiveLevel
+  item: AssignableItem;  // RAW AI/题库原值，未覆盖——供审题比对（如 DIFFICULTY_DRIFT）
+}
+
+// 仅 zip，不覆盖。覆盖延后到落库（applySlotMetadata）；审题在覆盖前跑，才能比 RAW 难度。
+export function assignItemsToSlots(bp: ZhongkaoMathBlueprint, items: AssignableItem[]): AssignedPair[] {
+  const byType = new Map<QuestionTypeValue, AssignableItem[]>();
+  for (const it of items) {
+    const list = byType.get(it.type) ?? [];
+    list.push(it);
+    byType.set(it.type, list);
+  }
+  const cursors = new Map<QuestionTypeValue, number>();
+  const pairs: AssignedPair[] = [];
+  for (const slot of bp.slots) {
+    const pool = byType.get(slot.questionType) ?? [];
+    const idx = cursors.get(slot.questionType) ?? 0;
+    const raw = pool[idx];
+    if (!raw) throw new Error(`INSUFFICIENT_ITEMS_FOR_TYPE:${slot.questionType}`);
+    cursors.set(slot.questionType, idx + 1);
+    pairs.push({ slot, item: raw });
+  }
+  return pairs;
+}
+
+// 落库前把 slot 权威元数据应用到 item（spec §4.2「不采信 AI 自行调整」）。
+export function applySlotMetadata(pair: AssignedPair): AssignableItem {
+  return {
+    ...pair.item,
+    points: pair.slot.points,
+    difficulty: pair.slot.difficulty,
+    cognitiveLevel: pair.slot.cognitiveLevel,
+  };
+}
