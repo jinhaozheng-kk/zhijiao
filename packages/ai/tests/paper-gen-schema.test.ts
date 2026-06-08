@@ -37,3 +37,25 @@ describe("PaperGenerationInputSchema", () => {
     ).toThrow();
   });
 });
+
+describe("PaperGenerationInputSchema 中考扩展", () => {
+  it("接受可选 styleRules 与 slotHints", () => {
+    const parsed = PaperGenerationInputSchema.parse({
+      subject: "数学", gradeLevel: "G9", kpNames: ["一次函数"],
+      sections: [{ type: "SINGLE_CHOICE", count: 2 }],
+      difficultyRange: [1, 3],
+      styleRules: ["题干使用正式考试语言"],
+      slotHints: [{ type: "SINGLE_CHOICE", intent: "考查基础概念", constraints: ["只有一个正确答案"] }],
+    });
+    expect(parsed.styleRules).toEqual(["题干使用正式考试语言"]);
+    expect(parsed.slotHints?.[0]?.intent).toBe("考查基础概念");
+  });
+
+  it("不传扩展字段仍向后兼容", () => {
+    const parsed = PaperGenerationInputSchema.parse({
+      subject: "数学", gradeLevel: "G9", kpNames: ["一次函数"],
+      sections: [{ type: "FILL_BLANK", count: 1 }], difficultyRange: [2, 4],
+    });
+    expect(parsed.styleRules).toBeUndefined();
+  });
+});

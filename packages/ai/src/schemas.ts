@@ -224,6 +224,11 @@ export const PaperGenSectionSchema = z.object({
   type: PaperItemTypeEnum,
   count: z.number().int().min(1).max(30),
 });
+export const PaperGenSlotHintSchema = z.object({
+  type: PaperItemTypeEnum,
+  intent: z.string(),
+  constraints: z.array(z.string()).default([]),
+});
 export const PaperGenerationInputSchema = z.object({
   subject: z.string(),
   gradeLevel: z.string(),
@@ -232,6 +237,8 @@ export const PaperGenerationInputSchema = z.object({
   difficultyRange: z.tuple([z.number().int().min(1).max(5), z.number().int().min(1).max(5)]),
   textbookVersion: z.string().optional(),
   excludeStems: z.array(z.string()).default([]),
+  styleRules: z.array(z.string()).optional(),
+  slotHints: z.array(PaperGenSlotHintSchema).optional(),
 });
 export type PaperGenerationInput = z.infer<typeof PaperGenerationInputSchema>;
 
