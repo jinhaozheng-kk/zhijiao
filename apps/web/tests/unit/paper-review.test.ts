@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { reviewPaperSlot, type ReviewableItem } from "@/server/lib/paper-review";
+import { reviewPaperSlot, reviewAssembledPaper, type ReviewableItem } from "@/server/lib/paper-review";
 import type { BlueprintSlot } from "@/lib/zhongkao-blueprint";
 
 const choiceSlot: BlueprintSlot = {
@@ -56,5 +56,29 @@ describe("reviewPaperSlot 结构校验", () => {
       stemMd: "求证 ...", type: "ESSAY", answerMd: "见解析", solutionMd: "  ", difficulty: 2, points: 10,
     });
     expect(issues).toContainEqual(expect.objectContaining({ severity: "BLOCKER", code: "MISSING_SOLUTION" }));
+  });
+  it("难度恰好偏离 1 档 → 不触发 DIFFICULTY_DRIFT", () => {
+    const issues = reviewPaperSlot(choiceSlot, { ...okChoice, difficulty: choiceSlot.difficulty + 1 });
+    expect(issues.some((i) => i.code === "DIFFICULTY_DRIFT")).toBe(false);
+  });
+
+  it("题干超长 → WARNING STEM_TOO_LONG（601 触发，600 不触发）", () => {
+    const long = reviewPaperSlot(choiceSlot, { ...okChoice, stemMd: "甲".repeat(601) });
+    expect(long).toContainEqual(expect.objectContaining({ severity: "WARNING", code: "STEM_TOO_LONG" }));
+    const boundary = reviewPaperSlot(choiceSlot, { ...okChoice, stemMd: "甲".repeat(600) });
+    expect(boundary.some((i) => i.code === "STEM_TOO_LONG")).toBe(false);
+  });
+});
+
+describe("reviewAssembledPaper 聚合", () => {
+  it("汇总多个 slot 的 issue，并保留各自 slotQuestionNo", () => {
+    const dirtySlot = { ...choiceSlot, questionNo: 7 };
+    const issues = reviewAssembledPaper([
+      { slot: choiceSlot, item: okChoice },                                   // 干净
+      { slot: dirtySlot, item: { ...okChoice, answerMd: "  " } },             // EMPTY_ANSWER
+    ]);
+    expect(issues.some((i) => i.code === "EMPTY_ANSWER" && i.slotQuestionNo === 7)).toBe(true);
+    // 干净 slot 不产生 issue：所有 issue 都应来自 questionNo 7
+    expect(issues.every((i) => i.slotQuestionNo === 7)).toBe(true);
   });
 });
