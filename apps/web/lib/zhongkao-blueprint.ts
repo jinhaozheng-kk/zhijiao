@@ -168,7 +168,7 @@ export function blueprintToAiSections(bp: ZhongkaoMathBlueprint): BlueprintAiInp
   for (const slot of bp.slots) {
     if (!counts.has(slot.questionType)) order.push(slot.questionType);
     counts.set(slot.questionType, (counts.get(slot.questionType) ?? 0) + 1);
-    if (!hints.has(slot.questionType)) hints.set(slot.questionType, { intent: slot.intent, constraints: slot.constraints });
+    if (!hints.has(slot.questionType)) hints.set(slot.questionType, { intent: slot.intent, constraints: [...slot.constraints] });
   }
   return {
     sections: order.map((type) => ({ type, count: counts.get(type)! })),

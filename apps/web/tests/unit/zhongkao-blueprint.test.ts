@@ -135,6 +135,20 @@ describe("assignItemsToSlots", () => {
     const bp = buildZhongkaoMathBlueprint({ gradeLevel: "G9", durationMinutes: 120, textbookVersion: "GENERIC", kps: KPS });
     expect(() => assignItemsToSlots(bp, [])).toThrow(/INSUFFICIENT/);
   });
+
+  it("题型不在任何 slot 中的多余题被静默忽略，不影响 zip", () => {
+    const bp = buildZhongkaoMathBlueprint({ gradeLevel: "G9", durationMinutes: 120, textbookVersion: "GENERIC", kps: KPS });
+    const items = bp.slots.map((s) => ({
+      stemMd: `题 ${s.questionNo}`, type: s.questionType, answerMd: "a",
+      solutionMd: "s", difficulty: 2, cognitiveLevel: "APPLY" as const,
+      points: 5, knowledgePointHints: [],
+    }));
+    // 追加一个题型不在蓝图里的多余题（蓝图无 MULTI_CHOICE）
+    items.push({ stemMd: "多余", type: "MULTI_CHOICE", answerMd: "a", solutionMd: "s", difficulty: 2, cognitiveLevel: "APPLY" as const, points: 5, knowledgePointHints: [] });
+    const pairs = assignItemsToSlots(bp, items);
+    expect(pairs).toHaveLength(24);
+    expect(pairs.some((p) => p.item.stemMd === "多余")).toBe(false);
+  });
 });
 
 describe("applySlotMetadata", () => {
