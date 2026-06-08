@@ -242,17 +242,37 @@ export const PaperGenerationInputSchema = z.object({
 });
 export type PaperGenerationInput = z.infer<typeof PaperGenerationInputSchema>;
 
+// 真实 LLM 常把数组字段吐成字符串（如 knowledgePointHints:"一次函数" 或
+// options:"A. x\nB. y\n..."）。落库前容错转数组；mock/合规数组输入是 no-op。
+export function coerceStringArray(v: unknown): unknown {
+  if (Array.isArray(v)) return v;
+  if (typeof v !== "string") return v;
+  return v.split(/\r?\n|[、，,;；/]+/).map((s) => s.trim()).filter(Boolean);
+}
+
+// 选项分隔符：换行，或 LaTeX 行间距 `\[10pt]` / `\\[10pt]`（真实 qwen-max 常用它分隔选项）。
+const OPTION_SEPARATOR = /\r?\n|\\{1,2}\s*\[[\d.]+\s*pt\]/;
+export function coerceOptionArray(v: unknown): unknown {
+  if (v == null) return v;
+  const arr = Array.isArray(v) ? v : typeof v === "string" ? v.split(OPTION_SEPARATOR) : null;
+  if (!arr) return v;
+  // 拆分多项并剥掉「A. / (A) / A、」式选项前缀（避免 UI 再加字母时重复）。
+  return arr
+    .map((s) => String(s).trim().replace(/^[（(]?\s*[A-Da-d]\s*[)）.、．:：]\s*/, "").trim())
+    .filter(Boolean);
+}
+
 export const PaperGenItemSchema = z.object({
   stemMd: z.string().min(1),
   type: PaperItemTypeEnum,
-  options: z.array(z.string()).optional(),
+  options: z.preprocess(coerceOptionArray, z.array(z.string()).optional()),
   answerMd: z.string().min(1),
   solutionMd: z.string().min(1),
   rubricMd: z.string().optional(),
   difficulty: z.number().int().min(1).max(5),
   cognitiveLevel: CognitiveLevelEnum,
   points: z.number().int().min(1).max(100),
-  knowledgePointHints: z.array(z.string()).default([]),
+  knowledgePointHints: z.preprocess(coerceStringArray, z.array(z.string()).default([])),
 });
 export const PaperGenerationOutputSchema = z.object({
   title: z.string().min(1),
