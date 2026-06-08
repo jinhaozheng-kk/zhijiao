@@ -39,6 +39,14 @@ export function reviewPaperSlot(slot: BlueprintSlot, item: ReviewableItem): Pape
   if (slot.questionType === "FILL_BLANK" && item.options && item.options.length > 0) {
     push("BLOCKER", "FILL_HAS_OPTIONS", "填空题不得输出选项");
   }
+  // 选择题答案指向不存在的选项（如 4 选项却答 E）——保守 WARNING：只看答案前导字母，
+  // 无前导字母（如纯公式/"见解析"）不触发；不判断「选对没」（数学正误靠教师审核）。
+  if ((slot.questionType === "SINGLE_CHOICE" || slot.questionType === "MULTI_CHOICE") && item.options && item.options.length > 0) {
+    const lead = (item.answerMd.trim().match(/^[（(]?\s*([A-Za-z]+)/)?.[1] ?? "").toUpperCase();
+    if (lead && [...lead].some((c) => c.charCodeAt(0) - 65 >= item.options!.length)) {
+      push("WARNING", "CHOICE_ANSWER_OUT_OF_RANGE", "选择题答案指向了不存在的选项，建议核对");
+    }
+  }
   // 仅 ESSAY 查缺解析：中考蓝图把全部「解答题」映射为 ESSAY，不会出现 CALCULATION/PROOF slot。
   if (slot.questionType === "ESSAY" && item.solutionMd.trim().length === 0) {
     push("BLOCKER", "MISSING_SOLUTION", "解答题必须有解析");

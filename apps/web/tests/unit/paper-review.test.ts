@@ -18,6 +18,18 @@ describe("reviewPaperSlot 结构校验", () => {
   it("合格选择题无 issue", () => {
     expect(reviewPaperSlot(choiceSlot, okChoice)).toEqual([]);
   });
+  it("答案字母超出选项数（4 选项答 E）→ WARNING CHOICE_ANSWER_OUT_OF_RANGE", () => {
+    const issues = reviewPaperSlot(choiceSlot, { ...okChoice, answerMd: "E" });
+    expect(issues).toContainEqual(expect.objectContaining({ severity: "WARNING", code: "CHOICE_ANSWER_OUT_OF_RANGE" }));
+  });
+  it("正常答案（带正文 'A. (0,0)'）不触发越界", () => {
+    const issues = reviewPaperSlot(choiceSlot, { ...okChoice, answerMd: "A. (0,0)" });
+    expect(issues.some((i) => i.code === "CHOICE_ANSWER_OUT_OF_RANGE")).toBe(false);
+  });
+  it("无前导字母的答案（纯公式/见解析）保守不触发", () => {
+    const issues = reviewPaperSlot(choiceSlot, { ...okChoice, answerMd: "$y=2x$" });
+    expect(issues.some((i) => i.code === "CHOICE_ANSWER_OUT_OF_RANGE")).toBe(false);
+  });
   it("题型不匹配 → BLOCKER TYPE_MISMATCH", () => {
     const issues = reviewPaperSlot(choiceSlot, { ...okChoice, type: "FILL_BLANK" });
     expect(issues).toContainEqual(expect.objectContaining({ severity: "BLOCKER", code: "TYPE_MISMATCH" }));
