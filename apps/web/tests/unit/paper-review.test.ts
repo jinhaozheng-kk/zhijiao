@@ -26,10 +26,6 @@ describe("reviewPaperSlot 结构校验", () => {
     const issues = reviewPaperSlot(choiceSlot, { ...okChoice, options: ["A", "B", "C"] });
     expect(issues).toContainEqual(expect.objectContaining({ severity: "BLOCKER", code: "CHOICE_OPTION_COUNT" }));
   });
-  it("难度偏离 slot 超过 1 档 → BLOCKER DIFFICULTY_DRIFT", () => {
-    const issues = reviewPaperSlot(choiceSlot, { ...okChoice, difficulty: 5 });
-    expect(issues).toContainEqual(expect.objectContaining({ severity: "BLOCKER", code: "DIFFICULTY_DRIFT" }));
-  });
   it("答案为空 → BLOCKER EMPTY_ANSWER", () => {
     const issues = reviewPaperSlot(choiceSlot, { ...okChoice, answerMd: "  " });
     expect(issues).toContainEqual(expect.objectContaining({ severity: "BLOCKER", code: "EMPTY_ANSWER" }));
@@ -57,11 +53,6 @@ describe("reviewPaperSlot 结构校验", () => {
     });
     expect(issues).toContainEqual(expect.objectContaining({ severity: "BLOCKER", code: "MISSING_SOLUTION" }));
   });
-  it("难度恰好偏离 1 档 → 不触发 DIFFICULTY_DRIFT", () => {
-    const issues = reviewPaperSlot(choiceSlot, { ...okChoice, difficulty: choiceSlot.difficulty + 1 });
-    expect(issues.some((i) => i.code === "DIFFICULTY_DRIFT")).toBe(false);
-  });
-
   it("题干超长 → WARNING STEM_TOO_LONG（601 触发，600 不触发）", () => {
     const long = reviewPaperSlot(choiceSlot, { ...okChoice, stemMd: "甲".repeat(601) });
     expect(long).toContainEqual(expect.objectContaining({ severity: "WARNING", code: "STEM_TOO_LONG" }));

@@ -31,7 +31,8 @@ export function reviewPaperSlot(slot: BlueprintSlot, item: ReviewableItem): Pape
     issues.push({ slotQuestionNo: slot.questionNo, severity, code, message });
 
   if (item.type !== slot.questionType) push("BLOCKER", "TYPE_MISMATCH", `题型应为 ${slot.questionType}，实际 ${item.type}`);
-  if (Math.abs(item.difficulty - slot.difficulty) > 1) push("BLOCKER", "DIFFICULTY_DRIFT", `难度偏离目标 ${slot.difficulty} 超过 1 档`);
+  // 注：v1 不校验难度偏离——按题型批量生成 + slot 难度权威覆盖，原始 AI 难度不可比；
+  //     per-slot 生成落地后再恢复（spec §10）。
   if (slot.questionType === "SINGLE_CHOICE" || slot.questionType === "MULTI_CHOICE") {
     if (!item.options || item.options.length !== 4) push("BLOCKER", "CHOICE_OPTION_COUNT", "选择题必须恰有 4 个选项");
   }
