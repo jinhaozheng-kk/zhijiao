@@ -137,4 +137,26 @@ describe("AiRouter.generatePaper", () => {
     expect(out.items.length).toBe(2);
     expect(out.items.every((i) => i.type === "SINGLE_CHOICE")).toBe(true);
   });
+
+  it("mock paper generation follows selected knowledge points", async () => {
+    const router = new AiRouter({
+      prisma,
+      adapter: new MockAdapter(),
+      userId: "dev-teacher-01",
+    });
+
+    const out = await router.generatePaper({
+      subject: "math",
+      gradeLevel: "G8",
+      kpNames: ["factorization"],
+      sections: [{ type: "CALCULATION", count: 2 }],
+      difficultyRange: [2, 4],
+      excludeStems: [],
+    });
+
+    expect(out.items).toHaveLength(2);
+    expect(out.items.every((item) => item.knowledgePointHints.includes("factorization"))).toBe(true);
+    expect(out.items.every((item) => item.stemMd.includes("factorization"))).toBe(true);
+    expect(out.items.map((item) => item.stemMd).join("\n")).not.toMatch(/mock item|choose the correct statement/i);
+  });
 });

@@ -122,10 +122,91 @@ function mockVariantForType(type: string, n: number) {
   return { ...variant, stemMd: `${variant.stemMd}（拓展${label}）` };
 }
 
+function extractPaperKpNames(userContent: string): string[] {
+  const match = userContent.match(/KP_NAMES_JSON:(\[[^\r\n]*\])/);
+  if (!match) return [];
+  try {
+    const parsed = JSON.parse(match[1]!) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (item): item is string =>
+        typeof item === "string" && item.trim().length > 0,
+    );
+  } catch {
+    return [];
+  }
+}
+
+function mockItemLabel(n: number): string {
+  return n.toString(36).replace(/\d/g, (d) => "abcdefghij"[Number(d)]!);
+}
+
+function mockVariantForKp(type: string, n: number, kpName: string) {
+  const stemPrefix = `第${mockItemLabel(n).toUpperCase()}题：围绕“${kpName}”`;
+  switch (type) {
+    case "SINGLE_CHOICE":
+      return {
+        stemMd: `${stemPrefix}，下列说法正确的是（ ）。`,
+        options: [
+          `能根据“${kpName}”的规则完成判断`,
+          "可以不看运算顺序直接从左到右计算所有题",
+          "所有题都必须先算加减再算乘除",
+          "括号不会改变计算顺序",
+        ],
+        answerMd: "A",
+        solutionMd: `本题考查“${kpName}”。A 项体现了按相应规则分析和判断，其余选项表述过于绝对或不符合运算规则。`,
+        knowledgePointHints: [kpName],
+      };
+    case "MULTI_CHOICE":
+      return {
+        stemMd: `${stemPrefix}，下列结论正确的有（ ）。`,
+        options: [
+          `解题时需要关注“${kpName}”中的关键规则`,
+          "同级运算通常按从左到右的顺序进行",
+          "有括号时一般先算括号内的部分",
+          "任何情况下都可以随意交换运算顺序",
+        ],
+        answerMd: "ABC",
+        solutionMd: `A、B、C 均符合“${kpName}”相关要求；D 忽略了运算规则和适用条件。`,
+        knowledgePointHints: [kpName],
+      };
+    case "FILL_BLANK":
+      return {
+        stemMd: `${stemPrefix}，完成填空：解决这类问题时，应先明确____，再按规则计算。`,
+        answerMd: "运算顺序",
+        solutionMd: `“${kpName}”类问题通常需要先判断运算顺序或可用的运算律，再逐步计算。`,
+        knowledgePointHints: [kpName],
+      };
+    case "CALCULATION":
+      return {
+        stemMd: `${stemPrefix}，计算并写出主要步骤：24 ÷ (3 + 1) + 6 × 2。`,
+        answerMd: "18",
+        solutionMd: `先算括号内 3 + 1 = 4，再算 24 ÷ 4 = 6，最后算 6 + 6 × 2 = 6 + 12 = 18。本题考查“${kpName}”。`,
+        knowledgePointHints: [kpName],
+      };
+    case "PROOF":
+      return {
+        stemMd: `${stemPrefix}，说明为什么计算 25 × 16 × 4 可以先算 25 × 4。`,
+        answerMd: "见解析。",
+        solutionMd: `乘法满足交换律和结合律，可将 25 × 16 × 4 调整为 (25 × 4) × 16，从而简化计算。本题考查“${kpName}”。`,
+        rubricMd: `指出可用运算律；说明调整顺序的理由；计算或表达清楚。`,
+        knowledgePointHints: [kpName],
+      };
+    default:
+      return {
+        stemMd: `${stemPrefix}，结合一个例子说明解题时应注意哪些关键步骤。`,
+        answerMd: "见解析。",
+        solutionMd: `可从审题、确定规则、分步计算或推理、检查结果四个方面说明，重点围绕“${kpName}”。`,
+        rubricMd: `能围绕“${kpName}”说明关键步骤，例子合理，表达清楚。`,
+        knowledgePointHints: [kpName],
+      };
+  }
+}
+
 // Plan 17 / 统考排版：按请求 sections 造 mock 题，保证下游版式与题量正确。
-function mockItemForType(type: string, n: number) {
+function mockItemForType(type: string, n: number, kpName?: string) {
   const base = { difficulty: 2, cognitiveLevel: "UNDERSTAND" as const, points: 5 };
-  const variant = mockVariantForType(type, n);
+  const variant = kpName ? mockVariantForKp(type, n, kpName) : mockVariantForType(type, n);
   switch (type) {
     case "SINGLE_CHOICE":
       return { ...base, ...variant, type };
@@ -144,6 +225,7 @@ function mockItemForType(type: string, n: number) {
 
 function buildMockPaper(req: AdapterRequest): unknown {
   const user = req.messages.find((m) => m.role === "user")?.content ?? "";
+  const kpNames = extractPaperKpNames(user);
   const m = user.match(/SECTIONS_JSON：(\[.*?\])/);
   if (m) {
     try {
@@ -151,9 +233,16 @@ function buildMockPaper(req: AdapterRequest): unknown {
       const items: unknown[] = [];
       let n = 0;
       for (const s of sections) {
-        for (let i = 0; i < s.count; i++) items.push(mockItemForType(s.type, ++n));
+        for (let i = 0; i < s.count; i++) {
+          const itemNo = ++n;
+          const kpName =
+            kpNames.length > 0
+              ? kpNames[(itemNo - 1) % kpNames.length]
+              : undefined;
+          items.push(mockItemForType(s.type, itemNo, kpName));
+        }
       }
-      if (items.length > 0) return { title: "Mock 一次函数练习卷", items };
+      if (items.length > 0) return { title: `Mock ${(kpNames[0] ?? "一次函数")}练习卷`, items };
     } catch {
       // 落到下方兜底
     }

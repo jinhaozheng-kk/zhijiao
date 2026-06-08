@@ -700,7 +700,7 @@ export class AiRouter {
     const sectionsHuman = parsed.sections
       .map((s) => `${s.type}×${s.count}`)
       .join("，");
-    const userContent = prompt.interpolate({
+    const baseUserContent = prompt.interpolate({
       subject: parsed.subject,
       gradeLevel: parsed.gradeLevel,
       kpNames: parsed.kpNames.join(", "),
@@ -714,6 +714,12 @@ export class AiRouter {
         ? parsed.slotHints.map((h) => `${h.type}: ${h.intent}（${h.constraints.join("、")}）`).join(" / ")
         : "(无)",
     });
+    const userContent = [
+      baseUserContent,
+      `KP_NAMES_JSON:${JSON.stringify(parsed.kpNames)}`,
+      "Every generated item must be based on one of KP_NAMES_JSON. Do not generate items for unrelated knowledge points.",
+      "Each item's knowledgePointHints must include the selected knowledge point it assesses.",
+    ].join("\n\n");
 
     const model = this.opts.modelOverride ?? TASK_MODEL_MAP[taskKind];
     const request = {

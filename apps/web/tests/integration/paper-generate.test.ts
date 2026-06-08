@@ -131,6 +131,32 @@ describe("paper.generate", () => {
     expect(params.textbookVersion).toBe("RENJIAO");
   });
 
+  it("passes the selected knowledge point names into paper generation", async () => {
+    const t = await seedTeacher(100);
+    const selectedKp = await prisma.knowledgePoint.create({
+      data: {
+        subjectId: t.subjectId,
+        code: `factorization-${crypto.randomUUID()}`,
+        name: "factorization",
+      },
+    });
+    const caller = appRouter.createCaller(makeCtx(t.id, { persona: "TEACHER" }));
+
+    await caller.paper.generate({
+      subjectId: t.subjectId,
+      kpIds: [selectedKp.id],
+      gradeLevel: "G8",
+      sections: [{ type: "CALCULATION", count: 1, pointsPerItem: 5 }],
+      difficultyRange: [1, 3],
+      textbookVersion: "GENERIC",
+      clientRequestId: crypto.randomUUID(),
+    });
+
+    expect(generatePaperMock).toHaveBeenCalledWith(
+      expect.objectContaining({ kpNames: ["factorization"] }),
+    );
+  });
+
   it("AI 首轮生成重复题时自动补题直到题量满足", async () => {
     const t = await seedTeacher(100);
     const caller = appRouter.createCaller(makeCtx(t.id, { persona: "TEACHER" }));
