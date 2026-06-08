@@ -56,10 +56,12 @@ function PaperItemCard({
   paperId,
   item,
   disabled,
+  hasWarning,
 }: {
   paperId: string;
   item: PaperItem;
   disabled: boolean;
+  hasWarning?: boolean;
 }) {
   const utils = trpc.useUtils();
   const [points, setPoints] = useState(item.points);
@@ -76,7 +78,10 @@ function PaperItemCard({
   }
 
   return (
-    <article className="rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-200">
+    <article
+      id={`paper-item-${item.position}`}
+      className={`rounded-lg bg-white p-5 shadow-sm ring-1 ${hasWarning ? "ring-2 ring-amber-400" : "ring-slate-200"}`}
+    >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm font-medium text-slate-500">
@@ -163,9 +168,44 @@ export function PaperPreviewView({ paperId }: { paperId: string }) {
   const paper = query.data.paper;
   const disabled = paper.status === "READY";
   const params = (paper.paramsJson ?? {}) as ZhongkaoPreviewParams;
+  const reviewWarnings = params.reviewWarnings ?? [];
+  const warnedPositions = new Set(reviewWarnings.map((w) => w.slotQuestionNo));
 
   return (
     <div className="space-y-6">
+      {/* B1-UI: DRAFT notice banner */}
+      {paper.status !== "READY" && (
+        <div
+          className="rounded-lg bg-blue-50 px-5 py-3 text-sm text-blue-800"
+          data-testid="ai-draft-notice"
+        >
+          本试卷由 AI 辅助生成，题目内容（尤其计算步骤）可能有误，请逐题核对后再点「确认完成」。
+        </div>
+      )}
+
+      {/* B1-UI: review warnings lifted to top (DRAFT state only) */}
+      {paper.status !== "READY" && reviewWarnings.length > 0 && (
+        <div
+          className="rounded-lg bg-amber-50 p-4 text-sm text-amber-800"
+          data-testid="review-warnings"
+        >
+          <p className="font-medium">建议人工核对（{reviewWarnings.length}）</p>
+          <ul className="mt-2 space-y-1">
+            {reviewWarnings.map((warning, index) => (
+              <li key={`${warning.slotQuestionNo}-${warning.code}-${index}`}>
+                <a
+                  href={`#paper-item-${warning.slotQuestionNo}`}
+                  className="underline hover:text-amber-900"
+                >
+                  第 {warning.slotQuestionNo} 题
+                </a>
+                ：{warning.message}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <section className="rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-200">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -243,22 +283,7 @@ export function PaperPreviewView({ paperId }: { paperId: string }) {
               </table>
             </div>
           </details>
-
-          {params.reviewWarnings && params.reviewWarnings.length > 0 ? (
-            <div
-              className="mt-3 rounded-lg bg-amber-50 p-3 text-xs text-amber-800"
-              data-testid="review-warnings"
-            >
-              <p className="font-medium">建议人工核对（{params.reviewWarnings.length}）</p>
-              <ul className="mt-1 list-disc pl-4">
-                {params.reviewWarnings.map((warning, index) => (
-                  <li key={`${warning.slotQuestionNo}-${warning.code}-${index}`}>
-                    第 {warning.slotQuestionNo} 题：{warning.message}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
+          {/* Warnings are now shown at the top of the page; not repeated here */}
         </section>
       )}
 
@@ -269,6 +294,7 @@ export function PaperPreviewView({ paperId }: { paperId: string }) {
             paperId={paper.id}
             item={item}
             disabled={disabled}
+            hasWarning={warnedPositions.has(item.position)}
           />
         ))}
         {paper.items.length === 0 ? (
