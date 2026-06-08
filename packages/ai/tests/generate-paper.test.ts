@@ -117,4 +117,24 @@ describe("AiRouter.generatePaper", () => {
     const keys = out.items.map((item) => paperStemTemplateKey(item.stemMd));
     expect(new Set(keys).size).toBe(out.items.length);
   });
+
+  it("中考风格 v2：传 promptVersion=v2 + styleRules + slotHints 时返回合法输出（mock）", async () => {
+    const router = new AiRouter({
+      prisma,
+      adapter: new MockAdapter(),
+      userId: "dev-teacher-01",
+      promptVersion: "v2",
+    });
+    const out = await router.generatePaper({
+      subject: "数学",
+      gradeLevel: "G9",
+      kpNames: ["一次函数"],
+      sections: [{ type: "SINGLE_CHOICE", count: 2 }],
+      difficultyRange: [1, 3],
+      styleRules: ["题干使用正式考试语言", "不使用押题、预测、必考等词"],
+      slotHints: [{ type: "SINGLE_CHOICE", intent: "考查基础概念", constraints: ["只有一个正确答案"] }],
+    });
+    expect(out.items.length).toBe(2);
+    expect(out.items.every((i) => i.type === "SINGLE_CHOICE")).toBe(true);
+  });
 });

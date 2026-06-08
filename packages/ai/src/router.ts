@@ -709,6 +709,10 @@ export class AiRouter {
       sectionsJson: JSON.stringify(parsed.sections),
       difficultyRange: `${parsed.difficultyRange[0]}-${parsed.difficultyRange[1]}`,
       excludeStems: parsed.excludeStems.length ? parsed.excludeStems.join(" / ") : "(无)",
+      styleRules: parsed.styleRules?.length ? parsed.styleRules.join("；") : "(无)",
+      slotHints: parsed.slotHints?.length
+        ? parsed.slotHints.map((h) => `${h.type}: ${h.intent}（${h.constraints.join("、")}）`).join(" / ")
+        : "(无)",
     });
 
     const model = this.opts.modelOverride ?? TASK_MODEL_MAP[taskKind];
