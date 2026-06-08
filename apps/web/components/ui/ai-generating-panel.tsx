@@ -10,12 +10,9 @@ const PHASE_COPY: Array<{ minSeconds: number; text: string }> = [
 ];
 
 function getPhaseCopy(seconds: number): string {
-  for (const phase of PHASE_COPY) {
-    if (seconds >= phase.minSeconds) return phase.text;
-  }
-  // PHASE_COPY is a non-empty compile-time constant; last entry always exists
-  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-  return PHASE_COPY[PHASE_COPY.length - 1]!.text;
+  // PHASE_COPY 末项 minSeconds 为 0，必命中；找不到时兜底文案。
+  const phase = PHASE_COPY.find((p) => seconds >= p.minSeconds);
+  return phase?.text ?? "AI 出卷中…";
 }
 
 export function AiGeneratingPanel({ label }: { label?: string }) {
