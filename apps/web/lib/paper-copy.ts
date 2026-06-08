@@ -114,8 +114,6 @@ export function answerAreaHeight(hint: AnswerAreaHint): string {
   }
 }
 
-export { ZHONGKAO_TEMPLATE_LABEL } from "./zhongkao-blueprint";
-
 export const TEXTBOOK_VERSIONS = [
   "GENERIC",
   "RENJIAO",

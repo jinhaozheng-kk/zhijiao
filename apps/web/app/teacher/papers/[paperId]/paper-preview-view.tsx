@@ -9,7 +9,12 @@ import {
   PaperSpecTable,
   PrintLink,
 } from "../paper-detail-components";
-import { questionTypeLabel, type QuestionTypeValue } from "@/lib/paper-copy";
+import {
+  questionTypeLabel,
+  cognitiveLevelLabel,
+  type QuestionTypeValue,
+  type CognitiveLevelValue,
+} from "@/lib/paper-copy";
 import { ZHONGKAO_TEMPLATE_LABEL } from "@/lib/zhongkao-blueprint";
 
 type PaperItem = {
@@ -226,10 +231,10 @@ export function PaperPreviewView({ paperId }: { paperId: string }) {
                         {slot.questionNo}
                         {slot.isCapstone ? " ★" : ""}
                       </td>
-                      <td className="whitespace-nowrap py-2 pr-3">{slot.questionType}</td>
+                      <td className="whitespace-nowrap py-2 pr-3">{questionTypeLabel(slot.questionType as QuestionTypeValue)}</td>
                       <td className="whitespace-nowrap py-2 pr-3">{slot.points}</td>
                       <td className="whitespace-nowrap py-2 pr-3">{slot.difficulty}</td>
-                      <td className="whitespace-nowrap py-2 pr-3">{slot.cognitiveLevel}</td>
+                      <td className="whitespace-nowrap py-2 pr-3">{cognitiveLevelLabel(slot.cognitiveLevel as CognitiveLevelValue)}</td>
                       <td className="py-2 pr-3">{slot.intent}</td>
                       <td className="py-2">{slot.kpNames.join("、")}</td>
                     </tr>
