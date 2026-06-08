@@ -99,6 +99,7 @@ function answerAreaHintFor(args: {
   return args.points >= 10 ? "large" : "medium";
 }
 
+// 注：KP 按题位轮转分配；若 KP 数 > 24（题位数），多出的 KP 不会被分配（v1 KP 数远小于 24）。
 export function buildZhongkaoMathBlueprint(args: {
   gradeLevel: GradeLevel;
   durationMinutes: number;
@@ -113,6 +114,9 @@ export function buildZhongkaoMathBlueprint(args: {
 
   for (const sec of ZHONGKAO_GENERIC_TEMPLATE) {
     const count = sec.pointsLadder.length;
+    if (sec.difficultyLadder.length !== count) {
+      throw new Error(`模板大题「${sec.sectionType}」分值与难度阶梯长度不一致`);
+    }
     for (let i = 0; i < count; i++) {
       questionNo += 1;
       const isCapstone = i >= count - sec.capstoneTail;
@@ -130,7 +134,7 @@ export function buildZhongkaoMathBlueprint(args: {
         kpIds: [kp.id],
         kpNames: [kp.name],
         intent: sec.intent,
-        constraints: sec.constraints,
+        constraints: [...sec.constraints],
         answerAreaHint: answerAreaHintFor({ questionType: sec.questionType, points, isCapstone }),
         isCapstone,
       });

@@ -72,6 +72,13 @@ describe("buildZhongkaoMathBlueprint", () => {
     expect(bp.isTopical).toBe(true);
   });
 
+  it("3 个及以上 KP 不是专题卷 isTopical=false", () => {
+    const bp = buildZhongkaoMathBlueprint({
+      gradeLevel: "G9", durationMinutes: 120, textbookVersion: "GENERIC", kps: KPS,
+    });
+    expect(bp.isTopical).toBe(false);
+  });
+
   it("客观题 answerAreaHint=short；普通解答题按分值在 medium/large 间", () => {
     const bp = buildZhongkaoMathBlueprint({
       gradeLevel: "G9", durationMinutes: 120, textbookVersion: "GENERIC", kps: KPS,
@@ -80,6 +87,8 @@ describe("buildZhongkaoMathBlueprint", () => {
     expect(choice.answerAreaHint).toBe("short");
     const essayMid = bp.slots.find((s) => s.questionType === "ESSAY" && !s.isCapstone && s.points >= 10)!;
     expect(essayMid.answerAreaHint).toBe("large");
+    const essaySmall = bp.slots.find((s) => s.questionType === "ESSAY" && !s.isCapstone && s.points < 10)!;
+    expect(essaySmall.answerAreaHint).toBe("medium");
   });
 
   it("空 KP 抛错（非法输入）", () => {
@@ -87,6 +96,6 @@ describe("buildZhongkaoMathBlueprint", () => {
       buildZhongkaoMathBlueprint({
         gradeLevel: "G9", durationMinutes: 120, textbookVersion: "GENERIC", kps: [],
       }),
-    ).toThrow(/至少一个知识点|kp/i);
+    ).toThrow(/至少一个知识点/);
   });
 });
