@@ -10,6 +10,7 @@ import {
   PrintLink,
 } from "../paper-detail-components";
 import { questionTypeLabel, type QuestionTypeValue } from "@/lib/paper-copy";
+import { ZHONGKAO_TEMPLATE_LABEL } from "@/lib/zhongkao-blueprint";
 
 type PaperItem = {
   id: string;
@@ -22,6 +23,28 @@ type PaperItem = {
   points: number;
   difficulty: number;
   kpHints: string[];
+};
+
+type ZhongkaoPreviewParams = {
+  styleTemplate?: string;
+  blueprint?: {
+    isTopical: boolean;
+    slots: Array<{
+      questionNo: number;
+      questionType: string;
+      points: number;
+      difficulty: number;
+      cognitiveLevel: string;
+      intent: string;
+      kpNames: string[];
+      isCapstone: boolean;
+    }>;
+  };
+  reviewWarnings?: Array<{
+    slotQuestionNo: number;
+    code: string;
+    message: string;
+  }>;
 };
 
 function PaperItemCard({
@@ -134,6 +157,7 @@ export function PaperPreviewView({ paperId }: { paperId: string }) {
 
   const paper = query.data.paper;
   const disabled = paper.status === "READY";
+  const params = (paper.paramsJson ?? {}) as ZhongkaoPreviewParams;
 
   return (
     <div className="space-y-6">
@@ -160,6 +184,78 @@ export function PaperPreviewView({ paperId }: { paperId: string }) {
       </section>
 
       <PaperSpecTable specTable={query.data.specTable} />
+
+      {params.styleTemplate && (
+        <section
+          className="rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-200"
+          data-testid="zhongkao-blueprint"
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="font-medium">{ZHONGKAO_TEMPLATE_LABEL}</h2>
+            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
+              {params.styleTemplate}
+            </span>
+            {params.blueprint?.isTopical ? (
+              <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700">
+                专题练习卷
+              </span>
+            ) : null}
+          </div>
+
+          <details className="mt-3">
+            <summary className="cursor-pointer text-sm text-slate-600">
+              命题结构（{params.blueprint?.slots.length ?? 0} 题）
+            </summary>
+            <div className="mt-3 overflow-x-auto">
+              <table className="min-w-full text-left text-xs">
+                <thead className="text-slate-500">
+                  <tr className="border-b">
+                    <th className="whitespace-nowrap py-2 pr-3 font-medium">题号</th>
+                    <th className="whitespace-nowrap py-2 pr-3 font-medium">题型</th>
+                    <th className="whitespace-nowrap py-2 pr-3 font-medium">分值</th>
+                    <th className="whitespace-nowrap py-2 pr-3 font-medium">难度</th>
+                    <th className="whitespace-nowrap py-2 pr-3 font-medium">能力</th>
+                    <th className="py-2 pr-3 font-medium">命题意图</th>
+                    <th className="py-2 font-medium">知识点</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {(params.blueprint?.slots ?? []).map((slot) => (
+                    <tr key={slot.questionNo}>
+                      <td className="whitespace-nowrap py-2 pr-3">
+                        {slot.questionNo}
+                        {slot.isCapstone ? " ★" : ""}
+                      </td>
+                      <td className="whitespace-nowrap py-2 pr-3">{slot.questionType}</td>
+                      <td className="whitespace-nowrap py-2 pr-3">{slot.points}</td>
+                      <td className="whitespace-nowrap py-2 pr-3">{slot.difficulty}</td>
+                      <td className="whitespace-nowrap py-2 pr-3">{slot.cognitiveLevel}</td>
+                      <td className="py-2 pr-3">{slot.intent}</td>
+                      <td className="py-2">{slot.kpNames.join("、")}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </details>
+
+          {params.reviewWarnings && params.reviewWarnings.length > 0 ? (
+            <div
+              className="mt-3 rounded-lg bg-amber-50 p-3 text-xs text-amber-800"
+              data-testid="review-warnings"
+            >
+              <p className="font-medium">建议人工核对（{params.reviewWarnings.length}）</p>
+              <ul className="mt-1 list-disc pl-4">
+                {params.reviewWarnings.map((warning, index) => (
+                  <li key={`${warning.slotQuestionNo}-${warning.code}-${index}`}>
+                    第 {warning.slotQuestionNo} 题：{warning.message}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </section>
+      )}
 
       <section className="space-y-4">
         {paper.items.map((item) => (

@@ -12,6 +12,9 @@ function item(p: Partial<ExamLayoutPaperItem>): ExamLayoutPaperItem {
     rubricMd: p.rubricMd ?? null,
     points: p.points ?? 5,
     position: p.position ?? 1,
+    answerAreaHint: p.answerAreaHint,
+    isCapstone: p.isCapstone,
+    source: p.source,
   };
 }
 
@@ -71,5 +74,20 @@ describe("buildExamLayout", () => {
     ]);
     expect(layout.sections[0]!.items.map((i) => i.item.id)).toEqual(["c1", "c2"]);
     expect(layout.sections[0]!.items.map((i) => i.questionNo)).toEqual([1, 2]);
+  });
+
+  it("passes zhongkao answer area and capstone metadata through", () => {
+    const layout = buildExamLayout([
+      item({
+        id: "capstone",
+        type: "ESSAY",
+        position: 24,
+        answerAreaHint: "extraLarge",
+        isCapstone: true,
+      }),
+    ]);
+
+    expect(layout.sections[0]!.items[0]!.item.answerAreaHint).toBe("extraLarge");
+    expect(layout.sections[0]!.items[0]!.item.isCapstone).toBe(true);
   });
 });

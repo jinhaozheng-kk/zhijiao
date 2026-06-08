@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   TEXTBOOK_VERSIONS,
+  answerAreaHeight,
   textbookVersionLabel,
   examSectionTitle,
   EXAM_NOTICE,
@@ -28,5 +29,16 @@ describe("paper-copy 统考扩展", () => {
     for (const bad of ["提分", "涨分", "保过", "必考", "分数"]) {
       expect(joined).not.toContain(bad);
     }
+  });
+});
+
+describe("answerAreaHeight", () => {
+  it.each([
+    ["short", "2.4cm"],
+    ["medium", "5cm"],
+    ["large", "8.5cm"],
+    ["extraLarge", "11.5cm"],
+  ] as const)("maps %s to %s", (hint, css) => {
+    expect(answerAreaHeight(hint)).toBe(css);
   });
 });

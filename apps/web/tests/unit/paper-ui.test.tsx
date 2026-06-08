@@ -2,6 +2,15 @@ import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { PaperSpecTable } from "@/app/teacher/papers/paper-detail-components";
 import { PaperGenerationForm, computePaperTotals } from "@/app/teacher/papers/new/paper-generation-form";
+import { PaperPreviewView } from "@/app/teacher/papers/[paperId]/paper-preview-view";
+
+const mocks = vi.hoisted(() => ({
+  paperGetResult: {
+    isLoading: false,
+    isError: false,
+    data: null as unknown,
+  },
+}));
 
 // ---------------------------------------------------------------------------
 // Mock dependencies required by PaperGenerationForm (client component)
@@ -16,8 +25,34 @@ vi.mock("@/components/ui/ai-generating-panel", () => ({
 
 vi.mock("@/lib/trpc-client", () => ({
   trpc: {
+    useUtils: () => ({
+      paper: {
+        get: { invalidate: vi.fn() },
+      },
+    }),
     paper: {
+      get: {
+        useQuery: () => mocks.paperGetResult,
+      },
       generate: {
+        useMutation: () => ({
+          isPending: false,
+          mutate: vi.fn(),
+        }),
+      },
+      markReady: {
+        useMutation: () => ({
+          isPending: false,
+          mutate: vi.fn(),
+        }),
+      },
+      updateItemPoints: {
+        useMutation: () => ({
+          isPending: false,
+          mutate: vi.fn(),
+        }),
+      },
+      removeItem: {
         useMutation: () => ({
           isPending: false,
           mutate: vi.fn(),
@@ -78,6 +113,68 @@ describe("PaperGenerationForm 默认状态静态渲染", () => {
     // Default: SINGLE_CHOICE 6×3=18 + CALCULATION 4×8=32 = 50 points, 10 questions
     expect(html).toContain(">10<");
     expect(html).toContain(">50<");
+  });
+
+  it("renders a one-click zhongkao generation entry", () => {
+    const html = renderToStaticMarkup(
+      <PaperGenerationForm
+        subjectId="s1"
+        kps={[{ id: "k1", name: "kp1" }]}
+      />,
+    );
+
+    expect(html).toContain('data-testid="generate-zhongkao"');
+  });
+});
+
+describe("PaperPreviewView zhongkao blueprint panel", () => {
+  it("renders blueprint slots and review warnings from paramsJson", () => {
+    mocks.paperGetResult = {
+      isLoading: false,
+      isError: false,
+      data: {
+        paper: {
+          id: "p1",
+          title: "Zhongkao Paper",
+          status: "DRAFT",
+          paramsJson: {
+            styleTemplate: "JUNIOR_MATH_ZHONGKAO_GENERIC_V1",
+            blueprint: {
+              isTopical: true,
+              slots: [
+                {
+                  questionNo: 24,
+                  questionType: "ESSAY",
+                  points: 12,
+                  difficulty: 5,
+                  cognitiveLevel: "ANALYZE",
+                  intent: "capstone intent",
+                  kpNames: ["function"],
+                  isCapstone: true,
+                },
+              ],
+            },
+            reviewWarnings: [
+              {
+                slotQuestionNo: 24,
+                code: "STEM_TOO_LONG",
+                message: "check stem length",
+              },
+            ],
+          },
+          items: [],
+        },
+        specTable: { rows: [], totalCount: 0, totalPoints: 0 },
+      },
+    };
+
+    const html = renderToStaticMarkup(<PaperPreviewView paperId="p1" />);
+
+    expect(html).toContain('data-testid="zhongkao-blueprint"');
+    expect(html).toContain("JUNIOR_MATH_ZHONGKAO_GENERIC_V1");
+    expect(html).toContain("capstone intent");
+    expect(html).toContain('data-testid="review-warnings"');
+    expect(html).toContain("check stem length");
   });
 });
 

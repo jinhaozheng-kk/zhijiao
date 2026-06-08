@@ -15,6 +15,7 @@ import {
   type QuestionTypeValue,
   type TextbookVersion,
 } from "@/lib/paper-copy";
+import { ZHONGKAO_TEMPLATE_ID } from "@/lib/zhongkao-blueprint";
 
 type KpOption = { id: string; name: string };
 type SectionConfig = { count: number; pointsPerItem: number };
@@ -119,6 +120,19 @@ export function PaperGenerationForm({
         pointsPerItem: sections[t]!.pointsPerItem,
       })),
       difficultyRange: [diffMin, diffMax],
+      durationMinutes,
+      textbookVersion,
+      clientRequestId: crypto.randomUUID(),
+    });
+  }
+
+  function submitZhongkao() {
+    setError(null);
+    generate.mutate({
+      subjectId,
+      kpIds: selectedKpIds,
+      gradeLevel,
+      styleTemplate: ZHONGKAO_TEMPLATE_ID,
       durationMinutes,
       textbookVersion,
       clientRequestId: crypto.randomUUID(),
@@ -279,6 +293,21 @@ export function PaperGenerationForm({
           <button type="button" onClick={submit} className="underline" data-testid="generate-retry">重试</button>
         </p>
       )}
+
+      <div className="space-y-2">
+        <button
+          type="button"
+          disabled={generate.isPending || selectedKpIds.length === 0}
+          onClick={submitZhongkao}
+          className="rounded-full border border-slate-950 px-5 py-3 text-sm font-medium text-slate-950 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+          data-testid="generate-zhongkao"
+        >
+          一键生成中考风格卷（120 分 · 24 题）
+        </button>
+        <p className="text-xs text-slate-500">
+          中考风格卷按固定命题结构生成：选择 10 题、填空 6 题、解答 8 题，分值与结构由模板决定。
+        </p>
+      </div>
 
       <button
         type="button"

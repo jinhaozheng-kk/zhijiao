@@ -18,6 +18,10 @@
 - E2E：`pnpm --filter @zhijiao/web test:e2e`
 - 全量类型：`pnpm typecheck`
 
+**执行期修订（2026-06-08）：** `DIFFICULTY_DRIFT` 审题规则在 Task 8 集成时移除——v1 按题型批量生成 + slot 难度权威覆盖，原始 AI 难度与具体 slot 难度不可比，该 BLOCKER 会误杀几乎所有卷。改为不校验难度（per-slot 生成落地后再恢复，spec §10）。连带：Task 8 的 BLOCKER 退款测试改用 `EMPTY_ANSWER` 触发（非难度漂移）。
+
+**执行期完成（2026-06-08）：** Phase 2 Task 9–15 已完成：打印作答区高度 helper、layout 元数据透传、学生/教师卷打印升级、print-view 蓝图透传、教师卷来源标记、一键中考入口、预览页蓝图/warning 面板、teacher-paper E2E 和文档 probes 均已落地。`playwright test --list` 当前为 27 tests；全量 E2E 为 27/27。
+
 **两阶段（可分别合并）：**
 - **Phase 1（Task 1–8）** 蓝图 + 生成 + 自动审题 + 合规黑词。产出可工作软件：教师可生成一份「中考风格」卷并落库，用**现有**打印页即可查看。
 - **Phase 2（Task 9–14）** 真题卷式 A4 打印渲染器升级（作答区高度、客观题答题栏、分页规则、压轴分页、蓝图预览）。产出可工作软件：打印学生卷/教师卷直接 A4 可用。

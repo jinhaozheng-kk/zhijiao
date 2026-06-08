@@ -99,6 +99,23 @@ export function paperItemSourceLabel(source: string): string {
   return source;
 }
 
+export type AnswerAreaHint = "short" | "medium" | "large" | "extraLarge";
+
+export function answerAreaHeight(hint: AnswerAreaHint): string {
+  switch (hint) {
+    case "short":
+      return "2.4cm";
+    case "medium":
+      return "5cm";
+    case "large":
+      return "8.5cm";
+    case "extraLarge":
+      return "11.5cm";
+  }
+}
+
+export { ZHONGKAO_TEMPLATE_LABEL } from "./zhongkao-blueprint";
+
 export const TEXTBOOK_VERSIONS = [
   "GENERIC",
   "RENJIAO",

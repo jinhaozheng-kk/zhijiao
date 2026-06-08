@@ -1,6 +1,12 @@
 "use client";
 
-import { TEXTBOOK_VERSIONS, textbookVersionLabel, type TextbookVersion } from "@/lib/paper-copy";
+import {
+  TEXTBOOK_VERSIONS,
+  answerAreaHeight,
+  paperItemSourceLabel,
+  textbookVersionLabel,
+  type TextbookVersion,
+} from "@/lib/paper-copy";
 import type { ExamLayout, ExamLayoutSection } from "@/lib/paper-exam-layout";
 
 export const EXAM_PRINT_CSS = `
@@ -121,7 +127,7 @@ export function StudentSection({ section }: { section: ExamLayoutSection }) {
       </h2>
       <div className="mt-2 space-y-4">
         {section.items.map(({ questionNo, item }) => (
-          <article key={item.id}>
+          <article key={item.id} className={item.isCapstone ? "print-break-before" : undefined}>
             <p className="whitespace-pre-wrap text-sm leading-7 text-slate-900">
               {questionNo}. {item.stemMd}
             </p>
@@ -130,7 +136,13 @@ export function StudentSection({ section }: { section: ExamLayoutSection }) {
               <p className="mt-1 text-sm text-slate-400">答：______________________</p>
             )}
             {!section.isObjective && section.type !== "FILL_BLANK" && (
-              <div className="answer-space mt-1" style={{ minHeight: "4.5cm", borderBottom: "1px solid #e2e8f0" }} />
+              <div
+                className="answer-space mt-1"
+                style={{
+                  minHeight: answerAreaHeight(item.answerAreaHint ?? "medium"),
+                  borderBottom: "1px solid #e2e8f0",
+                }}
+              />
             )}
           </article>
         ))}
@@ -153,6 +165,9 @@ export function TeacherSection({ section }: { section: ExamLayoutSection }) {
               {questionNo}. {item.stemMd}
             </p>
             <OptionsList optionsJson={item.optionsJson} />
+            <p className="mt-0.5 text-xs text-slate-400">
+              来源：{paperItemSourceLabel(item.source ?? "AI_GENERATED")}
+            </p>
             <p className="mt-1 text-sm leading-7"><span className="font-medium">答案：</span>{item.answerMd}</p>
             <p className="mt-1 whitespace-pre-wrap text-sm leading-7"><span className="font-medium">解析：</span>{item.solutionMd}</p>
             {item.rubricMd && (

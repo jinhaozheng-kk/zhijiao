@@ -1,4 +1,4 @@
-import { examSectionTitle, type QuestionTypeValue } from "./paper-copy";
+import { examSectionTitle, type AnswerAreaHint, type QuestionTypeValue } from "./paper-copy";
 
 export interface ExamLayoutPaperItem {
   id: string;
@@ -10,6 +10,9 @@ export interface ExamLayoutPaperItem {
   rubricMd: string | null;
   points: number;
   position: number;
+  answerAreaHint?: AnswerAreaHint;
+  isCapstone?: boolean;
+  source?: string;
 }
 
 export interface ExamLayoutItem {

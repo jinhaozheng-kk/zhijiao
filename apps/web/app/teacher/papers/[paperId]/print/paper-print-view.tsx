@@ -7,7 +7,14 @@ import { SkeletonList } from "@/components/ui/skeleton";
 import { StatePanel } from "@/components/ui/state-panel";
 import { PaperSpecTable } from "../../paper-detail-components";
 import { buildExamLayout } from "@/lib/paper-exam-layout";
-import { EXAM_NOTICE, gradeLevelLabel, type GradeLevel, type TextbookVersion, type QuestionTypeValue } from "@/lib/paper-copy";
+import {
+  EXAM_NOTICE,
+  gradeLevelLabel,
+  type AnswerAreaHint,
+  type GradeLevel,
+  type TextbookVersion,
+  type QuestionTypeValue,
+} from "@/lib/paper-copy";
 import {
   EXAM_PRINT_CSS,
   SealLine,
@@ -21,6 +28,13 @@ type PaperParams = {
   gradeLevel?: GradeLevel;
   textbookVersion?: TextbookVersion;
   durationMinutes?: number;
+  blueprint?: {
+    slots: Array<{
+      questionNo: number;
+      answerAreaHint: AnswerAreaHint;
+      isCapstone: boolean;
+    }>;
+  };
 };
 
 export function PaperPrintView({ paperId }: { paperId: string }) {
@@ -35,6 +49,7 @@ export function PaperPrintView({ paperId }: { paperId: string }) {
 
   const paper = query.data.paper;
   const params = (paper.paramsJson ?? {}) as PaperParams;
+  const slotByPosition = new Map((params.blueprint?.slots ?? []).map((s) => [s.questionNo, s]));
   const layout = buildExamLayout(
     paper.items.map((i) => ({
       id: i.id,
@@ -46,6 +61,9 @@ export function PaperPrintView({ paperId }: { paperId: string }) {
       rubricMd: i.rubricMd,
       points: i.points,
       position: i.position,
+      answerAreaHint: slotByPosition.get(i.position)?.answerAreaHint,
+      isCapstone: slotByPosition.get(i.position)?.isCapstone,
+      source: i.source,
     })),
   );
   const gradeLabel = params.gradeLevel ? gradeLevelLabel(params.gradeLevel) : "";

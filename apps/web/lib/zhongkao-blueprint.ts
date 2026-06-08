@@ -3,10 +3,10 @@ import type {
   QuestionTypeValue,
   TextbookVersion,
   CognitiveLevelValue,
+  AnswerAreaHint,
 } from "./paper-copy";
 
 export type SectionType = "选择题" | "填空题" | "解答题";
-export type AnswerAreaHint = "short" | "medium" | "large" | "extraLarge";
 
 export const ZHONGKAO_TEMPLATE_ID = "JUNIOR_MATH_ZHONGKAO_GENERIC_V1" as const;
 export const ZHONGKAO_TEMPLATE_LABEL = "初中数学通用中考风格 v1";

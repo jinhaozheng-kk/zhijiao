@@ -48,3 +48,28 @@ test("教师按题型出卷并查看统考版式学生卷/教师卷", async ({ p
   await expect(page.getByTestId("paper-teacher")).toContainText("答案：");
   await expect(page.getByTestId("paper-teacher")).toContainText("解析：");
 });
+
+test("教师一键生成中考风格卷并打印学生/教师卷", async ({ page, request }) => {
+  await loginViaOtp(page, request, "13800000002");
+
+  await page.goto("/teacher/papers/new");
+  await expect(page.getByTestId("kp-picker")).toBeVisible();
+  await page.getByTestId("generate-zhongkao").click();
+
+  await page.waitForURL(/\/teacher\/papers\/[^/]+$/, { timeout: 60_000 });
+  await expect(page.getByTestId("zhongkao-blueprint")).toBeVisible({ timeout: 15_000 });
+
+  await page.getByRole("link", { name: "打印/导出" }).click();
+  await page.waitForURL(/\/teacher\/papers\/[^/]+\/print$/, { timeout: 15_000 });
+
+  await expect(page.getByTestId("paper-student")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText("选择题答题栏")).toBeVisible();
+  await expect(page.getByTestId("paper-student")).not.toContainText("答案：");
+  await page.screenshot({ path: "output/playwright/zhongkao-student.png", fullPage: true });
+
+  await page.getByTestId("variant-teacher").click();
+  await expect(page.getByTestId("paper-teacher")).toBeVisible();
+  await expect(page.getByTestId("paper-teacher")).toContainText("答案：");
+  await expect(page.getByTestId("paper-teacher")).toContainText("来源：");
+  await page.screenshot({ path: "output/playwright/zhongkao-teacher.png", fullPage: true });
+});

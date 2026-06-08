@@ -120,3 +120,15 @@
 - [ ] mock 按 `SECTIONS_JSON`（全角冒号）题数/题型出题；KP↔subject mismatch 仍补偿净零不落 Paper；非教师扣费前 FORBIDDEN。
 - [ ] 旧 Paper（无新 paramsJson 字段）仍能在新打印页渲染（卷头省略时长/教材版本）。
 - [ ] 表单：`computePaperTotals` 满分汇总正确；未引入 jsdom/testing-library（沿用 `renderToStaticMarkup` 测试范式）。
+
+## Plan 19 中考风格出卷 probes
+
+93. **中考蓝图纯函数**：`pnpm.cmd --filter @zhijiao/web test -- tests/unit/zhongkao-blueprint.test.ts` 应覆盖 24 题、总分 120、末 2 题压轴、KP 轮转覆盖、作答区 hint、`blueprintToAiSections`、`assignItemsToSlots`、`applySlotMetadata`。
+94. **自动审题规则**：`pnpm.cmd --filter @zhijiao/web test -- tests/unit/paper-review.test.ts` 应覆盖类型不匹配、选项数、空答案/解析、禁词、题干过长、组卷聚合等规则；`DIFFICULTY_DRIFT` 不应回归，除非生成改为 per-slot。
+95. **AI schema/prompt v2**：`pnpm.cmd --filter @zhijiao/ai test -- tests/paper-gen-schema.test.ts tests/generate-paper.test.ts` 应覆盖 `styleRules` / `slotHints` 入参和 v2 prompt 插值；普通 v1 出卷不受影响。
+96. **合规黑词**：`pnpm.cmd --filter @zhijiao/domain test -- tests/compliance.test.ts` 应覆盖押题、必考、预测题、原题还原、考前答案等中高考营销禁词。
+97. **中考生成集成 + 普通出卷回归**：`pnpm.cmd --filter @zhijiao/web test -- tests/integration/paper-generate-zhongkao.test.ts tests/integration/paper-generate.test.ts` 应确认 `styleTemplate` 落库、`paramsJson.blueprint.slots` 为 24、分值以 slot 为准、BLOCKER 失败走补偿，且既有手动 sections 模式不回退。
+98. **打印排版 SSR**：`pnpm.cmd --filter @zhijiao/web test -- tests/unit/paper-copy.test.ts tests/unit/paper-exam-layout.test.ts tests/unit/exam-paper-components.test.tsx tests/unit/paper-ui.test.tsx` 应覆盖作答区高度映射、layout 透传 `answerAreaHint/isCapstone/source`、学生卷不泄露答案、教师卷来源标记、表单一键入口、预览页蓝图/warnings。
+99. **类型检查**：`pnpm.cmd --filter @zhijiao/web typecheck` 和全量 `pnpm.cmd typecheck` 应通过；重点关注 `AnswerAreaHint` 类型只从 `paper-copy` 统一导出。
+100. **中考 E2E 闭环**：`pnpm.cmd --filter @zhijiao/web test:e2e -- e2e/teacher-paper.spec.ts` 应为 2 passed，覆盖普通出卷和一键中考出卷，学生卷无答案、教师卷含答案/来源、截图落到 `apps/web/output/playwright/`。
+101. **E2E 总数同步**：新增中考 teacher-paper 用例后，`pnpm.cmd exec playwright test --list` 的 `Total` 当前为 27；全量 `pnpm.cmd --filter @zhijiao/web test:e2e` 应为 27/27。这个数字需要和 `implementation-state.md` 的 E2E 状态保持一致。

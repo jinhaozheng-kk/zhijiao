@@ -210,3 +210,15 @@
 - UI（`TutorForm.tsx`）：file input（`accept="image/*" capture="environment"`）→ `fetch /api/uploads/tutor-image` → `tutor.askImage`；pending 渲 `AiGeneratingPanel label="识别题目并讲解中…"`；可编辑转写 textarea（`tutor-transcript`）+「纠正题面，按文本重答」（`tutor-image-correct`）把转写写进 stem 并走 **1-credit 文本 `tutor.ask`**（vision 只付一次）；共享 `view = data ?? imageData` 让输出块 + `ErrorAnalysisCard` 两路径共渲（图片路径 `actualAnswerMd=undefined`）。`error-copy.ts` 加 `UNSUPPORTED_TYPE/TOO_LARGE/FILE_REQUIRED` 中文文案。
 - E2E `e2e/image-tutor.spec.ts` 用独占 seed 手机 **13800000005**（dev-admin-01，persona STUDENT，100 credits）——`13800000004` 已被 error-book + targeted-training 占用，并行 worker 抢同手机号 OTP 会 flake。mock storage + mock AI 全确定性。
 - 设计代价 / 已知留白：真 OSS 未激活（`AliyunOssAdapter` stub，post-ICP）；单次多模态调用 → 转写脱敏是**后置**非前置（原图字节本身会到模型，vision 场景接受）；同 stem 复 upsert 保留首图。`error.diagnose`（按文本重答路径）仍只对文本作答前置脱敏。
+
+**中考风格出卷现状**（2026-06-08）：
+- `JUNIOR_MATH_ZHONGKAO_GENERIC_V1` 不新增 Prisma schema / migration；命题蓝图作为生成快照写入 `Paper.paramsJson.blueprint`，并继续沿用 `Paper` / `PaperItem`。
+- 默认结构为 24 题 120 分：选择题 10×3、填空题 6×3、解答题 6+6+8+8+10+10+12+12；解答题统一映射为 `ESSAY`，保持单一“大题”观感。
+- slot 是分值、难度、能力层级、KP、作答区高度和压轴标记的权威来源；生成回来的题按题型顺序 zip 到 slot 后，`points` / `difficulty` / `cognitiveLevel` 以 slot 覆盖 AI 自报值。
+- v1 生成策略仍是按题型小批量生成，不改成逐题接口。自动审题 BLOCKER 当前策略为整卷失败并走既有扣费补偿；逐题重生留后续版本。
+- `DIFFICULTY_DRIFT` 审题规则已移除：批量生成阶段 AI 自报难度与具体 slot 难度不可比，当前只在 slot 落地后覆盖难度，未来 per-slot 生成后再恢复。
+- 中考模式使用 `paper-gen/v2.md` 的风格规则和 slot hints；普通手动 sections 出卷仍走 v1 prompt。
+- 新增合规黑词覆盖“押题 / 必考 / 预测题 / 原题还原 / 考前答案”等表达。教师卷显示题目来源标记，学生卷不显示。
+- 打印页读取 `paramsJson.blueprint.slots` 透传 `answerAreaHint` / `isCapstone`，学生卷作答区高度为 short 2.4cm、medium 5cm、large 8.5cm、extraLarge 11.5cm，压轴题强制分页。
+- 预览页显示模板名、蓝图结构和 review warnings；生成表单新增“一键生成中考风格卷”入口。
+- E2E 状态：新增 teacher-paper 中考闭环后，当前总量为 27/27（以 `pnpm.cmd exec playwright test --list` 的 `Total` 为准，需和 `merge-verification.md` 同步）。
