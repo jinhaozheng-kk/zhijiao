@@ -32,6 +32,10 @@ const isPrismaUnique = (e: unknown): boolean =>
 
 function ratelimitStore(redis: import("ioredis").default) { return new RedisRateLimitStore(redis); }
 
+function shouldApplyOtpSendRateLimit(): boolean {
+  return process.env.E2E_TEST_HOOKS !== "1";
+}
+
 function toTRPCError(reason: string, code: "BAD_REQUEST" | "TOO_MANY_REQUESTS" | "UNAUTHORIZED" | "INTERNAL_SERVER_ERROR" | "CONFLICT", extra?: object): never {
   throw new TRPCError({ code, message: reason, cause: { reason, ...extra } });
 }
@@ -40,15 +44,17 @@ export const authRouter = router({
   otpRequest: publicProcedure
     .input(z.object({ phone: PhoneSchema }))
     .mutation(async ({ ctx, input }) => {
-      const store = ratelimitStore(ctx.redis);
-      try {
-        const r1 = await takeRule(store, RULE_OTP_SEND_PHONE, input.phone);
-        if (!r1.allowed) toTRPCError("OTP_SEND_TOO_FREQUENT", "TOO_MANY_REQUESTS", { retryAfterMs: r1.retryAfterMs });
-        const r2 = await takeRule(store, RULE_OTP_SEND_IP, ctx.ip);
-        if (!r2.allowed) toTRPCError("OTP_SEND_TOO_FREQUENT", "TOO_MANY_REQUESTS", { retryAfterMs: r2.retryAfterMs });
-      } catch (e) {
-        if (e instanceof RateLimitBackendDownError) toTRPCError("RATELIMIT_BACKEND_DOWN", "INTERNAL_SERVER_ERROR");
-        throw e;
+      if (shouldApplyOtpSendRateLimit()) {
+        const store = ratelimitStore(ctx.redis);
+        try {
+          const r1 = await takeRule(store, RULE_OTP_SEND_PHONE, input.phone);
+          if (!r1.allowed) toTRPCError("OTP_SEND_TOO_FREQUENT", "TOO_MANY_REQUESTS", { retryAfterMs: r1.retryAfterMs });
+          const r2 = await takeRule(store, RULE_OTP_SEND_IP, ctx.ip);
+          if (!r2.allowed) toTRPCError("OTP_SEND_TOO_FREQUENT", "TOO_MANY_REQUESTS", { retryAfterMs: r2.retryAfterMs });
+        } catch (e) {
+          if (e instanceof RateLimitBackendDownError) toTRPCError("RATELIMIT_BACKEND_DOWN", "INTERNAL_SERVER_ERROR");
+          throw e;
+        }
       }
       const { code } = await issueOtp(ctx.db, { phone: input.phone, purpose: "LOGIN", pepper: env.OTP_PEPPER, ipCreated: ctx.ip, userAgent: ctx.ua });
       const sms = buildSmsAdapter(process.env);

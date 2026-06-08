@@ -15,6 +15,10 @@ import {
 
 const store = (redis: import("ioredis").default) => new RedisRateLimitStore(redis);
 
+function shouldApplyOtpSendRateLimit(): boolean {
+  return process.env.E2E_TEST_HOOKS !== "1";
+}
+
 async function ownPhone(db: typeof import("@zhijiao/db").prisma, userId: string): Promise<string | null> {
   const id = await db.authIdentity.findFirst({ where: { userId, provider: "PHONE", providerScope: "GLOBAL" }, select: { providerUserId: true } });
   return id?.providerUserId ?? null;
@@ -41,14 +45,16 @@ export const dsarRouter = router({
   sendDeletionOtp: authedProcedure.mutation(async ({ ctx }) => {
     const phone = await ownPhone(ctx.db, ctx.auth.userId);
     if (!phone) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "未绑定手机号,请通过客服渠道办理注销", cause: { reason: "DSAR_NO_PHONE" } });
-    try {
-      const a = await takeRule(store(ctx.redis), RULE_OTP_SEND_PHONE, phone);
-      if (!a.allowed) throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: "验证码发送过于频繁", cause: { reason: "OTP_SEND_TOO_FREQUENT" } });
-      const b = await takeRule(store(ctx.redis), RULE_OTP_SEND_IP, ctx.ip);
-      if (!b.allowed) throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: "验证码发送过于频繁", cause: { reason: "OTP_SEND_TOO_FREQUENT" } });
-    } catch (e) {
-      if (e instanceof RateLimitBackendDownError) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "服务暂时不可用", cause: { reason: "RATELIMIT_BACKEND_DOWN" } });
-      throw e;
+    if (shouldApplyOtpSendRateLimit()) {
+      try {
+        const a = await takeRule(store(ctx.redis), RULE_OTP_SEND_PHONE, phone);
+        if (!a.allowed) throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: "验证码发送过于频繁", cause: { reason: "OTP_SEND_TOO_FREQUENT" } });
+        const b = await takeRule(store(ctx.redis), RULE_OTP_SEND_IP, ctx.ip);
+        if (!b.allowed) throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: "验证码发送过于频繁", cause: { reason: "OTP_SEND_TOO_FREQUENT" } });
+      } catch (e) {
+        if (e instanceof RateLimitBackendDownError) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "服务暂时不可用", cause: { reason: "RATELIMIT_BACKEND_DOWN" } });
+        throw e;
+      }
     }
     const { code } = await issueOtp(ctx.db, { phone, purpose: "DSAR_DELETION", pepper: env.OTP_PEPPER, ipCreated: ctx.ip, userAgent: ctx.ua });
     if (process.env.E2E_TEST_HOOKS === "1") await ctx.redis.set(`e2e:last-otp:${phone}`, code, "EX", 300);
