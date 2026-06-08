@@ -56,3 +56,96 @@ export const ZHONGKAO_GENERIC_TEMPLATE: BlueprintTemplateSection[] = [
     capstoneTail: 2,
   },
 ];
+
+// ── Task 2: buildZhongkaoMathBlueprint ──────────────────────────────────────
+
+export interface BlueprintSlot {
+  questionNo: number;
+  sectionType: SectionType;
+  questionType: QuestionTypeValue;
+  points: number;
+  difficulty: number;
+  cognitiveLevel: CognitiveLevelValue;
+  kpIds: string[];
+  kpNames: string[];
+  intent: string;
+  constraints: string[];
+  answerAreaHint: AnswerAreaHint;
+  isCapstone: boolean;
+}
+
+export interface ZhongkaoMathBlueprint {
+  styleTemplate: typeof ZHONGKAO_TEMPLATE_ID;
+  blueprintVersion: "v1";
+  examStage: "ZHONGKAO";
+  subject: "MATH";
+  gradeLevel: GradeLevel;
+  durationMinutes: number;
+  textbookVersion: TextbookVersion;
+  isTopical: boolean;
+  slots: BlueprintSlot[];
+}
+
+const TOPICAL_KP_THRESHOLD = 3; // 少于 3 个 KP → 专题练习卷
+
+function answerAreaHintFor(args: {
+  questionType: QuestionTypeValue;
+  points: number;
+  isCapstone: boolean;
+}): AnswerAreaHint {
+  if (args.questionType === "SINGLE_CHOICE" || args.questionType === "MULTI_CHOICE") return "short";
+  if (args.questionType === "FILL_BLANK") return "short";
+  if (args.isCapstone) return "extraLarge";
+  return args.points >= 10 ? "large" : "medium";
+}
+
+export function buildZhongkaoMathBlueprint(args: {
+  gradeLevel: GradeLevel;
+  durationMinutes: number;
+  textbookVersion: TextbookVersion;
+  kps: Array<{ id: string; name: string }>;
+}): ZhongkaoMathBlueprint {
+  if (args.kps.length === 0) throw new Error("中考风格卷至少一个知识点");
+
+  const slots: BlueprintSlot[] = [];
+  let questionNo = 0;
+  let kpCursor = 0;
+
+  for (const sec of ZHONGKAO_GENERIC_TEMPLATE) {
+    const count = sec.pointsLadder.length;
+    for (let i = 0; i < count; i++) {
+      questionNo += 1;
+      const isCapstone = i >= count - sec.capstoneTail;
+      const points = sec.pointsLadder[i]!;
+      const difficulty = sec.difficultyLadder[i]!;
+      const kp = args.kps[kpCursor % args.kps.length]!;
+      kpCursor += 1;
+      slots.push({
+        questionNo,
+        sectionType: sec.sectionType,
+        questionType: sec.questionType,
+        points,
+        difficulty,
+        cognitiveLevel: sec.cognitiveLevel,
+        kpIds: [kp.id],
+        kpNames: [kp.name],
+        intent: sec.intent,
+        constraints: sec.constraints,
+        answerAreaHint: answerAreaHintFor({ questionType: sec.questionType, points, isCapstone }),
+        isCapstone,
+      });
+    }
+  }
+
+  return {
+    styleTemplate: ZHONGKAO_TEMPLATE_ID,
+    blueprintVersion: "v1",
+    examStage: "ZHONGKAO",
+    subject: "MATH",
+    gradeLevel: args.gradeLevel,
+    durationMinutes: args.durationMinutes,
+    textbookVersion: args.textbookVersion,
+    isTopical: args.kps.length < TOPICAL_KP_THRESHOLD,
+    slots,
+  };
+}
