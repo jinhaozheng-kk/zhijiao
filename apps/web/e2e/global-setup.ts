@@ -76,7 +76,8 @@ async function resetE2eRateLimits(): Promise<void> {
   const { default: Redis } = await import("ioredis");
   const redis = new Redis(url);
   try {
-    for (const pattern of ["otp:send:*", "otp:verify:*", "register:*", "refresh:*", "analytics:*"]) {
+    // 含慢回血/fail-close 桶（dsar:export 容量 2、回血 1/天），否则同日重跑会被抽干（见 dsar.spec 导出步骤）。
+    for (const pattern of ["otp:send:*", "otp:verify:*", "register:*", "refresh:*", "analytics:*", "dsar:*", "topup:*"]) {
       const keys = await redis.keys(pattern);
       if (keys.length) await redis.del(...keys);
     }
