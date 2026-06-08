@@ -47,6 +47,7 @@ test-results/
 test-results-*/
 playwright-report/
 tour-shots/
+output/
 
 # Prisma
 prisma/migrations/dev/
