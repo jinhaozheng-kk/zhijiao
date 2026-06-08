@@ -13,6 +13,19 @@ import { getAiRouter } from "@/lib/ai-client";
 import { ComplianceRejectedError, type PaperGenerationOutput } from "@zhijiao/ai";
 import { createPaperStemDeduper, selectBankQuestions, persistGeneratedPaper } from "../lib/paper-generation.js";
 import { buildSpecTable } from "../lib/paper-spec-table.js";
+import type { Prisma, QuestionType } from "@prisma/client";
+import {
+  buildZhongkaoMathBlueprint,
+  blueprintToAiSections,
+  assignItemsToSlots,
+  applySlotMetadata,
+  ZHONGKAO_TEMPLATE_ID,
+  type ZhongkaoMathBlueprint,
+  type AssignedPair,
+  type AssignableItem,
+} from "@/lib/zhongkao-blueprint";
+import { reviewAssembledPaper, type PaperReviewIssue } from "../lib/paper-review.js";
+import { type TextbookVersion, type QuestionTypeValue, type CognitiveLevelValue } from "@/lib/paper-copy";
 
 const QType = z.enum(["SINGLE_CHOICE", "MULTI_CHOICE", "FILL_BLANK", "CALCULATION", "PROOF", "ESSAY"]);
 const Section = z.object({
@@ -20,21 +33,29 @@ const Section = z.object({
   count: z.number().int().min(1).max(30),
   pointsPerItem: z.number().int().min(1).max(100),
 });
-const GenInput = z.object({
-  subjectId: z.string().cuid(),
-  kpIds: z.array(z.string().cuid()).min(1),
-  gradeLevel: z.enum(["G5", "G6", "G7", "G8", "G9", "G10", "G11", "G12"]),
-  sections: z
-    .array(Section)
-    .min(1)
-    .refine((s) => new Set(s.map((x) => x.type)).size === s.length, "题型不可重复")
-    .refine((s) => s.reduce((n, x) => n + x.count, 0) <= 30, "总题量不超过 30 题")
-    .refine((s) => s.reduce((n, x) => n + x.count, 0) >= 1, "至少 1 题"),
-  difficultyRange: z.tuple([z.number().int().min(1).max(5), z.number().int().min(1).max(5)]),
-  durationMinutes: z.number().int().min(1).max(300).optional(),
-  textbookVersion: z.string().default("GENERIC"),
-  clientRequestId: z.string().uuid(),
-});
+const GenInput = z
+  .object({
+    subjectId: z.string().cuid(),
+    kpIds: z.array(z.string().cuid()).min(1),
+    gradeLevel: z.enum(["G5", "G6", "G7", "G8", "G9", "G10", "G11", "G12"]),
+    styleTemplate: z.literal("JUNIOR_MATH_ZHONGKAO_GENERIC_V1").optional(),
+    sections: z
+      .array(Section)
+      .min(1)
+      .refine((s) => new Set(s.map((x) => x.type)).size === s.length, "题型不可重复")
+      .refine((s) => s.reduce((n, x) => n + x.count, 0) <= 30, "总题量不超过 30 题")
+      .refine((s) => s.reduce((n, x) => n + x.count, 0) >= 1, "至少 1 题")
+      .optional(),
+    difficultyRange: z
+      .tuple([z.number().int().min(1).max(5), z.number().int().min(1).max(5)])
+      .optional(),
+    durationMinutes: z.number().int().min(1).max(300).optional(),
+    textbookVersion: z.string().default("GENERIC"),
+    clientRequestId: z.string().uuid(),
+  })
+  .refine((v) => Boolean(v.styleTemplate) || (Boolean(v.sections) && Boolean(v.difficultyRange)), {
+    message: "需指定 styleTemplate 或 sections+difficultyRange",
+  });
 
 const MAX_PAPER_AI_ATTEMPTS = 3;
 const REFILL_OVERGEN_FACTOR = 2;
@@ -61,20 +82,50 @@ export const paperRouter = router({
         });
       }
       const kpNames = kps.map((k) => k.name);
-      const pointsByType = new Map(input.sections.map((s) => [s.type, s.pointsPerItem]));
-      const desiredByType = new Map(input.sections.map((s) => [s.type, s.count]));
+
+      // 中考风格：用蓝图派生生成参数；否则用手动 sections。
+      let blueprint: ZhongkaoMathBlueprint | null = null;
+      let effSections: Array<{ type: QuestionType; count: number; pointsPerItem: number }>;
+      let effDifficulty: [number, number];
+      let styleRules: string[] | undefined;
+      let slotHints: Array<{ type: QuestionType; intent: string; constraints: string[] }> | undefined;
+      let promptVersion: "v1" | "v2" = "v1";
+
+      if (input.styleTemplate === ZHONGKAO_TEMPLATE_ID) {
+        blueprint = buildZhongkaoMathBlueprint({
+          gradeLevel: input.gradeLevel,
+          durationMinutes: input.durationMinutes ?? 120,
+          textbookVersion: (input.textbookVersion as TextbookVersion) ?? "GENERIC",
+          kps,
+        });
+        const ai = blueprintToAiSections(blueprint);
+        effSections = ai.sections.map((s) => ({ type: s.type as QuestionType, count: s.count, pointsPerItem: 1 }));
+        effDifficulty = [1, 5];
+        slotHints = ai.slotHints.map((h) => ({ type: h.type as QuestionType, intent: h.intent, constraints: h.constraints }));
+        styleRules = ["题干使用正式考试语言", "避免教辅营销表达", "不使用押题、预测、必考等词", "解析步骤完整但不冗长"];
+        promptVersion = "v2";
+      } else {
+        if (!input.sections || !input.difficultyRange) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "缺少出卷参数", cause: { reason: "PAPER_PARAMS_MISSING" } });
+        }
+        effSections = input.sections.map((s) => ({ type: s.type, count: s.count, pointsPerItem: s.pointsPerItem }));
+        effDifficulty = input.difficultyRange;
+      }
+
+      const pointsByType = new Map(effSections.map((s) => [s.type, s.pointsPerItem]));
+      const desiredByType = new Map(effSections.map((s) => [s.type, s.count]));
       const deduper = createPaperStemDeduper();
 
       // 题库按题型分别 best-effort 命中；不足的题型攒成 AI 缺口。
       const bank: Awaited<ReturnType<typeof selectBankQuestions>> = [];
       let dedupDroppedCount = 0;
       const excludeStems: string[] = [];
-      for (const s of input.sections) {
+      for (const s of effSections) {
         const hit = await selectBankQuestions(ctx.db, {
           subjectId: input.subjectId,
           kpIds: input.kpIds,
           questionTypes: [s.type],
-          difficultyRange: input.difficultyRange,
+          difficultyRange: effDifficulty,
           limit: s.count,
         });
         for (const item of hit) {
@@ -92,12 +143,12 @@ export const paperRouter = router({
       let modelCallId: string | null = null;
       const modelCallIds: string[] = [];
 
-      function selectedCount(type: (typeof input.sections)[number]["type"]) {
+      function selectedCount(type: QuestionType) {
         return bank.filter((item) => item.type === type).length + aiItems.filter((item) => item.type === type).length;
       }
 
       function missingSections(multiplier: number) {
-        return input.sections.flatMap((section) => {
+        return effSections.flatMap((section) => {
           const gap = (desiredByType.get(section.type) ?? 0) - selectedCount(section.type);
           if (gap <= 0) return [];
           return [{ type: section.type, count: Math.min(gap * multiplier, 30) }];
@@ -108,14 +159,16 @@ export const paperRouter = router({
       for (let attempt = 0; aiSections.length > 0 && attempt < MAX_PAPER_AI_ATTEMPTS; attempt++) {
         let ai: PaperGenerationOutput & { modelCallId: string };
         try {
-          ai = await getAiRouter(ctx.auth.userId).generatePaper({
+          ai = await getAiRouter(ctx.auth.userId, { promptVersion }).generatePaper({
             subject: "数学",
             gradeLevel: input.gradeLevel,
             kpNames,
             sections: aiSections,
-            difficultyRange: input.difficultyRange,
+            difficultyRange: effDifficulty,
             textbookVersion: input.textbookVersion,
             excludeStems,
+            ...(styleRules ? { styleRules } : {}),
+            ...(slotHints ? { slotHints } : {}),
           });
         } catch (e) {
           if (e instanceof ComplianceRejectedError) {
@@ -152,7 +205,7 @@ export const paperRouter = router({
 
       if (aiSections.length > 0) {
         const shortfallByType = Object.fromEntries(
-          input.sections
+          effSections
             .map((section) => [section.type, (desiredByType.get(section.type) ?? 0) - selectedCount(section.type)] as const)
             .filter(([, gap]) => gap > 0),
         );
@@ -163,20 +216,107 @@ export const paperRouter = router({
         });
       }
 
+      // 中考模式：zip → 审题闸门 → slot 权威落库。
+      let assignedPairs: AssignedPair[] | null = null;
+      let reviewIssues: PaperReviewIssue[] = [];
+      if (blueprint) {
+        const merged: AssignableItem[] = [
+          ...bank.map((b) => ({
+            stemMd: b.stemMd,
+            type: b.type as QuestionTypeValue,
+            options: undefined,
+            answerMd: b.answerMd,
+            solutionMd: b.solutionMd,
+            rubricMd: b.rubricMd ?? undefined,
+            difficulty: b.difficulty,
+            cognitiveLevel: (b.cognitiveLevel as CognitiveLevelValue) ?? "UNDERSTAND",
+            points: b.difficulty,
+            knowledgePointHints: b.kpHints,
+          })),
+          ...aiItems.map((a) => ({
+            stemMd: a.stemMd,
+            type: a.type as QuestionTypeValue,
+            options: a.options,
+            answerMd: a.answerMd,
+            solutionMd: a.solutionMd,
+            rubricMd: a.rubricMd,
+            difficulty: a.difficulty,
+            cognitiveLevel: a.cognitiveLevel as CognitiveLevelValue,
+            points: a.points,
+            knowledgePointHints: a.knowledgePointHints,
+          })),
+        ];
+        assignedPairs = assignItemsToSlots(blueprint, merged);
+        reviewIssues = reviewAssembledPaper(
+          assignedPairs.map(({ slot, item }) => ({
+            slot,
+            item: {
+              stemMd: item.stemMd,
+              type: item.type as QuestionType,
+              options: item.options,
+              answerMd: item.answerMd,
+              solutionMd: item.solutionMd,
+              rubricMd: item.rubricMd,
+              difficulty: item.difficulty,
+              points: item.points,
+            },
+          })),
+        );
+        const blockers = reviewIssues.filter((x) => x.severity === "BLOCKER");
+        if (blockers.length > 0) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "自动审题未通过，请调整知识点或稍后重试。",
+            cause: { reason: "PAPER_REVIEW_BLOCKED", blockers: blockers.map((b) => b.code) },
+          });
+        }
+      }
+
+      const zhongkaoItems = assignedPairs
+        ? assignedPairs.map((p) => {
+            const it = applySlotMetadata(p);
+            return {
+              stemMd: it.stemMd,
+              type: it.type as QuestionType,
+              options: it.options,
+              answerMd: it.answerMd,
+              solutionMd: it.solutionMd,
+              rubricMd: it.rubricMd,
+              difficulty: it.difficulty,
+              cognitiveLevel: it.cognitiveLevel,
+              points: it.points,
+              knowledgePointHints: it.knowledgePointHints,
+            };
+          })
+        : null;
+
       const paper = await persistGeneratedPaper(ctx.db, {
         teacherUserId: ctx.auth.userId,
         subjectId: input.subjectId,
-        title,
+        title: blueprint
+          ? blueprint.isTopical
+            ? "九年级数学专题练习卷"
+            : "九年级数学中考风格练习卷"
+          : title,
         paramsJson: {
           ...input,
+          ...(blueprint
+            ? {
+                styleTemplate: blueprint.styleTemplate,
+                blueprintVersion: blueprint.blueprintVersion,
+                blueprint,
+                durationMinutes: blueprint.durationMinutes,
+              }
+            : {}),
           dedupDroppedCount,
           refillRounds: Math.max(0, modelCallIds.length - 1),
           modelCallIds,
-        } as import("@prisma/client").Prisma.InputJsonValue,
+          reviewWarnings: reviewIssues.filter((x) => x.severity === "WARNING"),
+        } as unknown as Prisma.InputJsonValue,
         debitLedgerId: ctx.debit.ledgerId,
         modelCallId,
-        bankItems: bank.map((b) => ({ ...b, points: pointsByType.get(b.type) ?? 5 })),
-        aiItems: aiItems.map((a) => ({ ...a, points: pointsByType.get(a.type) ?? a.points })),
+        bankItems: zhongkaoItems ? [] : bank.map((b) => ({ ...b, points: pointsByType.get(b.type) ?? 5 })),
+        aiItems: zhongkaoItems ?? aiItems.map((a) => ({ ...a, points: pointsByType.get(a.type) ?? a.points })),
       });
       return { paperId: paper.id };
     }),
