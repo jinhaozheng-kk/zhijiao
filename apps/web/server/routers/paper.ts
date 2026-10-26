@@ -220,7 +220,7 @@ export const paperRouter = router({
       let effDifficulty: [number, number];
       let styleRules: string[] | undefined;
       let slotHints: Array<{ type: QuestionType; intent: string; constraints: string[] }> | undefined;
-      let promptVersion: "v1" | "v2" | "v4" | "v5" = "v1";
+      let promptVersion: "v1" | "v2" | "v4" | "v5" | "v6" = "v1";
 
       if (input.styleTemplate === ZHONGKAO_TEMPLATE_ID) {
         blueprint = buildZhongkaoMathBlueprint({
@@ -239,9 +239,9 @@ export const paperRouter = router({
         // 题干不依赖插图、公式用简单 KaTeX。格式段保持 v2 原样——历史教训：
         // 在 prompt 里给 options JSON 数组示例会把 qwen-max 逼出非法 JSON（PARSE_FAILED 500），
         // 格式问题继续由 coerceOptionArray 多格式归一化兜底。
-        // v5 = v4 内容（commit 后 CRLF 转换导致 v4 指纹冲突，按规范升版；并已加
-        // .gitattributes 固定 prompt 文件 LF，避免再次发生）。
-        promptVersion = "v5";
+        // v6 = v5 内容（prompt 文件统一规范成 LF 后重新注册，指纹才稳定；
+        // .gitattributes 固定 prompts 目录 LF，见 2026-10-27 的 CRLF 指纹事故）。
+        promptVersion = "v6";
       } else {
         if (!input.sections || !input.difficultyRange) {
           throw new TRPCError({ code: "BAD_REQUEST", message: "缺少出卷参数", cause: { reason: "PAPER_PARAMS_MISSING" } });

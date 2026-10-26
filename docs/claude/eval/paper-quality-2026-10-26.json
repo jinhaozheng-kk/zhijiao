@@ -1,11 +1,11 @@
 {
-  "generatedAt": "2026-10-26T17:57:40.759Z",
+  "generatedAt": "2026-10-26T18:04:30.226Z",
   "promptVersion": "v4",
   "total": 1,
   "ok": 1,
   "successRate": 100,
-  "avgSeconds": 124.6,
-  "avgEssaySolutionMedian": 204,
+  "avgSeconds": 88.8,
+  "avgEssaySolutionMedian": 195,
   "choice4OptionsRate": 100,
   "results": [
     {
@@ -17,22 +17,22 @@
         "勾股定理"
       ],
       "ok": true,
-      "seconds": 124.6,
+      "seconds": 88.8,
       "items": 24,
       "totalPoints": 120,
       "choiceCount": 10,
       "choiceWith4Options": 10,
       "essayCount": 8,
-      "essaySolutionMedian": 204,
-      "essaySolutionMin": 159,
+      "essaySolutionMedian": 195,
+      "essaySolutionMin": 155,
       "essayWithRubric": 8,
       "blockers": 0,
-      "warnings": 4,
+      "warnings": 3,
       "warningCodes": [
         "SHORT_SOLUTION_WARN"
       ],
       "figures": 0,
-      "paperId": "cmvpk7i8s00gu74pjayqj2g9q"
+      "paperId": "cmvpkg9yl00t274pjkuv6i53a"
     }
   ]
 }
