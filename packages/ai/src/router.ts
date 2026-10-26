@@ -793,8 +793,8 @@ export class AiRouter {
     const taskKind: TaskKind = "PAPER_FIGURE_GEN";
     const prompt = await loadPrompt(
       "paper-figure",
-      // v2：增加函数图象 curves 契约（v1 已注册进 DB，按仓库规范只能升版不能原地改）
-      this.opts.promptVersion ?? "v2",
+      // v3：几何/坐标系题干即使不写「如图」也要求配示意图（v1/v2 已注册进 DB，按仓库规范只能升版）
+      this.opts.promptVersion ?? "v3",
     );
     const promptTemplateId = await ensurePromptInDb(this.opts.prisma, prompt);
     const userContent = prompt.interpolate({

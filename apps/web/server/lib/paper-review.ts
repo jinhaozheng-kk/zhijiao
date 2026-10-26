@@ -72,9 +72,9 @@ export function reviewPaperSlot(slot: BlueprintSlot, item: ReviewableItem): Pape
   // 介于阈值之间的给 WARNING，不阻断但供教师核对。
   const solutionLen = item.solutionMd.trim().length;
   if (slot.questionType === "ESSAY" && solutionLen > 0) {
-    if (solutionLen < 80) {
+    if (solutionLen < 120) {
       push("BLOCKER", "SHORT_SOLUTION", "解答题解析过短，必须写出完整分步过程（至少 4 步、150 字以上）");
-    } else if (solutionLen < 150) {
+    } else if (solutionLen < 180) {
       push("WARNING", "SHORT_SOLUTION_WARN", "解答题解析偏短，建议补充关键步骤");
     }
     if (!item.rubricMd || item.rubricMd.trim().length === 0) {

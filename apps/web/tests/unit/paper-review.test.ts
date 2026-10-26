@@ -97,13 +97,13 @@ describe("内容质量门（v4 配套）", () => {
     };
   }
 
-  it("解答题解析过短（<80 字）→ BLOCKER SHORT_SOLUTION（触发修复轮）", () => {
+  it("解答题解析过短（<120 字）→ BLOCKER SHORT_SOLUTION（触发修复轮）", () => {
     const issues = reviewPaperSlot(essaySlot, essayItem({ solutionMd: "设销量 x，解得最大值 25。" }));
     expect(issues).toContainEqual(expect.objectContaining({ severity: "BLOCKER", code: "SHORT_SOLUTION" }));
   });
 
-  it("解答题解析偏短（80–150 字）→ WARNING SHORT_SOLUTION_WARN", () => {
-    const issues = reviewPaperSlot(essaySlot, essayItem({ solutionMd: "步".repeat(100) }));
+  it("解答题解析偏短（120–180 字）→ WARNING SHORT_SOLUTION_WARN", () => {
+    const issues = reviewPaperSlot(essaySlot, essayItem({ solutionMd: "步".repeat(140) }));
     expect(issues).toContainEqual(expect.objectContaining({ severity: "WARNING", code: "SHORT_SOLUTION_WARN" }));
   });
 
