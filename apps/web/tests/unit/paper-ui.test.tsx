@@ -212,6 +212,52 @@ describe("PaperPreviewView zhongkao blueprint panel", () => {
     // B1-UI: warnings rendered as anchor links pointing to item anchors
     expect(html).toContain('href="#paper-item-24"');
   });
+
+  it("renders review blockers and disables final confirmation affordance", () => {
+    mocks.paperGetResult = {
+      isLoading: false,
+      isError: false,
+      data: {
+        paper: {
+          id: "p-blocked",
+          title: "Blocked Paper",
+          status: "DRAFT",
+          paramsJson: {
+            reviewBlockers: [
+              {
+                slotQuestionNo: 1,
+                code: "EMPTY_ANSWER",
+                message: "answer is empty",
+              },
+            ],
+          },
+          items: [
+            {
+              id: "i1",
+              position: 1,
+              source: "AI_GENERATED",
+              stemMd: "Question",
+              type: "SINGLE_CHOICE",
+              answerMd: "",
+              solutionMd: "Because",
+              points: 3,
+              difficulty: 2,
+              kpHints: [],
+            },
+          ],
+        },
+        specTable: { rows: [], totalCount: 1, totalPoints: 3 },
+      },
+    };
+
+    const html = renderToStaticMarkup(<PaperPreviewView paperId="p-blocked" />);
+
+    expect(html).toContain('data-testid="review-blockers"');
+    expect(html).toContain("answer is empty");
+    expect(html).toContain('href="#paper-item-1"');
+    expect(html).toContain("不能确认完成");
+    expect(html).toContain("disabled");
+  });
 });
 
 describe("PaperPrintView print layout", () => {
@@ -247,6 +293,34 @@ describe("PaperPrintView print layout", () => {
     const html = renderToStaticMarkup(<PaperPrintView paperId="p1" />);
 
     expect(html).toContain("exam-print-sheet");
+  });
+
+  it("blocks printing when automatic review has blockers", () => {
+    mocks.paperGetResult = {
+      isLoading: false,
+      isError: false,
+      data: {
+        paper: {
+          id: "p-blocked",
+          title: "Blocked Printable Paper",
+          status: "DRAFT",
+          paramsJson: {
+            reviewBlockers: [
+              { slotQuestionNo: 1, code: "EMPTY_ANSWER", message: "answer is empty" },
+            ],
+          },
+          items: [],
+        },
+        specTable: { rows: [], totalCount: 0, totalPoints: 0 },
+      },
+    };
+
+    const html = renderToStaticMarkup(<PaperPrintView paperId="p-blocked" />);
+
+    expect(html).toContain('data-testid="print-review-blocked"');
+    expect(html).toContain("answer is empty");
+    expect(html).toContain("不能打印最终卷");
+    expect(html).toContain("disabled");
   });
 });
 

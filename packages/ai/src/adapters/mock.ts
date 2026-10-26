@@ -204,6 +204,16 @@ function mockVariantForKp(type: string, n: number, kpName: string) {
 }
 
 // Plan 17 / 统考排版：按请求 sections 造 mock 题，保证下游版式与题量正确。
+// 注意：mock 题也要满足「解答题解析 ≥80 字」的内容质量门（否则审题 BLOCKER 会拖垮
+// 依赖 mock 的集成/E2E 测试）；真实模型由 prompt v4 + 修复轮保证。
+const MOCK_LONG_SOLUTION =
+  "设未知数为 x，根据题意列出关系式，化简后求解得到 x 的值，再代回原题检验并写出结论。" +
+  "（第一步设元，第二步列式，第三步解方程，第四步检验作答，各步均写出必要过程。）";
+const MOCK_ESSAY_META = {
+  solutionMd: MOCK_LONG_SOLUTION,
+  rubricMd: "设未知数 2 分；列关系式 3 分；求解 3 分；检验作答 2 分。",
+};
+
 function mockItemForType(type: string, n: number, kpName?: string) {
   const base = { difficulty: 2, cognitiveLevel: "UNDERSTAND" as const, points: 5 };
   const variant = kpName ? mockVariantForKp(type, n, kpName) : mockVariantForType(type, n);
@@ -215,11 +225,11 @@ function mockItemForType(type: string, n: number, kpName?: string) {
     case "FILL_BLANK":
       return { ...base, ...variant, type };
     case "CALCULATION":
-      return { ...base, ...variant, points: 8, type };
+      return { ...base, ...variant, ...MOCK_ESSAY_META, points: 8, type };
     case "PROOF":
       return { ...base, ...variant, points: 10, type };
     default: // ESSAY 及其它
-      return { ...base, ...variant, points: 10, type };
+      return { ...base, ...variant, ...MOCK_ESSAY_META, points: 10, type };
   }
 }
 
@@ -277,6 +287,25 @@ const DEFAULT_LEARNING_ADVICE = {
   encouragementMd: "按自己的节奏一步步来，你已经在进步。",
 };
 
+// 浙江卷配图默认 mock —— 一个最小可渲染的三角形（含一个直角的视觉示意）。
+const DEFAULT_PAPER_FIGURE = {
+  figure: {
+    kind: "GEOMETRY",
+    points: [
+      { id: "A", x: 20, y: 80 },
+      { id: "B", x: 80, y: 80 },
+      { id: "C", x: 20, y: 20 },
+    ],
+    segments: [
+      { from: "A", to: "B" },
+      { from: "B", to: "C" },
+      { from: "C", to: "A" },
+    ],
+    circles: [],
+    labels: [{ text: "8", x: 50, y: 84 }],
+  },
+};
+
 function pickDefault(req: AdapterRequest): unknown {
   // System prompts are defined verbatim in router.ts; match on Chinese
   // 助手 suffix keyword to dispatch.
@@ -290,6 +319,7 @@ function pickDefault(req: AdapterRequest): unknown {
   }
   if (sys.includes("学习顾问")) return DEFAULT_LEARNING_ADVICE;
   if (sys.includes("拍照辅导助手")) return DEFAULT_TUTORING_IMAGE;
+  if (sys.includes("几何配图助手")) return DEFAULT_PAPER_FIGURE;
   if (sys.includes("练习卷命题助手")) return buildMockPaper(req);
   if (sys.includes("课件生成助手")) return DEFAULT_LESSON_PLAN;
   return DEFAULT_TUTORING;

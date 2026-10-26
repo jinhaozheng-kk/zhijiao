@@ -799,6 +799,9 @@ export async function deactivateUser(
         name: null,
         avatarUrl: null,
         birthYear: null,
+        // 密码凭据派生自用户秘密,注销即清:即使 deletedAt 守卫失效也无凭据可撞。
+        passwordHash: null,
+        passwordSetAt: null,
         deletedAt: now,
         deactivationReason: args.reason ?? null,
       },

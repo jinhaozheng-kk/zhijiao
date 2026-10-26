@@ -16,6 +16,7 @@ export async function selectBankQuestions(db: PrismaClient, args: BankSelectArgs
       knowledgePoints: { some: { kpId: { in: args.kpIds } } },
     },
     include: { answer: true, knowledgePoints: { include: { kp: true } } },
+    orderBy: { createdAt: "asc" },
     take: args.limit,
   });
   return rows
@@ -63,7 +64,7 @@ export function createPaperStemDeduper(initialStems: string[] = []) {
   return { accept };
 }
 
-function uniquePaperItems(args: {
+export function uniquePaperItems(args: {
   bankItems: Array<BankItem & { points: number }>;
   aiItems: AiItem[];
 }): {

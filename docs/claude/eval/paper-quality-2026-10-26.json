@@ -1,0 +1,326 @@
+{
+  "generatedAt": "2026-10-26T17:34:23.803Z",
+  "promptVersion": "v4",
+  "total": 12,
+  "ok": 12,
+  "successRate": 100,
+  "avgSeconds": 73.9,
+  "avgEssaySolutionMedian": 177,
+  "choice4OptionsRate": 100,
+  "results": [
+    {
+      "scenario": "一次函数-单点",
+      "requestedKps": [
+        "一次函数"
+      ],
+      "selectedKps": [
+        "一次函数"
+      ],
+      "ok": true,
+      "seconds": 101.9,
+      "items": 24,
+      "totalPoints": 120,
+      "choiceCount": 10,
+      "choiceWith4Options": 10,
+      "essayCount": 8,
+      "essaySolutionMedian": 170,
+      "essaySolutionMin": 126,
+      "essayWithRubric": 8,
+      "blockers": 0,
+      "warnings": 2,
+      "warningCodes": [
+        "SHORT_SOLUTION_WARN"
+      ],
+      "figures": 0,
+      "paperId": "cmvpiwjnt02wtzpt90rtjmhbh"
+    },
+    {
+      "scenario": "二次函数-单点",
+      "requestedKps": [
+        "二次函数"
+      ],
+      "selectedKps": [
+        "二次函数"
+      ],
+      "ok": true,
+      "seconds": 92.8,
+      "items": 24,
+      "totalPoints": 120,
+      "choiceCount": 10,
+      "choiceWith4Options": 10,
+      "essayCount": 8,
+      "essaySolutionMedian": 128,
+      "essaySolutionMin": 80,
+      "essayWithRubric": 8,
+      "blockers": 0,
+      "warnings": 7,
+      "warningCodes": [
+        "SHORT_SOLUTION_WARN"
+      ],
+      "figures": 0,
+      "paperId": "cmvpiyjr8031vzpt9586w9wz6"
+    },
+    {
+      "scenario": "二次函数图象-单点",
+      "requestedKps": [
+        "二次函数的图象与性质"
+      ],
+      "selectedKps": [
+        "二次函数的图象与性质"
+      ],
+      "ok": true,
+      "seconds": 66.6,
+      "items": 24,
+      "totalPoints": 120,
+      "choiceCount": 10,
+      "choiceWith4Options": 10,
+      "essayCount": 8,
+      "essaySolutionMedian": 203,
+      "essaySolutionMin": 116,
+      "essayWithRubric": 8,
+      "blockers": 0,
+      "warnings": 2,
+      "warningCodes": [
+        "SHORT_SOLUTION_WARN"
+      ],
+      "figures": 0,
+      "paperId": "cmvpizzy8036xzpt9d3it097y"
+    },
+    {
+      "scenario": "勾股定理-单点",
+      "requestedKps": [
+        "勾股定理"
+      ],
+      "selectedKps": [
+        "勾股定理"
+      ],
+      "ok": true,
+      "seconds": 74.4,
+      "items": 24,
+      "totalPoints": 120,
+      "choiceCount": 10,
+      "choiceWith4Options": 10,
+      "essayCount": 8,
+      "essaySolutionMedian": 189,
+      "essaySolutionMin": 122,
+      "essayWithRubric": 8,
+      "blockers": 0,
+      "warnings": 3,
+      "warningCodes": [
+        "SHORT_SOLUTION_WARN"
+      ],
+      "figures": 0,
+      "paperId": "cmvpj1lzw03bzzpt9a3yc5anu"
+    },
+    {
+      "scenario": "三角形-单点",
+      "requestedKps": [
+        "三角形"
+      ],
+      "selectedKps": [
+        "三角形"
+      ],
+      "ok": true,
+      "seconds": 62,
+      "items": 24,
+      "totalPoints": 120,
+      "choiceCount": 10,
+      "choiceWith4Options": 10,
+      "essayCount": 8,
+      "essaySolutionMedian": 171,
+      "essaySolutionMin": 104,
+      "essayWithRubric": 8,
+      "blockers": 0,
+      "warnings": 4,
+      "warningCodes": [
+        "SHORT_SOLUTION_WARN"
+      ],
+      "figures": 0,
+      "paperId": "cmvpj2yf503h1zpt9h2qfyup2"
+    },
+    {
+      "scenario": "圆-单点",
+      "requestedKps": [
+        "圆"
+      ],
+      "selectedKps": [
+        "圆"
+      ],
+      "ok": true,
+      "seconds": 59.9,
+      "items": 24,
+      "totalPoints": 120,
+      "choiceCount": 10,
+      "choiceWith4Options": 10,
+      "essayCount": 8,
+      "essaySolutionMedian": 140,
+      "essaySolutionMin": 85,
+      "essayWithRubric": 8,
+      "blockers": 0,
+      "warnings": 6,
+      "warningCodes": [
+        "SHORT_SOLUTION_WARN"
+      ],
+      "figures": 0,
+      "paperId": "cmvpj492z03m5zpt9qklxzhbn"
+    },
+    {
+      "scenario": "四边形-单点",
+      "requestedKps": [
+        "四边形"
+      ],
+      "selectedKps": [
+        "四边形"
+      ],
+      "ok": true,
+      "seconds": 74.8,
+      "items": 24,
+      "totalPoints": 120,
+      "choiceCount": 10,
+      "choiceWith4Options": 10,
+      "essayCount": 8,
+      "essaySolutionMedian": 182,
+      "essaySolutionMin": 122,
+      "essayWithRubric": 8,
+      "blockers": 0,
+      "warnings": 3,
+      "warningCodes": [
+        "SHORT_SOLUTION_WARN"
+      ],
+      "figures": 0,
+      "paperId": "cmvpj5t0503r7zpt9xatldafh"
+    },
+    {
+      "scenario": "全等三角形-单点",
+      "requestedKps": [
+        "全等三角形"
+      ],
+      "selectedKps": [
+        "全等三角形"
+      ],
+      "ok": true,
+      "seconds": 67.8,
+      "items": 24,
+      "totalPoints": 120,
+      "choiceCount": 10,
+      "choiceWith4Options": 10,
+      "essayCount": 8,
+      "essaySolutionMedian": 172,
+      "essaySolutionMin": 114,
+      "essayWithRubric": 8,
+      "blockers": 0,
+      "warnings": 4,
+      "warningCodes": [
+        "SHORT_SOLUTION_WARN"
+      ],
+      "figures": 0,
+      "paperId": "cmvpj7ck303wbzpt9xzxc4lra"
+    },
+    {
+      "scenario": "相似三角形-单点",
+      "requestedKps": [
+        "相似三角形的判定与性质"
+      ],
+      "selectedKps": [
+        "相似三角形的判定与性质"
+      ],
+      "ok": true,
+      "seconds": 80.5,
+      "items": 24,
+      "totalPoints": 120,
+      "choiceCount": 10,
+      "choiceWith4Options": 10,
+      "essayCount": 8,
+      "essaySolutionMedian": 230,
+      "essaySolutionMin": 150,
+      "essayWithRubric": 8,
+      "blockers": 0,
+      "warnings": 0,
+      "warningCodes": [],
+      "figures": 0,
+      "paperId": "cmvpj93a9041dzpt94014u1s3"
+    },
+    {
+      "scenario": "解直角三角形-单点",
+      "requestedKps": [
+        "解直角三角形"
+      ],
+      "selectedKps": [
+        "解直角三角形"
+      ],
+      "ok": true,
+      "seconds": 65.7,
+      "items": 24,
+      "totalPoints": 120,
+      "choiceCount": 10,
+      "choiceWith4Options": 10,
+      "essayCount": 8,
+      "essaySolutionMedian": 160,
+      "essaySolutionMin": 126,
+      "essayWithRubric": 8,
+      "blockers": 0,
+      "warnings": 4,
+      "warningCodes": [
+        "SHORT_SOLUTION_WARN"
+      ],
+      "figures": 0,
+      "paperId": "cmvpjainc046fzpt9a97yziea"
+    },
+    {
+      "scenario": "代数+几何混合",
+      "requestedKps": [
+        "一次函数",
+        "三角形"
+      ],
+      "selectedKps": [
+        "一次函数",
+        "三角形"
+      ],
+      "ok": true,
+      "seconds": 62.2,
+      "items": 24,
+      "totalPoints": 120,
+      "choiceCount": 10,
+      "choiceWith4Options": 10,
+      "essayCount": 8,
+      "essaySolutionMedian": 198,
+      "essaySolutionMin": 123,
+      "essayWithRubric": 8,
+      "blockers": 0,
+      "warnings": 1,
+      "warningCodes": [
+        "SHORT_SOLUTION_WARN"
+      ],
+      "figures": 0,
+      "paperId": "cmvpjbuxc04bhzpt9bqrevbhh"
+    },
+    {
+      "scenario": "函数+统计混合",
+      "requestedKps": [
+        "二次函数",
+        "概率"
+      ],
+      "selectedKps": [
+        "二次函数",
+        "概率"
+      ],
+      "ok": true,
+      "seconds": 78.4,
+      "items": 24,
+      "totalPoints": 120,
+      "choiceCount": 10,
+      "choiceWith4Options": 10,
+      "essayCount": 8,
+      "essaySolutionMedian": 182,
+      "essaySolutionMin": 91,
+      "essayWithRubric": 8,
+      "blockers": 0,
+      "warnings": 2,
+      "warningCodes": [
+        "SHORT_SOLUTION_WARN"
+      ],
+      "figures": 0,
+      "paperId": "cmvpjdkcc04gnzpt95lqb6yjx"
+    }
+  ]
+}

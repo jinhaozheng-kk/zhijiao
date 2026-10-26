@@ -5,6 +5,7 @@ import Link from "next/link";
 import { trpc } from "@/lib/trpc-client";
 import { StatePanel } from "@/components/ui/state-panel";
 import { SkeletonList } from "@/components/ui/skeleton";
+import { MathText } from "@/components/math-text";
 
 export function SessionView() {
   const session = trpc.training.startSession.useQuery({ window: "ALL" });
@@ -79,7 +80,7 @@ export function SessionView() {
         className="whitespace-pre-wrap text-sm leading-6"
         data-testid="training-stem"
       >
-        {item.stemMd}
+        <MathText text={item.stemMd} />
       </div>
       {!revealed ? (
         <button
@@ -95,7 +96,7 @@ export function SessionView() {
           className="whitespace-pre-wrap rounded-lg bg-slate-50 p-4 text-sm"
           data-testid="training-solution"
         >
-          {item.solutionMd ?? "先按方法独立完成，再对照错题本里的解析。"}
+          <MathText text={item.solutionMd ?? "先按方法独立完成，再对照错题本里的解析。"} />
         </div>
       )}
       <div className="flex gap-2">

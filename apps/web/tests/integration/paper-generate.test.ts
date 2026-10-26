@@ -157,6 +157,68 @@ describe("paper.generate", () => {
     );
   });
 
+  it("overfetches bank candidates so local dedup can avoid unnecessary AI calls", async () => {
+    const t = await seedTeacher(100);
+    const caller = appRouter.createCaller(makeCtx(t.id, { persona: "TEACHER" }));
+    for (const stemMd of [
+      "Duplicate calculation stem",
+      "Duplicate calculation stem",
+      "Unique calculation stem",
+    ]) {
+      await prisma.question.create({
+        data: {
+          subjectId: t.subjectId,
+          stemMd,
+          type: "CALCULATION",
+          difficulty: 2,
+          status: "PUBLISHED",
+          cognitiveLevel: "APPLY",
+          answer: { create: { contentMd: "1", solutionMd: "solution" } },
+          knowledgePoints: { create: { kpId: t.kpId, weight: 1 } },
+        },
+      });
+    }
+
+    const res = await caller.paper.generate({
+      subjectId: t.subjectId,
+      kpIds: [t.kpId],
+      gradeLevel: "G8",
+      sections: [{ type: "CALCULATION", count: 2, pointsPerItem: 5 }],
+      difficultyRange: [1, 3],
+      textbookVersion: "GENERIC",
+      clientRequestId: crypto.randomUUID(),
+    });
+
+    const items = await prisma.paperItem.findMany({ where: { paperId: res.paperId }, orderBy: { position: "asc" } });
+    expect(items).toHaveLength(2);
+    expect(items.every((item) => item.source === "BANK")).toBe(true);
+    expect(generatePaperMock).not.toHaveBeenCalled();
+  });
+
+  it("splits multi-section AI generation into per-type calls", async () => {
+    const t = await seedTeacher(100);
+    const caller = appRouter.createCaller(makeCtx(t.id, { persona: "TEACHER" }));
+
+    await caller.paper.generate({
+      subjectId: t.subjectId,
+      kpIds: [t.kpId],
+      gradeLevel: "G8",
+      sections: [
+        { type: "SINGLE_CHOICE", count: 1, pointsPerItem: 3 },
+        { type: "CALCULATION", count: 1, pointsPerItem: 5 },
+      ],
+      difficultyRange: [1, 3],
+      textbookVersion: "GENERIC",
+      clientRequestId: crypto.randomUUID(),
+    });
+
+    expect(generatePaperMock).toHaveBeenCalledTimes(2);
+    expect(generatePaperMock.mock.calls.map((call) => call[0].sections)).toEqual([
+      [{ type: "SINGLE_CHOICE", count: 1 }],
+      [{ type: "CALCULATION", count: 1 }],
+    ]);
+  });
+
   it("AI 首轮生成重复题时自动补题直到题量满足", async () => {
     const t = await seedTeacher(100);
     const caller = appRouter.createCaller(makeCtx(t.id, { persona: "TEACHER" }));

@@ -12,6 +12,8 @@ export const RULE_TOPUP_CREATE_USER: RateLimitRule = { prefix: "topup:create:use
 export const RULE_DSAR_EXPORT:    RateLimitRule = { prefix: "dsar:export:",    capacity: 2,  refillPerSec: 1/86400, failMode: "close" };
 // DSAR 验码专用桶,不与 LOGIN 的 RULE_OTP_VERIFY_PH 共用暴破预算。
 export const RULE_DSAR_VERIFY_PH: RateLimitRule = { prefix: "dsar:verify:phone:", capacity: 5, refillPerSec: 5/60, failMode: "close" };
+// 密码登录专用桶(同 DSAR 先例):不与 OTP 验证共用,否则密码暴破会烧掉受害者的 OTP 登录预算。
+export const RULE_PASSWORD_LOGIN_PH: RateLimitRule = { prefix: "pwd:login:phone:", capacity: 5, refillPerSec: 5/60, failMode: "close" };
 
 import type { RateLimitStore, RateLimitDecision } from "./types.js";
 import { RateLimitBackendDownError } from "./types.js";

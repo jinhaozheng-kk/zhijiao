@@ -9,6 +9,7 @@ import {
   type QuestionTypeValue,
 } from "@/lib/assignment-copy";
 import { trpc } from "@/lib/trpc-client";
+import { MathText } from "@/components/math-text";
 
 interface DraftTier {
   id: string;
@@ -125,12 +126,14 @@ export function DraftEditor({
                   <div className="text-xs uppercase text-slate-500">
                     {questionTypeLabel(item.type)} · 第 {item.position} 题
                   </div>
-                  <h3 className="mt-1 font-medium">{item.stemMd}</h3>
+                  <h3 className="mt-1 font-medium">
+                    <MathText text={item.stemMd} />
+                  </h3>
                   <p className="mt-2 text-sm text-slate-700">
-                    答案：{item.answerMd}
+                    答案：<MathText text={item.answerMd} />
                   </p>
                   <p className="mt-1 text-sm text-slate-600">
-                    解析：{item.solutionMd}
+                    解析：<MathText text={item.solutionMd} />
                   </p>
                 </article>
               ))}

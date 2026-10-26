@@ -42,6 +42,24 @@ const DEFAULT_POINTS: Record<QuestionTypeValue, number> = {
   ESSAY: 12,
 };
 
+// 自动审题 blocker code → 教师能看懂的一句话。服务端 errorFormatter 会把
+// cause.blockers 透出到 error.data.blockers（见 apps/web/server/trpc.ts）。
+const BLOCKER_HINTS: Record<string, string> = {
+  CHOICE_OPTION_COUNT: "选择题选项格式异常（模型把选项拼成了一行）",
+  CHOICE_OPTIONS_MISSING: "选择题缺少选项",
+  EMPTY_ANSWER: "部分题目缺少答案",
+  MISSING_SOLUTION: "部分题目缺少解析",
+  TYPE_MISMATCH: "题型与题位不一致",
+  FILL_HAS_OPTIONS: "填空题混入了选项",
+  FORBIDDEN_PHRASE: "内容命中合规禁用措辞",
+};
+
+function blockerHint(codes: unknown): string {
+  if (!Array.isArray(codes)) return "";
+  const hints = [...new Set(codes.map((code) => BLOCKER_HINTS[String(code)]).filter(Boolean))];
+  return hints.length > 0 ? `问题：${hints.join("；")}。` : "";
+}
+
 export function PaperGenerationForm({
   subjectId,
   kps,
@@ -70,7 +88,9 @@ export function PaperGenerationForm({
   const generate = trpc.paper.generate.useMutation({
     onSuccess: (result) => router.push(`/teacher/papers/${result.paperId}`),
     onError: (e) => {
-      const data = e.data as { reason?: string; shortfallByType?: Record<string, number> } | undefined;
+      const data = e.data as
+        | { reason?: string; blockers?: unknown; shortfallByType?: Record<string, number> }
+        | undefined;
       const reason = data?.reason;
       if (reason === "INSUFFICIENT_BALANCE") {
         setError("Credits 余额不足，请先充值后再出卷。");
@@ -91,7 +111,10 @@ export function PaperGenerationForm({
         }
         setError(msg);
       } else if (reason === "PAPER_REVIEW_BLOCKED") {
-        setError("自动审题未通过（已退还 credits），请稍后重试。");
+        const detail = blockerHint(data?.blockers);
+        setError(
+          `未生成合格可用试卷，自动审题未通过（已退还 credits）。${detail}请点「重试」；若反复出现，请更换/增加知识点或减少题量。`,
+        );
       } else {
         setError("出卷失败（若已扣除将自动退还 credits），请稍后再试。");
       }

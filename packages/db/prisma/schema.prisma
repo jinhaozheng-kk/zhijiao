@@ -56,6 +56,8 @@ model User {
   isMinor     Boolean     @default(true) @map("is_minor")
   birthYear            Int?                   @map("birth_year")
   guardianConsentStatus GuardianConsentStatus @default(NOT_REQUIRED) @map("guardian_consent_status")
+  passwordHash String? @map("password_hash")
+  passwordSetAt DateTime? @map("password_set_at")
   deletedAt   DateTime?   @map("deleted_at")
   deactivationReason String? @map("deactivation_reason")
   createdAt   DateTime    @default(now()) @map("created_at")

@@ -11,7 +11,9 @@ const choiceSlot: BlueprintSlot = {
 const okChoice: ReviewableItem = {
   stemMd: "下列哪个点在直线 y=2x 上？", type: "SINGLE_CHOICE",
   options: ["(0,0)", "(1,1)", "(1,3)", "(2,1)"],
-  answerMd: "A", solutionMd: "代入验证 (0,0) 满足。", difficulty: 2, points: 3,
+  answerMd: "A",
+  solutionMd: "把四个选项分别代入 y=2x 检验，只有 (0,0) 满足方程，因此选 A。",
+  difficulty: 2, points: 3,
 };
 
 describe("reviewPaperSlot 结构校验", () => {
@@ -70,6 +72,64 @@ describe("reviewPaperSlot 结构校验", () => {
     expect(long).toContainEqual(expect.objectContaining({ severity: "WARNING", code: "STEM_TOO_LONG" }));
     const boundary = reviewPaperSlot(choiceSlot, { ...okChoice, stemMd: "甲".repeat(600) });
     expect(boundary.some((i) => i.code === "STEM_TOO_LONG")).toBe(false);
+  });
+});
+
+describe("内容质量门（v4 配套）", () => {
+  const essaySlot: BlueprintSlot = {
+    ...choiceSlot,
+    questionType: "ESSAY",
+    sectionType: "解答题",
+    points: 10,
+    answerAreaHint: "large",
+  };
+  function essayItem(overrides: Partial<ReviewableItem> = {}): ReviewableItem {
+    return {
+      stemMd: "某商店销售一种商品，售价 20 元，成本 15 元，求利润函数并求利润最大时的销量。",
+      type: "ESSAY",
+      answerMd: "利润函数 P=-x^2+30x-200，x=15 时最大 25 元。",
+      solutionMd:
+        "设销量为 x 件，则利润 P=(20-15)x-200/x...（完整分步：先设未知数，再列函数关系式，接着配方求最值，最后检验并作答）。",
+      rubricMd: "设未知数 2 分；列函数关系式 3 分；配方求最值 3 分；检验作答 2 分。",
+      difficulty: 3,
+      points: 10,
+      ...overrides,
+    };
+  }
+
+  it("解答题解析过短（<80 字）→ BLOCKER SHORT_SOLUTION（触发修复轮）", () => {
+    const issues = reviewPaperSlot(essaySlot, essayItem({ solutionMd: "设销量 x，解得最大值 25。" }));
+    expect(issues).toContainEqual(expect.objectContaining({ severity: "BLOCKER", code: "SHORT_SOLUTION" }));
+  });
+
+  it("解答题解析偏短（80–150 字）→ WARNING SHORT_SOLUTION_WARN", () => {
+    const issues = reviewPaperSlot(essaySlot, essayItem({ solutionMd: "步".repeat(100) }));
+    expect(issues).toContainEqual(expect.objectContaining({ severity: "WARNING", code: "SHORT_SOLUTION_WARN" }));
+  });
+
+  it("解答题缺评分标准 → WARNING MISSING_RUBRIC", () => {
+    const issues = reviewPaperSlot(essaySlot, essayItem({ rubricMd: undefined }));
+    expect(issues).toContainEqual(expect.objectContaining({ severity: "WARNING", code: "MISSING_RUBRIC" }));
+  });
+
+  it("选择题重复选项 → WARNING CHOICE_OPTIONS_DUPLICATE", () => {
+    const issues = reviewPaperSlot(choiceSlot, { ...okChoice, options: ["(0,0)", "(0,0)", "(1,3)", "(2,1)"] });
+    expect(issues).toContainEqual(expect.objectContaining({ severity: "WARNING", code: "CHOICE_OPTIONS_DUPLICATE" }));
+  });
+
+  it("选择题「以上都对」类凑数选项 → WARNING CHOICE_ALL_OF_ABOVE", () => {
+    const issues = reviewPaperSlot(choiceSlot, { ...okChoice, options: ["(0,0)", "(1,1)", "(1,3)", "以上都对"] });
+    expect(issues).toContainEqual(expect.objectContaining({ severity: "WARNING", code: "CHOICE_ALL_OF_ABOVE" }));
+  });
+
+  it("选择题答案不是字母（如「见解析」）→ WARNING CHOICE_ANSWER_NOT_LETTER", () => {
+    const issues = reviewPaperSlot(choiceSlot, { ...okChoice, answerMd: "见解析" });
+    expect(issues).toContainEqual(expect.objectContaining({ severity: "WARNING", code: "CHOICE_ANSWER_NOT_LETTER" }));
+  });
+
+  it("题干过短（<12 字）→ WARNING STEM_TOO_SHORT", () => {
+    const issues = reviewPaperSlot(choiceSlot, { ...okChoice, stemMd: "求 x。" });
+    expect(issues).toContainEqual(expect.objectContaining({ severity: "WARNING", code: "STEM_TOO_SHORT" }));
   });
 });
 

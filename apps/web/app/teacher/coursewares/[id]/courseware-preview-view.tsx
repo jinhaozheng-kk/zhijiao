@@ -6,6 +6,7 @@ import { trpc } from "@/lib/trpc-client";
 import { StatePanel } from "@/components/ui/state-panel";
 import { StatusPill } from "@/components/ui/status-pill";
 import { SkeletonList } from "@/components/ui/skeleton";
+import { MathText } from "@/components/math-text";
 import {
   coursewareStatusLabel,
   coursewareSectionTypeLabel,
@@ -96,7 +97,7 @@ function SectionCard({
         </div>
       ) : (
         <p className="mt-4 whitespace-pre-wrap text-sm leading-7 text-slate-900">
-          {section.contentMd}
+          <MathText text={section.contentMd} />
         </p>
       )}
     </article>

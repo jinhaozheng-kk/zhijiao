@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { assignmentTierLabel, studentAssignmentStatusLabel } from "@/lib/assignment-copy";
 import { trpc } from "@/lib/trpc-client";
+import { MathText } from "@/components/math-text";
 
 export function SubmitForm({
   studentAssignmentId,
@@ -92,7 +93,7 @@ export function SubmitForm({
             <section key={item.id} className="rounded border bg-white p-4">
               <h2 className="font-medium">第 {index + 1} 题</h2>
               <div className="mt-2 whitespace-pre-wrap text-sm">
-                {item.stemMd}
+                <MathText text={item.stemMd} />
               </div>
               <textarea
                 className="mt-3 min-h-24 w-full rounded border px-3 py-2 text-sm"

@@ -4,7 +4,7 @@ import type { PrismaClient } from "@prisma/client";
 import { ModelCallStatus } from "@prisma/client";
 import { findForbidden, redactPii } from "@zhijiao/domain";
 import type { ModelAdapter } from "./adapters/types.js";
-import { TASK_MODEL_MAP, type TaskKind } from "./tasks.js";
+import { resolveTaskConfig, type TaskKind } from "./tasks.js";
 import {
   TutoringInputSchema,
   TutoringOutputSchema,
@@ -24,6 +24,10 @@ import {
   PaperGenerationInputSchema,
   PaperGenerationOutputSchema,
   type PaperGenerationOutput,
+  FigureGenerationInputSchema,
+  FigureGenerationOutputSchema,
+  type FigureGenerationOutput,
+  type FigureSpec,
   LessonPlanGenerationInputSchema,
   LessonPlanGenerationOutputSchema,
   type LessonPlanGenerationOutput,
@@ -111,6 +115,15 @@ function scanPaperGenerationForForbidden(out: PaperGenerationOutput): string[] {
   return findForbidden(corpus);
 }
 
+function scanFigureGenerationForForbidden(out: FigureGenerationOutput): string[] {
+  if (!out.figure) return [];
+  const corpus = [
+    ...out.figure.points.map((point) => point.id),
+    ...out.figure.labels.map((label) => label.text),
+  ].join("\n");
+  return findForbidden(corpus);
+}
+
 function scanLessonPlanGenerationForForbidden(
   out: LessonPlanGenerationOutput,
 ): string[] {
@@ -141,6 +154,24 @@ export interface RouterOptions {
 export class AiRouter {
   constructor(private opts: RouterOptions) {}
 
+  /**
+   * 解析该 task 的请求基座：默认模型 / 思考开关 / 超时，支持 env 覆盖
+   * （`AI_MODEL_<KIND>` / `AI_THINKING_<KIND>` / `AI_TIMEOUT_MS_<KIND>`）。
+   * `modelOverride` 仍具有最高优先级（测试与 A/B 用）。
+   */
+  private taskBase(taskKind: TaskKind): {
+    model: string;
+    enableThinking?: boolean;
+    timeoutMs?: number;
+  } {
+    const cfg = resolveTaskConfig(taskKind);
+    return {
+      model: this.opts.modelOverride ?? cfg.model,
+      ...(cfg.enableThinking === undefined ? {} : { enableThinking: cfg.enableThinking }),
+      ...(cfg.timeoutMs === undefined ? {} : { timeoutMs: cfg.timeoutMs }),
+    };
+  }
+
   private async runJsonTaskWithAudit<T extends object>(args: {
     taskKind: TaskKind;
     promptTemplateId: string;
@@ -150,6 +181,8 @@ export class AiRouter {
       responseFormat: "json_object";
       temperature: number;
       imageDataUrls?: string[];
+      enableThinking?: boolean;
+      timeoutMs?: number;
     };
     schema: z.ZodType<T, z.ZodTypeDef, unknown>;
     scanForbidden: (output: T) => string[];
@@ -255,9 +288,9 @@ export class AiRouter {
       studentGrade: parsed.studentGrade ?? "G8",
     });
 
-    const model = this.opts.modelOverride ?? TASK_MODEL_MAP[taskKind];
+    const base = this.taskBase(taskKind);
     const request = {
-      model,
+      ...base,
       messages: [
         { role: "system" as const, content: "你是严谨、面向中国 K12 的数学辅导助手。" },
         { role: "user" as const, content: userContent },
@@ -368,9 +401,9 @@ export class AiRouter {
     const userContent = prompt.interpolate({
       studentGrade: parsed.studentGrade ?? "G8",
     });
-    const model = this.opts.modelOverride ?? TASK_MODEL_MAP[taskKind];
+    const base = this.taskBase(taskKind);
     const request = {
-      model,
+      ...base,
       messages: [
         {
           role: "system" as const,
@@ -412,9 +445,9 @@ export class AiRouter {
       studentGrade: parsed.studentGrade ?? "G8",
     });
 
-    const model = this.opts.modelOverride ?? TASK_MODEL_MAP[taskKind];
+    const base = this.taskBase(taskKind);
     const request = {
-      model,
+      ...base,
       messages: [
         {
           role: "system" as const,
@@ -537,9 +570,9 @@ export class AiRouter {
       studentGrade: parsed.studentGrade ?? "G8",
     });
 
-    const model = this.opts.modelOverride ?? TASK_MODEL_MAP[taskKind];
+    const base = this.taskBase(taskKind);
     const request = {
-      model,
+      ...base,
       messages: [
         {
           role: "system" as const,
@@ -663,9 +696,9 @@ export class AiRouter {
       classWeaknessSummaryMd: parsed.classWeaknessSummaryMd ?? "(not provided)",
     });
 
-    const model = this.opts.modelOverride ?? TASK_MODEL_MAP[taskKind];
+    const base = this.taskBase(taskKind);
     const request = {
-      model,
+      ...base,
       messages: [
         {
           role: "system" as const,
@@ -719,11 +752,17 @@ export class AiRouter {
       `KP_NAMES_JSON:${JSON.stringify(parsed.kpNames)}`,
       "Every generated item must be based on one of KP_NAMES_JSON. Do not generate items for unrelated knowledge points.",
       "Each item's knowledgePointHints must include the selected knowledge point it assesses.",
+      ...(parsed.qualityInstructions?.length
+        ? [
+            "REPAIR_INSTRUCTIONS（上一轮审题未通过，本次必须逐条修正后再输出）：",
+            ...parsed.qualityInstructions.map((instruction) => `- ${instruction}`),
+          ]
+        : []),
     ].join("\n\n");
 
-    const model = this.opts.modelOverride ?? TASK_MODEL_MAP[taskKind];
+    const base = this.taskBase(taskKind);
     const request = {
-      model,
+      ...base,
       messages: [
         { role: "system" as const, content: "你是严谨的 K12 数学练习卷命题助手。" },
         { role: "user" as const, content: userContent },
@@ -738,7 +777,56 @@ export class AiRouter {
       request,
       schema: PaperGenerationOutputSchema,
       scanForbidden: scanPaperGenerationForForbidden,
+      // qwen-max 偶发把 JSON 写坏（多余冒号/引号、字符串内裸换行）。
+      // 重试时给可执行的修法，比默认的「请重新只输出 JSON」更有效。
+      retryMessage:
+        "上次输出不是合法 JSON。请只输出严格合法的 JSON：字符串内禁止出现未转义的换行符或双引号，禁止注释、禁止多余文本；选择题 options 必须是 4 个字符串组成的 JSON 数组；除 JSON 外不要输出任何内容。",
     });
+  }
+
+  // 浙江卷配图：题干 → 受约束的图形 DSL。
+  // 独立于主出卷调用（不让配图 JSON 影响整卷解析成功率）；返回 null 表示本题不需要配图。
+  async generateFigure(
+    input: unknown,
+  ): Promise<{ figure: FigureSpec | null; modelCallId: string }> {
+    const parsed = FigureGenerationInputSchema.parse(input);
+    const taskKind: TaskKind = "PAPER_FIGURE_GEN";
+    const prompt = await loadPrompt(
+      "paper-figure",
+      // v2：增加函数图象 curves 契约（v1 已注册进 DB，按仓库规范只能升版不能原地改）
+      this.opts.promptVersion ?? "v2",
+    );
+    const promptTemplateId = await ensurePromptInDb(this.opts.prisma, prompt);
+    const userContent = prompt.interpolate({
+      stemMd: parsed.stemMd,
+      gradeLevel: parsed.gradeLevel ?? "G9",
+      questionType: parsed.questionType ?? "（未提供）",
+    });
+
+    const base = this.taskBase(taskKind);
+    const request = {
+      ...base,
+      messages: [
+        {
+          role: "system" as const,
+          content: "你是严谨的 K12 数学几何配图助手，只输出图形 JSON。",
+        },
+        { role: "user" as const, content: userContent },
+      ],
+      responseFormat: "json_object" as const,
+      temperature: 0.2,
+    };
+
+    const out = await this.runJsonTaskWithAudit({
+      taskKind,
+      promptTemplateId,
+      request,
+      schema: FigureGenerationOutputSchema,
+      scanForbidden: scanFigureGenerationForForbidden,
+      retryMessage:
+        "上次输出不是合法 JSON。请只输出严格合法的 JSON 对象：{\"figure\": null} 或 {\"figure\": {\"kind\": \"GEOMETRY\"|\"COORDINATE\", ...}}；字符串内禁止未转义换行或双引号，禁止注释与多余文本。",
+    });
+    return { figure: out.figure, modelCallId: out.modelCallId };
   }
 
   // Plan 18: 教师 AI 课件生成。返回校验过的五段课件 + 审计 ModelCall.id。
@@ -756,9 +844,9 @@ export class AiRouter {
       teachingGoal: parsed.teachingGoal ?? "(未提供)",
     });
 
-    const model = this.opts.modelOverride ?? TASK_MODEL_MAP[taskKind];
+    const base = this.taskBase(taskKind);
     const request = {
-      model,
+      ...base,
       messages: [
         { role: "system" as const, content: "你是严谨的 K12 数学课件生成助手。" },
         { role: "user" as const, content: userContent },
@@ -805,9 +893,9 @@ export class AiRouter {
       strengths: strengthsRendered,
     });
 
-    const model = this.opts.modelOverride ?? TASK_MODEL_MAP[taskKind];
+    const base = this.taskBase(taskKind);
     const request = {
-      model,
+      ...base,
       messages: [
         {
           role: "system" as const,
@@ -862,9 +950,9 @@ export class AiRouter {
       hints: hintsRendered,
     });
 
-    const model = this.opts.modelOverride ?? TASK_MODEL_MAP[taskKind];
+    const base = this.taskBase(taskKind);
     const request = {
-      model,
+      ...base,
       messages: [
         {
           role: "system" as const,

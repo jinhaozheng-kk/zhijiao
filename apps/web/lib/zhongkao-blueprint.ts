@@ -9,7 +9,7 @@ import type {
 export type SectionType = "选择题" | "填空题" | "解答题";
 
 export const ZHONGKAO_TEMPLATE_ID = "JUNIOR_MATH_ZHONGKAO_GENERIC_V1" as const;
-export const ZHONGKAO_TEMPLATE_LABEL = "初中数学通用中考风格 v1";
+export const ZHONGKAO_TEMPLATE_LABEL = "浙江省中考数学卷式（2025 省级统考）v1";
 
 export interface BlueprintTemplateSection {
   sectionType: SectionType;
@@ -22,8 +22,12 @@ export interface BlueprintTemplateSection {
   capstoneTail: number; // 本大题末尾 N 题标 isCapstone
 }
 
-// spec §2 默认结构。解答题统一映射到 ESSAY（同一大题），用分值/作答区/压轴区分层级，
-// 避免 CALCULATION/PROOF/ESSAY 拆成多个 大题 破坏中考卷「三、解答题」单大题观感。
+// 浙江省 2025 年省级统考数学卷结构（120 分 / 120 分钟）：
+//   一、选择题 10 小题，每小题 3 分，共 30 分
+//   二、填空题 6 小题，每小题 3 分，共 18 分
+//   三、解答题 8 小题，共 72 分（分值梯度 8/8/8/8/8/10/10/12，仅最后一题为压轴）
+// 解答题统一映射到 ESSAY（同一大题），用分值/作答区/压轴区分层级，
+// 避免 CALCULATION/PROOF/ESSAY 拆成多个大题破坏中考卷「三、解答题」单大题观感。
 export const ZHONGKAO_GENERIC_TEMPLATE: BlueprintTemplateSection[] = [
   {
     sectionType: "选择题",
@@ -48,12 +52,12 @@ export const ZHONGKAO_GENERIC_TEMPLATE: BlueprintTemplateSection[] = [
   {
     sectionType: "解答题",
     questionType: "ESSAY",
-    pointsLadder: [6, 6, 8, 8, 10, 10, 12, 12],
-    difficultyLadder: [2, 2, 3, 3, 4, 4, 5, 5],
+    pointsLadder: [8, 8, 8, 8, 8, 10, 10, 12],
+    difficultyLadder: [2, 2, 3, 3, 3, 4, 4, 5],
     cognitiveLevel: "ANALYZE",
     intent: "考查计算、证明、应用建模、函数综合与几何综合",
     constraints: ["解题步骤完整", "条件唯一确定", "不直接提示解法"],
-    capstoneTail: 2,
+    capstoneTail: 1,
   },
 ];
 

@@ -13,6 +13,7 @@ export default function RegisterPage() {
   const [grade, setGrade] = useState<GradeLevel | null>(null);
   const [birthYear, setBirthYear] = useState<number | null>(null);
   const [name, setName] = useState("");
+  const [password, setPassword] = useState("");
   const currentYear = new Date().getFullYear();
 
   const info = trpc.auth.registerInfo.useQuery(undefined, { retry: false });
@@ -45,9 +46,17 @@ export default function RegisterPage() {
         </label>
       )}
       <input value={name} onChange={(e) => setName(e.target.value)} placeholder="昵称（可选）" className="border rounded px-3 py-2 w-full" />
+      <input
+        type="password"
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+        placeholder="登录密码（可选，至少 8 位）"
+        className="border rounded px-3 py-2 w-full"
+        data-testid="register-password"
+      />
       <button
-        disabled={!persona || (persona === "STUDENT" && (!grade || !birthYear)) || register.isPending}
-        onClick={() => register.mutate({ persona: persona!, gradeLevel: grade ?? undefined, birthYear: birthYear ?? undefined, name: name || undefined })}
+        disabled={!persona || (persona === "STUDENT" && (!grade || !birthYear)) || (password.length > 0 && password.length < 8) || register.isPending}
+        onClick={() => register.mutate({ persona: persona!, gradeLevel: grade ?? undefined, birthYear: birthYear ?? undefined, name: name || undefined, password: password || undefined })}
         className="w-full rounded bg-slate-900 text-white py-2 disabled:opacity-50"
         data-testid="register-submit"
       >

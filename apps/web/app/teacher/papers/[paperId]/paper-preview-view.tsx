@@ -15,6 +15,10 @@ import {
   type QuestionTypeValue,
   type CognitiveLevelValue,
 } from "@/lib/paper-copy";
+import { PaperItemOptions } from "@/components/paper-item-options";
+import { PaperFigure } from "@/components/paper-figure";
+import { MathText } from "@/components/math-text";
+import type { FigureSpec } from "@zhijiao/ai";
 import { ZHONGKAO_TEMPLATE_LABEL } from "@/lib/zhongkao-blueprint";
 
 type PaperItem = {
@@ -23,6 +27,8 @@ type PaperItem = {
   source: string;
   stemMd: string;
   type: string;
+  /** 选择题选项（PaperItem.optionsJson）；非选择题为 null。 */
+  optionsJson?: unknown;
   answerMd: string;
   solutionMd: string;
   points: number;
@@ -50,6 +56,13 @@ type ZhongkaoPreviewParams = {
     code: string;
     message: string;
   }>;
+  reviewBlockers?: Array<{
+    slotQuestionNo: number;
+    code: string;
+    message: string;
+  }>;
+  /** 浙江卷配图：按题号（1-based position）存 FigureSpec。 */
+  figures?: Record<string, FigureSpec>;
 };
 
 function PaperItemCard({
@@ -57,11 +70,15 @@ function PaperItemCard({
   item,
   disabled,
   hasWarning,
+  hasBlocker,
+  figure,
 }: {
   paperId: string;
   item: PaperItem;
   disabled: boolean;
   hasWarning?: boolean;
+  hasBlocker?: boolean;
+  figure?: FigureSpec | null;
 }) {
   const utils = trpc.useUtils();
   const [points, setPoints] = useState(item.points);
@@ -80,7 +97,7 @@ function PaperItemCard({
   return (
     <article
       id={`paper-item-${item.position}`}
-      className={`rounded-lg bg-white p-5 shadow-sm ring-1 ${hasWarning ? "ring-2 ring-amber-400" : "ring-slate-200"}`}
+      className={`rounded-lg bg-white p-5 shadow-sm ring-1 ${hasBlocker ? "ring-2 ring-red-500" : hasWarning ? "ring-2 ring-amber-400" : "ring-slate-200"}`}
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
@@ -111,8 +128,10 @@ function PaperItemCard({
         </div>
       </div>
       <p className="mt-4 whitespace-pre-wrap text-sm leading-7 text-slate-900">
-        {item.stemMd}
+        <MathText text={item.stemMd} />
       </p>
+      <PaperItemOptions optionsJson={item.optionsJson} />
+      <PaperFigure figure={figure} className="my-2" />
       {item.kpHints.length > 0 ? (
         <p className="mt-3 text-xs text-slate-500">
           知识点：{item.kpHints.join("、")}
@@ -125,11 +144,11 @@ function PaperItemCard({
         <div className="mt-3 space-y-3 leading-7 text-slate-700">
           <p>
             <span className="font-medium">答案：</span>
-            {item.answerMd}
+            <MathText text={item.answerMd} />
           </p>
           <p className="whitespace-pre-wrap">
             <span className="font-medium">解析：</span>
-            {item.solutionMd}
+            <MathText text={item.solutionMd} />
           </p>
         </div>
       </details>
@@ -169,7 +188,10 @@ export function PaperPreviewView({ paperId }: { paperId: string }) {
   const disabled = paper.status === "READY";
   const params = (paper.paramsJson ?? {}) as ZhongkaoPreviewParams;
   const reviewWarnings = params.reviewWarnings ?? [];
+  const reviewBlockers = params.reviewBlockers ?? [];
   const warnedPositions = new Set(reviewWarnings.map((w) => w.slotQuestionNo));
+  const blockedPositions = new Set(reviewBlockers.map((w) => w.slotQuestionNo));
+  const markReadyDisabled = disabled || reviewBlockers.length > 0 || markReady.isPending;
 
   return (
     <div className="space-y-6">
@@ -180,6 +202,28 @@ export function PaperPreviewView({ paperId }: { paperId: string }) {
           data-testid="ai-draft-notice"
         >
           本试卷由 AI 辅助生成，题目内容（尤其计算步骤）可能有误，请逐题核对后再点「确认完成」。
+        </div>
+      )}
+
+      {paper.status !== "READY" && reviewBlockers.length > 0 && (
+        <div
+          className="rounded-lg bg-red-50 p-4 text-sm text-red-800"
+          data-testid="review-blockers"
+        >
+          <p className="font-medium">必须修正后才能确认完成（{reviewBlockers.length}）</p>
+          <ul className="mt-2 space-y-1">
+            {reviewBlockers.map((blocker, index) => (
+              <li key={`${blocker.slotQuestionNo}-${blocker.code}-${index}`}>
+                <a
+                  href={`#paper-item-${blocker.slotQuestionNo}`}
+                  className="underline hover:text-red-900"
+                >
+                  第 {blocker.slotQuestionNo} 题
+                </a>
+                ：{blocker.message}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 
@@ -218,8 +262,9 @@ export function PaperPreviewView({ paperId }: { paperId: string }) {
             <PrintLink paperId={paper.id} />
             <button
               type="button"
-              disabled={disabled || markReady.isPending}
+              disabled={markReadyDisabled}
               onClick={() => markReady.mutate({ paperId })}
+              title={reviewBlockers.length > 0 ? "自动审题存在必须修正的问题，不能确认完成" : undefined}
               className="rounded-full bg-slate-950 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {disabled ? "已确认完成" : "确认完成"}
@@ -295,6 +340,8 @@ export function PaperPreviewView({ paperId }: { paperId: string }) {
             item={item}
             disabled={disabled}
             hasWarning={warnedPositions.has(item.position)}
+            hasBlocker={blockedPositions.has(item.position)}
+            figure={params.figures?.[String(item.position)] ?? null}
           />
         ))}
         {paper.items.length === 0 ? (

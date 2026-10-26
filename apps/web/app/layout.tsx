@@ -1,4 +1,5 @@
 import "./globals.css";
+import "katex/dist/katex.min.css";
 import type { ReactNode } from "react";
 import { Providers } from "./providers";
 

@@ -22,6 +22,8 @@ async function seedDeactivateFixture() {
         avatarUrl: "https://example.test/a.png",
         persona: "STUDENT",
         isMinor: false,
+        passwordHash: "scrypt$fake-salt$fake-key",
+        passwordSetAt: new Date(),
       },
     }),
     prisma.user.create({ data: { name: "Bob", persona: "STUDENT", isMinor: false } }),
@@ -299,6 +301,8 @@ describe("deactivateUser", () => {
     await expect(prisma.user.findUnique({ where: { id: user.id } })).resolves.toMatchObject({
       name: null,
       avatarUrl: null,
+      passwordHash: null,
+      passwordSetAt: null,
       deactivationReason: "requested",
     });
 

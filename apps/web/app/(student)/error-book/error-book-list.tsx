@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { trpc } from "@/lib/trpc-client";
+import { plainPreview } from "@/lib/math-segments";
 import { StatePanel } from "@/components/ui/state-panel";
 import { SkeletonList } from "@/components/ui/skeleton";
 
@@ -16,7 +17,8 @@ const ROOT_CAUSE_LABEL: Record<string, string> = {
 };
 
 function truncate(s: string, n: number) {
-  return s.length > n ? s.slice(0, n) + "…" : s;
+  // 列表摘要不渲染公式：去掉 $…$ 标记后按纯文本截断，避免截到一半的公式显示成乱码
+  return plainPreview(s, n);
 }
 
 export function ErrorBookList() {

@@ -3,11 +3,12 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import {
   AuthError, issueOtp, verifyOtp,
-  takeRule, RedisRateLimitStore, RULE_OTP_SEND_PHONE, RULE_OTP_SEND_IP, RULE_OTP_VERIFY_PH, RULE_REGISTER_IP,
+  takeRule, RedisRateLimitStore, RULE_OTP_SEND_PHONE, RULE_OTP_SEND_IP, RULE_OTP_VERIFY_PH, RULE_PASSWORD_LOGIN_PH, RULE_REGISTER_IP,
   putRegisterPayload, buildRegisterCookie,
   peekRegisterPayload, markRegisterUsed, abortRegister,
   COOKIE_REGISTER, clearCookie,
   RateLimitBackendDownError,
+  hashPassword, verifyPassword,
 } from "@zhijiao/auth";
 import { buildSmsAdapter } from "@zhijiao/integrations";
 import { router, publicProcedure, authedProcedure } from "../trpc.js";
@@ -19,12 +20,17 @@ import { Prisma, SessionRevokeReason } from "@prisma/client";
 import { env } from "../env.js";
 
 const PhoneSchema = z.string().regex(/^1\d{10}$/, "手机号格式不正确（11 位以 1 开头）");
+const PasswordSchema = z.string().min(8, "PASSWORD_TOO_SHORT").max(128, "PASSWORD_TOO_LONG");
+// 仅用于拉平「手机号不存在/未设密码」分支的 scrypt 耗时;该分支结果恒为登录失败。
+const TIMING_DUMMY_HASH =
+  "scrypt$JdC9I-EztfzXiGknWwoGFw$zL5dVWEbIwVZR-ukknxs1WCMAW3gQUBg-IDZBImEQ7Yb_jejbgFtjKAMNghRG_9aPaEfj-cEMr6tzJ9GloSdrw";
 
 const RegisterInput = z.object({
   persona: z.enum(["STUDENT", "TEACHER", "PARENT"]),
   gradeLevel: z.enum(["G5","G6","G7","G8","G9","G10","G11","G12"]).optional().nullable(),
   birthYear: z.number().int().min(1990).max(new Date().getFullYear()).optional().nullable(),
   name: z.string().min(1).max(40).optional(),
+  password: PasswordSchema.optional(),
 });
 
 const isPrismaUnique = (e: unknown): boolean =>
@@ -34,6 +40,10 @@ function ratelimitStore(redis: import("ioredis").default) { return new RedisRate
 
 function shouldApplyOtpSendRateLimit(): boolean {
   return process.env.E2E_TEST_HOOKS !== "1";
+}
+
+function shouldExposeOtpDevCodeToClient(): boolean {
+  return process.env.NODE_ENV !== "production" && process.env.SMS_USE_MOCK === "true";
 }
 
 function toTRPCError(reason: string, code: "BAD_REQUEST" | "TOO_MANY_REQUESTS" | "UNAUTHORIZED" | "INTERNAL_SERVER_ERROR" | "CONFLICT", extra?: object): never {
@@ -63,6 +73,9 @@ export const authRouter = router({
       // across webpack bundle boundaries (each Next.js route is an isolated bundle).
       if (process.env.E2E_TEST_HOOKS === "1") {
         await ctx.redis.set(`e2e:last-otp:${input.phone}`, code, "EX", 300);
+      }
+      if (shouldExposeOtpDevCodeToClient()) {
+        return { ok: true as const, devCode: code };
       }
       return { ok: true as const };
     }),
@@ -100,6 +113,34 @@ export const authRouter = router({
       });
       appendSetCookie(ctx.resHeaders, buildRegisterCookie(nonce));
       return { status: "need_register" as const };
+    }),
+
+  passwordLogin: publicProcedure
+    .input(z.object({ phone: PhoneSchema, password: PasswordSchema }))
+    .mutation(async ({ ctx, input }) => {
+      const store = ratelimitStore(ctx.redis);
+      try {
+        const r = await takeRule(store, RULE_PASSWORD_LOGIN_PH, input.phone);
+        if (!r.allowed) toTRPCError("PASSWORD_LOGIN_TOO_FREQUENT", "TOO_MANY_REQUESTS", { retryAfterMs: r.retryAfterMs });
+      } catch (e) {
+        if (e instanceof RateLimitBackendDownError) toTRPCError("RATELIMIT_BACKEND_DOWN", "INTERNAL_SERVER_ERROR");
+        throw e;
+      }
+
+      const existing = await findUserByPhone(ctx.db, input.phone);
+      let ok = false;
+      if (existing?.passwordHash) {
+        ok = await verifyPassword(input.password, existing.passwordHash);
+      } else {
+        // 无此用户/未设密码时也跑一次等价 scrypt,避免响应时长成为手机号枚举信号;结果恒为失败。
+        await verifyPassword(input.password, TIMING_DUMMY_HASH);
+      }
+      if (!existing || !ok) toTRPCError("INVALID_CREDENTIALS", "UNAUTHORIZED");
+
+      const { user, defaultRoute } = await issueSessionAndCookies({
+        prisma: ctx.db, userId: existing.id, resHeaders: ctx.resHeaders, ip: ctx.ip, ua: ctx.ua,
+      });
+      return { status: "logged_in" as const, user, defaultRoute };
     }),
 
   registerInfo: publicProcedure.query(async ({ ctx }) => {
@@ -154,6 +195,7 @@ export const authRouter = router({
 
       const isMinor = deriveIsMinor(input.persona as Persona, input.gradeLevel ?? null);
       const guardianConsentStatus = initialConsentStatus(input.persona as Persona, input.birthYear ?? null);
+      const passwordHash = input.password ? await hashPassword(input.password) : null;
 
       try {
         const userId = await ctx.db.$transaction(async (tx) => {
@@ -165,6 +207,8 @@ export const authRouter = router({
               isMinor,
               guardianConsentStatus,
               name: input.name ?? payload!.profile?.nickname ?? null,
+              passwordHash: passwordHash ?? undefined,
+              passwordSetAt: passwordHash ? new Date() : undefined,
               identities: {
                 create: [{
                   provider: payload!.provider,
@@ -194,6 +238,17 @@ export const authRouter = router({
         }
         throw e;
       }
+    }),
+
+  setPassword: authedProcedure
+    .input(z.object({ password: PasswordSchema }))
+    .mutation(async ({ ctx, input }) => {
+      const passwordHash = await hashPassword(input.password);
+      await ctx.db.user.update({
+        where: { id: ctx.auth.userId },
+        data: { passwordHash, passwordSetAt: new Date() },
+      });
+      return { ok: true as const };
     }),
 
   me: authedProcedure.query(async ({ ctx }) => {

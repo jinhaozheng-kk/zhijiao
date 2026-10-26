@@ -10,12 +10,16 @@ type SeedUser = {
   roles: Role[];
   birthYear?: number | null;
   guardianConsentStatus?: GuardianConsentStatus;
+  passwordHash?: string | null;
 };
+
+const DEV_TEACHER_PASSWORD_HASH =
+  "scrypt$hHG7YaPpp6JcASn6E4Klhg$71Plw3XJehkY023NbgMjwo9xPNsh3u_UT_3hOFQTLRXm5FU0Q9JlbjqLXBBNb4rsgQ2nZB_i4tcQ3JuV1YyoEg";
 
 export async function seedTestUsers(prisma: PrismaClient) {
   const users: SeedUser[] = [
     { id: "dev-student-01", phone: "13800000001", name: "测试学生",   persona: Persona.STUDENT, gradeLevel: GradeLevel.G8, isMinor: true,  roles: [] },
-    { id: "dev-teacher-01", phone: "13800000002", name: "测试教师",   persona: Persona.TEACHER, gradeLevel: null,          isMinor: false, roles: [] },
+    { id: "dev-teacher-01", phone: "13800000002", name: "测试教师",   persona: Persona.TEACHER, gradeLevel: null,          isMinor: false, roles: [], passwordHash: DEV_TEACHER_PASSWORD_HASH },
     { id: "dev-parent-01",  phone: "13800000003", name: "测试家长",   persona: Persona.PARENT,  gradeLevel: null,          isMinor: false, roles: [] },
     { id: "dev-ops-01",     phone: "13800000004", name: "测试运营",   persona: Persona.STUDENT, gradeLevel: null,          isMinor: false, roles: [Role.OPS] },
     { id: "dev-admin-01",   phone: "13800000005", name: "测试管理员", persona: Persona.STUDENT, gradeLevel: null,          isMinor: false, roles: [Role.ADMIN] },
@@ -39,6 +43,8 @@ export async function seedTestUsers(prisma: PrismaClient) {
         isMinor: u.isMinor,
         birthYear: u.birthYear ?? undefined,
         guardianConsentStatus: u.guardianConsentStatus ?? undefined,
+        passwordHash: u.passwordHash ?? undefined,
+        passwordSetAt: u.passwordHash ? new Date(0) : undefined,
         roles: { create: u.roles.map((role) => ({ role })) },
         identities: {
           create: [
@@ -57,6 +63,8 @@ export async function seedTestUsers(prisma: PrismaClient) {
         isMinor: u.isMinor,
         birthYear: u.birthYear ?? null,
         guardianConsentStatus: u.guardianConsentStatus ?? "NOT_REQUIRED",
+        passwordHash: u.passwordHash ?? null,
+        passwordSetAt: u.passwordHash ? new Date(0) : null,
       },
     });
 

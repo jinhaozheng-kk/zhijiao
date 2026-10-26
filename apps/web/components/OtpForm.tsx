@@ -8,7 +8,8 @@ export function OtpForm() {
   const router = useRouter();
   const sp = useSearchParams();
   const phone = sp.get("phone") ?? "";
-  const [code, setCode] = useState("");
+  const devCode = sp.get("devCode")?.replace(/\D/g, "").slice(0, 6) ?? "";
+  const [code, setCode] = useState(devCode);
   const [cooldown, setCooldown] = useState(60);
 
   useEffect(() => {
@@ -28,9 +29,14 @@ export function OtpForm() {
   return (
     <div className="space-y-3">
       <p className="text-sm text-slate-600">验证码已发到 {phone}</p>
+      {devCode && (
+        <p className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900" data-testid="otp-dev-code">
+          本地开发验证码：<span className="font-mono tracking-widest">{devCode}</span>
+        </p>
+      )}
       <input
-        type="text" inputMode="numeric" maxLength={6}
-        value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+        type="text" inputMode="numeric"
+        value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
         className="border rounded w-full px-3 py-2 tracking-widest text-center"
         placeholder="6 位验证码"
         data-testid="otp-code"

@@ -222,3 +222,137 @@
 - 打印页读取 `paramsJson.blueprint.slots` 透传 `answerAreaHint` / `isCapstone`，学生卷作答区高度为 short 2.4cm、medium 5cm、large 8.5cm、extraLarge 11.5cm，压轴题强制分页。
 - 预览页显示模板名、蓝图结构和 review warnings；生成表单新增“一键生成中考风格卷”入口。
 - E2E 状态：新增 teacher-paper 中考闭环后，当前总量为 27/27（以 `pnpm.cmd exec playwright test --list` 的 `Total` 为准，需和 `merge-verification.md` 同步）。
+
+**AI 模型路由现状**（2026-10-26）：
+- 背景：用真实 DashScope 对出卷/课件 prompt 做了对照实测，确认三件事——① 代码里锁的 `qwen-max` 是旧世代快照（目录同族快照为 2024 年的 `qwen-max-0107/1201`，当前旗舰为 `qwen3.8-max`）；② `qwen3.8-max` / `qwen3.7-max` / `deepseek-v4-pro` **全是思考型模型**，默认先输出 reasoning tokens；③ 生成类任务开 thinking 是负收益：10 道选择题 thinking-on 187s / 8.2k tokens（其中推理 5.7k）/ 解析中位 80 字，thinking-off 38s / 2.5k tokens / 解析中位 154 字——更慢更贵且正文更短。
+- `AdapterRequest` 扩三字段：`enableThinking?: boolean`（`undefined` = 不发送，兼容非思考模型与第三方）、`timeoutMs?: number`、沿用 `imageDataUrls`。`DashScopeAdapter` 现在：默认**流式**（`AI_STREAM=false|0` 关闭）以规避长生成的首字节超时；请求级 timeout 透传（默认 `AI_REQUEST_TIMEOUT_MS`，兜底 600s）；`enable_thinking` 仅当调用方显式给值时发送（`qwen-max` 实测接受该参数，但第三方未必）；构造函数支持注入 `client`（测试用）。**坑**：`chat.completions.create` 取出后必须 `bind`，否则 openai SDK 内部 `this._client` 未定义（`TypeError: Cannot read properties of undefined (reading '_client')`）。
+- 任务配置从裸 `TASK_MODEL_MAP` 升级为 `TASK_CONFIG: Record<TaskKind, { model; enableThinking?; timeoutMs? }>`；`resolveTaskConfig(kind)` 为运行时真源，支持 env 覆盖 `AI_MODEL_<KIND>` / `AI_THINKING_<KIND>`（on/off）/ `AI_TIMEOUT_MS_<KIND>`；`TASK_MODEL_MAP` 保留为**默认值快照**（不随 env 变化，仅供兼容旧引用）。`AiRouter.taskBase()` 统一解析，`modelOverride` 仍最高优先级。
+- 默认值：生成类（`PAPER_GEN` / `FORECAST_PAPER_GEN` / `LESSON_PLAN_GEN`）仍 `qwen-max` + `enableThinking:false` + `timeoutMs:600_000`；切换新一代模型用 env（`.env.example` / `.env.production.example` 已给注释样例），**先核对百炼单价再改生产流量**（一张 24 题卷 nothink 约 11k output tokens，对照 `PAPER_GEN` 5 credits = ¥0.5 收入）。
+- 下架模型修复：`TUTOR_ASK_IMAGE` `qwen-vl-plus` → `qwen3-vl-plus`（前者已不在百炼目录，真模式会 404）；`EMBEDDING` `text-embedding-v2` → `qwen3.7-text-embedding`。注意：**compatible-mode 不支持 embeddings**（`qwen3.7-text-embedding` 调 `/chat/completions` 返回 404），RAG 落地时需走 DashScope 原生 embeddings 端点；当前仓库无 `EMBEDDING` 调用方。
+- 红线：长输出实测可到单题解析 13,025 字（4 道解答题一次生成花 204s / 12.7k tokens）→ 解析长度上限**必须**做进 schema 硬门，只靠 prompt 约束不住。
+- 测试：`packages/ai/tests/tasks-config.test.ts`（8 cases，env 覆盖/非法值/旧 id 断言）+ `packages/ai/tests/dashscope-adapter.test.ts`（6 cases，流式聚合/usage/enable_thinking/超时/多模态，注入 fake client 不联网）。E2E 与集成测试仍走 `MockAdapter`，不受影响。
+- 待办（下一阶段）：schema 质量门（题量精确匹配、选项=4、答案解析一致性、解法长度上下限、禁「如图」/字面 `\n`/`\[`）+ `paper-gen/v3`、`lesson-plan-gen/v3` prompt 落地 + 12 场景评测基线。
+
+**出卷质量门与选项渲染现状**（2026-10-26）：
+- **通用出卷补审题门**：此前只有中考 blueprint 路径跑 `reviewAssembledPaper`，普通出卷无任何审题。新增 `reviewGeneratedPaper`（`apps/web/server/lib/paper-review.ts`）做与题位无关的检查：
+  - BLOCKER（整次生成失败 + 既有扣费补偿，`PAPER_REVIEW_BLOCKED`）：空答案、空解析、AI 选择题完全没有选项、命中禁用措辞。
+  - WARNING（落 `paramsJson.reviewWarnings`，预览页顶部横幅 + 对应题卡黄框）：选项数 ≠ 4、填空题带选项、答案字母越界、AI 痕迹、题干过长、解析过短（选择/填空 < 40 字、计算/证明/解答 < 120/150 字）、依赖插图（「如图」）、同模板近似重复（数字归一化后同一题干 → 只改数字的重复题）。
+  - 生成顺序：`dedupePaperItems`（原 `uniquePaperItems` 导出）后按最终 position 审题，保证 warning 指向的题号与落库一致。
+- **预览页选项修复**：`paper-preview-view.tsx` 的类型与渲染此前都没有 `optionsJson`（打印页有、预览页没有）。现抽 `apps/web/components/paper-item-options.tsx` 共享组件，预览与打印共用（打印页原局部 `OptionsList` 删除），保证字母序 A/B/C/D、换行与空值行为一致。
+- **真实根因：选项被模型写成一行**。实测 qwen-max 会把 4 个选项输出成 `"A. 5个 B. 6个 C. 7个 D. 8个"` 单行字符串，`coerceOptionArray` 原来只按换行 / LaTeX `\[10pt]` 切分 → 落库成 `["5个 B. 6个 C. 7个 D. 8个"]` 一个选项，打印/预览都变成一行。现在补「行内 A./B./C./D. 标记」切分（支持 `（A）…` 全角括号、`；` 分隔），要求字母严格按 A→B→C→D 递增才切（避免误伤题干里的孤立 "B."），并剥离前缀与分隔符残留。
+- **测试**：`apps/web/tests/unit/paper-review-generated.test.ts`（12 例）+ `apps/web/tests/unit/paper-item-options.test.tsx`（4 例）+ `packages/ai/tests/paper-coercion.test.ts` 新增 5 例（整行选项/全角括号/反例不误切/数组前缀剥离）；`role-nav.test.ts` 与密码登录 WIP 的「账号」导航同步（4 条断言）。
+- 验证：`apps/web` 单测 25 文件 132 例全绿；全仓 `turbo typecheck` 8/8；真机（demo 教师 → 真实 qwen-max 生成 10 题卷 39s）预览页 6 道选择题各 4 个选项分行渲染，审题 warnings 由 18 条噪点降为 7 条真实「解析偏短」。
+
+**「一键中考风格卷」生成失败的根因与修复**（2026-10-26 深夜）：
+- 现象：教师点「一键生成中考风格卷」→ 156 秒后 `PAPER_REVIEW_BLOCKED`（已自动退还 credits）。日志显示一次请求打了 5 次 AI（初始 3 段 + 2 轮修复），说明修复轮重复生成也清不掉 blocker。
+- 离线复算（从 `model_calls.request_json/response_json` 还原 5 次调用）定位根因：**qwen-max 把 4 个选项输出成一个字符串，且分隔符是字面量 `\n`（反斜杠+n 两个字符）而不是真换行**，例如 `"options": "A. 5\nB. 8\nC. 10\nD. 12"`（JSON 层呈现为 `\\n`）。`coerceOptionArray` 只按真换行 / LaTeX `\[10pt]` 切 → 得到 1 个选项 → 中考蓝图 10 个 `SINGLE_CHOICE` slot 全部 `CHOICE_OPTION_COUNT` BLOCKER；修复轮同 prompt 再生成，格式一模一样，2 轮后整卷失败。题量/题型/答案本身都是对的，纯粹是**转义换行未归一化**。
+- 修复分三层（缺一层都会复发）：
+  1. **解析层归一化**（`packages/ai/src/schemas.ts`）：新增 `normalizeAiText` 把字面量 `\n` / `\r\n` 还原成真换行——紧跟选项标记（`\nB.` / `\n（C）`）的优先还原；其它位置用 `(?![a-zA-Z])` 保护 LaTeX 命令（`\neq` / `\nabla` / `\not`）。`coerceOptionArray`、`stemMd/answerMd/solutionMd/rubricMd` 全部过一遍；新增 `stripTrailingOptionBlock` 去掉题干尾部重复抄写的选项块（模型有时把选项同时写进 stem）。`PaperGenItemSchema` 改为 `.transform()` 做统一归一。
+  2. **修复轮带缺陷反馈**：`PaperGenerationInputSchema` 加可选 `qualityInstructions`，`AiRouter.generatePaper` 把指令拼进 user content；`paper.ts` 的 `repairInstructionsFor(blockers)` 把 blocker code 翻成可执行要求（options 必须 4 项 JSON 数组 / 禁止字面量 `\n` / 题干不抄选项 / 补 answerMd·solutionMd / type 对齐 / 填空不带 options …）。此前修复轮只是「同 prompt 再来一次」，格式类缺陷必然复现。
+  3. **失败可解释**：`apps/web/server/trpc.ts` 的 `errorFormatter` 白名单透出 `cause.blockers` / `cause.shortfallByType`（此前 client 读 `shortfallByType` 永远是 undefined，是个潜在 bug）；生成表单按 blocker code 映射中文原因（选项格式异常/缺答案/缺解析/题型不一致/填空带选项/合规措辞），不再是笼统一句。
+- 验收（真机同路径）：同一操作 **156s 失败 → 44.8s 成功**；24 题全部落库、`status=READY`、10 道选择题各 4 个选项（`jsonb_array_length` 合计 40）、`reviewBlockers`/`reviewWarnings` 均为空；预览页 10 个选项容器、打印页正常。
+- 测试：`paper-coercion` +3（字面量 `\n` / `\r\n` / LaTeX 不误伤）、`paper-gen-schema` +4（选项切分/题干去重/正文换行/LaTeX 保护）、`paper-repair-instructions` 4 例；`apps/web` 全量单测 26 文件 136 例、`packages/ai` 相关 4 文件 39 例全绿；全仓 typecheck 8/8。
+- 已知遗留：修复前已落库的旧卷 optionsJson 仍是坏的（对象是历史 DRAFT 演示数据），新生成不受影响；如需回填可写一次性脚本重跑 `coerceOptionArray`。
+
+**补充：同一 bug 的第二/第三波变体与最终策略**（2026-10-26 23:10）：
+- 修完「字面量 `\n`」后用户复测仍失败，继续从 `model_calls` 离线复算，抓到另外两种变体：
+  1. **`<br>` 分隔**：`"options": "A. 2千克<br>B. 4千克<br>C. 5千克<br>D. 10千克"`（qwen-max 用 HTML 换行拼选项）；
+  2. **修复轮畸形 JSON**：`"options": "["` + 非法键（模型被"必须是数组"的指令带偏，输出坏结构）。
+- 期间还试过 **`paper-gen/v3.md`**（在 prompt 里强调 options 必须 JSON 数组并给示例）：实测 qwen-max 反而更容易输错 JSON（PARSE_FAILED，一次是位置 9218 语法错误，一次是 `items[0].answerMd/solutionMd/difficulty` 全丢），把错误类型从"可归一化的格式问题"升级成"整次 500"。**已删除 v3 文件并回退到 v2**，结论：这类不稳定必须由解析层兜底，不能靠 prompt 施压。
+- 最终 `coerceOptionArray` 支持 6 类真实格式（全部有测试）：
+  1) 真换行 / LaTeX `\[10pt]`；2) 字面量 `\n` / `\\n` / `\r\n`（1–2 个反斜杠，保护 LaTeX `\neq` 等）；3) `<br>` / `<br/>` / `<br />` / `&lt;br&gt;` / `<p>` 等 HTML 标签；4) 二次编码的 JSON 数组字符串（`"[\"A. x\",…]"`）；5) 单元素数组里装着整串选项；6) 无任何分隔符时按 A→B→C→D 严格顺序兜底切分。另加 `stripTrailingOptionBlock` 去掉题干尾部重复选项块。
+- 另加**重试提示**：`generatePaper` 的 `retryMessage` 明确要求「字符串内禁止未转义换行/引号、options 必须是 4 个字符串的数组、只输出 JSON」，提升 JSON 坏掉时的自愈率。
+- 真机验收（连续 3 次点「一键中考风格卷」）：**3/3 成功**，44.1s / 44.8s / 46.8s；每次 24 题、10 个选项容器全部 4 项、`blockers=0`、`warnings=0`。
+- 测试基线：`apps/web` 26 文件 136 例、`packages/ai` 相关 4 文件 45 例（`paper-coercion` 20 例覆盖 6 类格式）全绿；全仓 typecheck 8/8。
+
+**浙江省中考版式改造**（2026-10-26 23:40）：
+- 目标：按 **2025 年浙江省初中学业水平考试（省级统考）数学卷**真实格式出卷。查证后的真实结构：
+  - 一、选择题 10 小题 × 3 分 = 30 分；二、填空题 6 小题 × 3 分 = 18 分；三、解答题 8 小题 = 72 分，分值梯度 **8/8/8/8/8/10/10/12**（第 24 题为压轴）；满分 120、考试时间 120 分钟。
+  - **试题卷与答题纸分离**（答案写答题纸上，试题卷不留作答区）；选择题选项一行排列；卷头为「浙江省初中学业水平考试 / 数 学 试 题 卷」+ 姓名/准考证号 + 注意事项。
+- 蓝图（`apps/web/lib/zhongkao-blueprint.ts`）：解答题分值阶梯由旧的 `6/6/8/8/10/10/12/12` 改为浙江口径 `8/8/8/8/8/10/10/12`；难度阶梯 `[2,2,3,3,3,4,4,5]`；`capstoneTail` 由 2 改为 **1**（仅第 24 题压轴）；模板 label 改为「浙江省中考数学卷式（2025 省级统考）v1」（`styleTemplate` id 不变，旧卷兼容）。
+- 文案（`apps/web/lib/paper-copy.ts`）：`EXAM_REGION_LABEL/EXAM_STAGE_LABEL/EXAM_SUBJECT_LABEL`、浙江口径 `EXAM_NOTICE`（4 条）、`ANSWER_SHEET_NOTICE`、`examSectionNote`（选择题「不选、多选、错选均不得分」/解答题「解答应写出文字说明、证明过程或演算步骤」）、`answerSheetHeight`（8 分 6cm / 10 分 8cm / 12 分 10cm）。
+- 打印（`print/exam-paper-components.tsx` 重写 + `paper-print-view.tsx`）：
+  - 三个文档 Tab：**试题卷 / 答题纸 / 参考答案（含解析）**；`ExamHeader` 按 variant 渲染浙江卷头与各自注意事项；`SealLine` 保留装订线。
+  - 试题卷：三大题标题 + 题量分值说明 + 固定表述；选择题选项**一行排列**（`flex-wrap`）；解答题小题号后标（X分）；**不留作答区**；填空题题干无横线时补一条。
+  - 答题纸（新增 `AnswerSheetDocument`）：选择题 10 列填涂格（每题 A/B/C/D 空圈）、填空题横线、解答题按分值给作答框并 `break-inside: avoid`；按题号连续排版、不为压轴题强制分页。
+  - 参考答案：题目 + 答案 + 解析 + 评分标准 + 卷末双向细目表（单独分页）。
+  - 打印 CSS 加 `@page { size: A4; margin: 13mm 12mm }`。
+- 真机验收（真实生成 + Playwright 打印 PDF 数页）：24 题 / 120 分，分值序列 `3×16,8,8,8,8,8,10,10,12`，blockers/warnings 均为 0；**试题卷 4 页 / 答题纸 4 页 / 参考答案 6 页 A4**（与真实浙江卷试题卷 4 页一致；答题纸相当于 A3 双面 2 张）。
+- 同批修复：模型用 `\[1ex]`/`\[0.5em]` 等非 pt 单位作选项分隔导致选项里残留间距命令 → `OPTION_SEPARATOR` 支持 `pt|ex|em|cm|mm`，`stripOptionPrefix`/文本 transform 清理残留；`paper-coercion` 补 2 例。
+- ~~已知差距（下一步）：真实浙江卷几何/函数题大量依赖**插图**~~ → 已落地，见下节「浙江卷配图」。
+- 测试：`zhongkao-blueprint.test.ts`（分值阶梯/压轴数）、`exam-paper-components.test.tsx`（试题卷不留作答区/答题纸填涂与作答框高度）已同步；`apps/web` 全量单测 26 文件 141 例全绿，全仓 typecheck 8/8。
+
+**浙江卷配图能力（几何/坐标系图形 DSL + 自研 SVG 渲染）**（2026-10-26 23:55）：
+- 背景：真实浙江卷几何/函数题大量带图，纯文字卷「如图但没图」是最大形态差距。**不让模型直接输出 SVG**（不可校验、有注入风险），改为「受约束图形 DSL + 前端确定性渲染」。
+- 数据契约（`packages/ai/src/schemas.ts`）：
+  - `GeometryFigureSchema`：`kind:"GEOMETRY"` + `points[{id,x,y}]`（0–100 画布，y 向下）+ `segments[{from,to,dashed?}]` + `circles[{cx,cy,r}]` + `labels[{text,x,y}]`；
+  - `CoordinateFigureSchema`：`kind:"COORDINATE"` + `axes{xMin,xMax,yMin,yMax}`（数据坐标）+ 同套 points/segments/circles/labels；
+  - `FigurePointIdSchema` 限制点名为字母开头 ≤6 字符；未知 `kind` 一律拒绝；`FigureGenerationOutputSchema.figure` 可为 `null`（本题不需要配图）。
+- AI 任务：新增 `TaskKind.PAPER_FIGURE_GEN`（qwen-max、thinking off、timeout 120s、temperature 0.2）+ prompt `prompts/paper-figure/v1.md`；独立于主出卷调用（配图 JSON 崩了不会毁整卷），审计写 `model_calls`。
+- **并行/幂等**：`paper.generate` 落库后 best-effort 补图，最多 8 题、并发 3；失败只 `logger.warn` 并保留原审题 warning。图存 `Paper.paramsJson.figures = { "<1-based position>": FigureSpec }`，不改 schema/migration；补图成功后同步移除对应题的 `FIGURE_DEPENDENT` warning。
+- **模型输出容错（关键）**：实测 qwen-max 会偷懒给简写 `points:["A","B","C"]`、`segments:["AB","BC","CA"]`、`labels:["5","13"]`（8/8 PARSE_FAILED），因此 `normalizeFigureSpec` 做宽松归一化后再生效：
+  - 点：支持字符串数组 / `{A:{x,y}}` 映射 / `[x,y]` / `"x,y"`，缺坐标按点数自动布局（3 点三角、4 点矩形、5+ 正多边形）；
+  - 线段：支持 `"AB"` 字符串、`{start,end}`、`{points:[A,B]}`；点不存在时渲染层静默跳过；
+  - 标签：只保留**有明确坐标**的 label（简写标签无位置，自动摆放会把「90°」放到边中间误导，直接丢弃；条件题干里已有）；
+  - 坐标系：`axes` 缺省 -5..5；若点没有真实数据坐标则**降级为 GEOMETRY**，避免把自动布局坐标当数据坐标画。
+- 渲染（`apps/web/components/paper-figure.tsx`）：白名单图元（line/circle/text/defs）确定性渲染，无 `dangerouslySetInnerHTML`；几何图自动求包围盒等比缩放到 0–100 画布（容忍越界坐标）；坐标系图按 axes 等比映射、画网格/坐标轴/箭头/刻度/点标签；**兜底**：`segments` 为空且点 ≥2 时按点名顺序自动连线（≥3 闭合），保证至少画出三角形/四边形。
+- 版式接入：打印「试题卷 / 参考答案」在题目下方居中渲染（试题卷 3.8cm、教师卷 3.2cm 宽，SVG 显式 `width:100%/aspect-ratio:1:1` 防 flex 压扁）；预览页题卡同样展示；答题纸**不放图**（浙江卷答题纸本来就没有图）。
+- 实测（真实生成，选几何 KP）：80s 出卷 + **8 张图全部生成并渲染**（三角形等），试题卷 **5 页** / 答题纸 **4 页** / 参考答案 **7 页**；`blockers=0`、`warnings=0`；修复前渲染成散点的问题由「SVG 未显式定宽高 + 无 segments」两个原因共同导致，已修。
+- 测试：`packages/ai/tests/paper-figure-schema.test.ts`（12 例：严格校验 + 简写归一化 + 坐标系降级）、`apps/web/tests/unit/paper-figure.test.tsx`（6 例：几何/坐标系渲染、越界坐标、null、figureForPosition）；`apps/web` 全量单测 **27 文件 147 例**、`packages/ai` 相关 44 例全绿；全仓 typecheck 8/8。
+- 设计代价 / 留白：图形是**示意图**（按点名自动布局，不是严格按题干边长比例作图）；模型只给点名时无法还原真实比例；图与题干的一致性仍依赖 prompt + 教师核对（审题只校验结构不校验图形语义）；补图是额外平台成本（每题一次短调用，不额外扣教师 credits）。
+
+**函数图象曲线渲染（抛物线/直线/双曲线）**（2026-10-27 00:15）：
+- DSL 扩展：`CoordinateFigureSchema` 增加 `curves: [{ expression, dashed? }]`，表达式只允许数字 / x / `+ - * / ^` / 括号 / `sqrt(...)` / `abs(...)`（`FigureCurveSchema` 校验必须含 x）。
+- **安全红线**：`apps/web/lib/function-curve.ts` 手写词法 + 递归下降解析器，**绝不 eval / new Function**；字符白名单只做粗筛，`sin/log/process.exit` 等未知标识符由解析器显式拒绝并返回 null。支持隐式乘法 `2x`、`2(x+1)`、`x(x-1)`、右结合乘方 `2^3^2`、全角 `＝ − × ÷` 归一化。
+- 取样：`sampleCurve(expression, axes, 240)` 在 axes 范围内取样，遇无定义/`|y|` 超范围/渐近线跳变自动断段（`y=1/x` 在 x=0 断成两段，不画竖线），输出数据坐标折线；渲染层映射为 `<polyline>`（无 NaN）。
+- 两条来源，**确定性优先**：
+  1. `apps/web/lib/paper-figure-derive.ts`：题干含显式解析式（`y=x^2-4x+3`，支持 LaTeX `$…$`、上标 ²）时**本地推导** COORDINATE 图（采样+分位裁剪自动选坐标轴范围），不花 AI 调用、图像更准；
+  2. 无解析式的几何题仍走 `PAPER_FIGURE_GEN` AI 配图（prompt 升版 **paper-figure/v2**，在 prompt v1 已注册进 DB 的情况下按仓库规范**只能新建 v2**，不能原地改 v1；撞 PromptVersionConflictError 的教训已记录）。
+- 候选筛选：强信号（如图/抛物/坐标/图像/交点）优先 + 几何/函数/统计类题干 → 最多 8 题；模型对每题仍可返回 `figure:null`；新增 `isUsefulFigure` 过滤「2 个点/空图」等无效图，避免卷面变差。
+- 实测（函数知识点，真实生成）：**8 张配图、其中 7 条函数曲线**成功渲染；试题卷 **5 页** / 答题纸 **4 页** / 参考答案 **8 页**；出卷 50.8s（含补图）；`pageerrors` 无。
+- 测试：`apps/web/tests/unit/function-curve.test.ts`（12 例：求值/隐式乘法/乘方右结合/sqrt/abs/危险表达式拒绝/渐近线断段）、`paper-figure-derive.test.tsx`（9 例：LaTeX 题干提取、轴范围、非函数题不配图、polyline 渲染）、`paper-figure.test.tsx` 增 2 例（曲线渲染/非法表达式跳过）；`apps/web` 全量 **29 文件 170 例**、`packages/ai` **17 文件 117 例**全绿，typecheck 8/8。
+- ~~仍然存在的**最大版式差距**：题干/答案里的 LaTeX 在打印页仍是原始文本~~ → 已接入 KaTeX，见下节。
+
+**KaTeX 数学公式渲染（服务端）**（2026-10-27 00:20）：
+- 依赖：`apps/web` 增加 `katex`（0.19.1，自带类型，未装 @types/katex）；`app/layout.tsx` 全局引入 `katex/dist/katex.min.css`（Next 会处理 node_modules 里的字体资源）。
+- 切分器（`lib/math-segments.ts`，纯函数）：只处理试卷常见数学标记，不引入 Markdown 全量解析——
+  - `$...$` 行内、`$$...$$` 块级、`\(...\)` 行内、`\[...\]` 块级；
+  - 货币写法（`售价 $5 元` 未闭合）不会被误判；空公式 `$ $` 不产生空段；换行保留在文本段。
+- 组件（`components/math-text.tsx`）：`katex.renderToString` **服务端渲染**（Node/浏览器均可，打印与预览共用）；`trust:false`（禁 `\href`/`\url`/原始 HTML）+ `throwOnError:false`（坏公式显示错误样式而非白屏）+ try/catch 兜底回退原文；唯一 `dangerouslySetInnerHTML` 来自 KaTeX 受控输出，普通文本走 React 子节点（无拼接 HTML、无 XSS）。
+- 接入范围：打印「试题卷 / 参考答案」的题干、选项、答案、解析、评分标准；预览页题干/选项/答案/解析；选择题选项组件 `PaperItemOptions` 统一走 MathText。答题纸无题干不涉及。
+- 实测（复用已生成的真实函数卷）：预览页 **110 个公式**、试题卷 **25 个公式**全部渲染为 KaTeX；页数不变（试题卷 5 / 答题纸 4 / 参考答案 8）；无页面错误；PDF 中数学字体正常嵌入。观感从「`$y = 3x - 2$` 原始文本」变为标准数学排版（斜体变量、上下标、分数）。
+- 测试：`math-segments.test.ts`（8 例：行内/块级/`\\(…\\)`/货币不误判/空公式/换行）、`math-text.test.tsx`（6 例：KaTeX 输出、display 模式、非法公式不抛错、HTML 转义无 XSS、null 兜底）、`paper-item-options.test.tsx` 同步（选项文本已包 MathText）；`apps/web` 全量 **31 文件 184 例**、`packages/ai` **17 文件 117 例**全绿，typecheck 8/8。
+- 说明 / 留白：只覆盖「试卷模块」；答疑对话、题库详情等其他页面若也要公式排版，可直接复用 `<MathText>`。Markdown 的加粗/列表等结构语法仍未支持（当前 AI 输出以纯文本+LaTeX 为主，暂不构成主要问题）。
+
+**`<MathText>` 铺开到学习端页面**（2026-10-27 00:28）：
+- 已接入（题干/答案/解析/课件正文/错因分析等所有含数学文本的位置）：
+  - 错题本：`error-book/[entryId]/entry-detail.tsx`（题目、参考答案、变式题干、变式解析）；
+  - 训练：`(student)/training/session-view.tsx`（题干、解析）；
+  - 作业：`assignments/[studentAssignmentId]/submit-form.tsx`（题干）、`result/page.tsx`（题干、参考答案）、`teacher/assignments/[assignmentId]/edit/draft-editor.tsx`（题干/答案/解析）；
+  - 课件：`teacher/coursewares/[id]/courseware-preview-view.tsx` 与 `print/courseware-print-view.tsx`（正文）；
+  - 答疑/画像：`tutor/error-analysis-card.tsx`（错因分析）、`portrait/advice-card.tsx`（建议）。
+- 列表摘要（错题本列表/复习页/变式摘要）不渲染公式：新增纯函数 `plainPreview(raw, maxLength)`（去掉 `$…$` 标记、合并空白、截断），避免把公式截一半显示成乱码；`truncate` helper 改为复用它。
+- 冒烟（demo 学生真实登录）：`/training`、`/error-book`、`/error-book/<entry>`、`/tutor`、`/portrait` 全部 0 pageerror；MathText 组件正常挂载（demo 数据本身多为纯文本，公式渲染由试卷页 110/25 个公式的实测覆盖）。
+- 测试：`math-segments.test.ts` 追加 `plainPreview` 3 例；`apps/web` 全量 **31 文件 187 例**全绿，typecheck 8/8。
+
+**试卷内容质量：prompt v4 + 确定性质量门 + 12 场景评测基线**（2026-10-27 00:35）：
+- prompt：新增 `packages/ai/src/prompts/paper-gen/v4.md`（v3 已被历史实验占用且不能原地改，故升 v4），路由中考路径 `promptVersion = "v4"`。v4 只在 v2 稳定的格式段之上追加**内容质量硬性要求**：解答题分步解析 ≥150 字、评分标准按分值拆点、选择题 4 个互异选项且禁用「以上都对」、题干不依赖插图、公式用简单 KaTeX、同一卷内禁止只改数字的近似重复题。历史教训保留：不在 prompt 里给 options JSON 示例（会逼出非法 JSON），格式继续由 `coerceOptionArray` 兜底。
+- 确定性质量门（`apps/web/server/lib/paper-review.ts` `reviewPaperSlot`，中考路径）：
+  - **BLOCKER** `SHORT_SOLUTION`：解答题解析 <80 字 → 触发既有修复轮（`repairInstructionsFor` 新增对应指令：分步 ≥4 步、≥150 字、评分标准按分值拆点）；
+  - **WARNING**：`SHORT_SOLUTION_WARN`（80–150 字/客观题 <20）、`MISSING_RUBRIC`、`CHOICE_OPTIONS_DUPLICATE`、`CHOICE_ALL_OF_ABOVE`、`CHOICE_ANSWER_NOT_LETTER`、`STEM_TOO_SHORT`（<12 字）。
+  - 通用（非中考）路径保持原策略（短解析只 WARNING），避免影响旧场景。
+- 兼容：`packages/ai/src/adapters/mock.ts` 的 mock 题与 `paper-generate-zhongkao.test.ts` 的本地 mock 都改为「解答题长解析 + 评分标准」，否则依赖 mock 的集成/E2E 会被新质量门误伤；`getAiRouter` 的 `promptVersion` 类型从 `"v1"|"v2"` 放宽为 `string`。
+- **12 场景评测基线**：新增 `apps/web/scripts/eval-paper-quality.mjs`（可复用工具，真实出卷 + 直接查 DB 统计）：
+  - 场景覆盖：一次函数/二次函数/二次函数图象/勾股定理/三角形/圆/四边形/全等三角形/相似三角形/解直角三角形 + 代数几何混合 + 函数统计混合；
+  - 指标：成功率、耗时、题数/总分、选择题 4 选项比例、解答题解析长度中位数、评分标准覆盖率、blockers/warnings 及代码、配图数；结果写 `docs/claude/eval/paper-quality-<date>.json`；
+  - 用法：`cd apps/web && node scripts/eval-paper-quality.mjs [--limit=N]`（需 dev server + Postgres + 真实 DashScope）。
+- 首场实测（v4，一次函数单 KP）：**成功**，24 题/120 分，选择题 4 选项 10/10，**解答题解析中位数 193 字**（改造前同口径 53–99 字），评分标准 8/8，warnings=1（SHORT_SOLUTION_WARN）。全量 12 场景结果见下方（跑完回填）。
+- **全量 12 场景基线结果（2026-10-27 01:34，v4 + 质量门）**：
+  - **12/12 成功**（100%），平均耗时 **73.9s**；每卷均 24 题 / 120 分；
+  - 选择题 4 选项比例 **100%**（120/120 题）；
+  - 解答题解析长度中位数 **平均 177 字**（各场景 128–230，全部 ≥113，远优于改造前 53–99）；
+  - 解答题评分标准覆盖率 **100%**（96/96 题）；blockers 全 0；
+  - warnings 主要是 `SHORT_SOLUTION_WARN`（80–150 字区间，各场景 0–7 条），说明模型已基本满足「≥80 字」硬门，但「≥150 字/分步完整」还需继续加强（下一轮可把阈值抬到 120 字做 BLOCKER 或按分值分档）；
+  - **本轮 figures=0**：v4 prompt 要求「题干不依赖插图、用文字写全条件」，配图模型对这类自足题干多返回 `figure:null`（figure 调用 35 次 SUCCESS 但多数主动放弃）；属于策略副作用，下一轮需调整配图 prompt/候选策略（例如几何题即使不写「如图」也要求配示意图），并补一条「几何题干 → 优先配图」的规则。
+  - 结果文件：`docs/claude/eval/paper-quality-2026-10-26.json`；运行日志 `docs/claude/eval/eval-progress.log`。
+- 测试：`paper-review.test.ts`（20 例，含新增 7 个质量门用例）、`paper-repair-instructions.test.ts`（5 例，含 SHORT_SOLUTION 指令）全绿；`packages/ai` 17 文件 117 例全绿；`apps/web` 全量 **32 文件 195 例**全绿，typecheck 8/8。

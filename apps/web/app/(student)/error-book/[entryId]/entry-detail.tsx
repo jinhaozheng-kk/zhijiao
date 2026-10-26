@@ -5,6 +5,8 @@ import { StatePanel } from "@/components/ui/state-panel";
 import { SkeletonList } from "@/components/ui/skeleton";
 import { StatusPill } from "@/components/ui/status-pill";
 import { EntryActions } from "../entry-actions";
+import { MathText } from "@/components/math-text";
+import { plainPreview } from "@/lib/math-segments";
 
 const ROOT_CAUSE_LABEL: Record<string, string> = {
   CONCEPT_CONFUSION: "概念混淆",
@@ -21,7 +23,7 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 function truncate(s: string, n: number) {
-  return s.length > n ? s.slice(0, n) + "…" : s;
+  return plainPreview(s, n);
 }
 
 export function EntryDetail({ entryId }: { entryId: string }) {
@@ -66,14 +68,16 @@ export function EntryDetail({ entryId }: { entryId: string }) {
 
       <section className="rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-200">
         <h2 className="font-semibold">题目</h2>
-        <div className="mt-2 whitespace-pre-wrap text-sm">{question.stemMd}</div>
+        <div className="mt-2 whitespace-pre-wrap text-sm">
+          <MathText text={question.stemMd} />
+        </div>
         {question.answer?.contentMd && (
           <details className="mt-3">
             <summary className="cursor-pointer text-sm text-slate-600">
               查看参考答案
             </summary>
             <div className="mt-2 whitespace-pre-wrap text-sm">
-              {question.answer.contentMd}
+              <MathText text={question.answer.contentMd} />
             </div>
           </details>
         )}
@@ -127,14 +131,14 @@ export function EntryDetail({ entryId }: { entryId: string }) {
                           {it.level} · {truncate(it.stemMd, 60)}
                         </summary>
                         <div className="mt-2 ml-4 whitespace-pre-wrap text-sm">
-                          {it.stemMd}
+                          <MathText text={it.stemMd} />
                         </div>
                         <details className="mt-2 ml-4">
                           <summary className="cursor-pointer text-sm text-emerald-700">
                             查看解析
                           </summary>
                           <div className="mt-1 whitespace-pre-wrap text-sm">
-                            {it.solutionMd}
+                            <MathText text={it.solutionMd} />
                           </div>
                         </details>
                       </details>

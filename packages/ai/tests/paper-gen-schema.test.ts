@@ -20,6 +20,70 @@ describe("PaperGenerationOutputSchema", () => {
   });
 });
 
+describe("PaperGenItemSchema 真实模型脏数据归一化", () => {
+  const base = {
+    type: "SINGLE_CHOICE",
+    answerMd: "B",
+    difficulty: 2,
+    cognitiveLevel: "UNDERSTAND",
+    points: 3,
+    knowledgePointHints: ["一次方程应用题"],
+  };
+
+  it("options 用字面量 \\n 拼接 → 切成 4 个选项", () => {
+    const parsed = PaperGenerationOutputSchema.parse({
+      title: "卷",
+      items: [{ ...base, stemMd: "每本 4 元，共 32 元，买了几本？", options: "A. 6\\nB. 8\\nC. 9\\nD. 10", solutionMd: "4x=32，x=8。" }],
+    });
+    expect(parsed.items[0]!.options).toEqual(["6", "8", "9", "10"]);
+  });
+
+  it("题干末尾重复抄了一遍选项 → 自动剥掉（避免与 options 重复渲染）", () => {
+    const parsed = PaperGenerationOutputSchema.parse({
+      title: "卷",
+      items: [{
+        ...base,
+        stemMd: "每本 4 元，共 32 元，买了几本？\\nA. 6\\nB. 8\\nC. 9\\nD. 10",
+        options: "A. 6\\nB. 8\\nC. 9\\nD. 10",
+        solutionMd: "4x=32，x=8。",
+      }],
+    });
+    expect(parsed.items[0]!.stemMd).toBe("每本 4 元，共 32 元，买了几本？");
+  });
+
+  it("题干用双反斜杠 + n（\\\\n）拼接的重复选项块也能剥掉", () => {
+    const parsed = PaperGenerationOutputSchema.parse({
+      title: "卷",
+      items: [{
+        ...base,
+        // 源码里 "\\\\n" = 两个字符反斜杠 + n（真实模型的双重转义）
+        stemMd: "每本 4 元，共 32 元，买了几本？\\\\nA. 6\\\\nB. 8\\\\nC. 9\\\\nD. 10",
+        options: "A. 6\\nB. 8\\nC. 9\\nD. 10",
+        solutionMd: "4x=32，x=8。",
+      }],
+    });
+    expect(parsed.items[0]!.stemMd).toBe("每本 4 元，共 32 元，买了几本？");
+    expect(parsed.items[0]!.options).toEqual(["6", "8", "9", "10"]);
+  });
+
+  it("answer/solution 里的字面量 \\n 还原成真换行", () => {
+    const parsed = PaperGenerationOutputSchema.parse({
+      title: "卷",
+      items: [{ ...base, stemMd: "解方程 2x=6", options: undefined, solutionMd: "第一步：2x=6\\n第二步：x=3" }],
+    });
+    expect(parsed.items[0]!.solutionMd).toBe("第一步：2x=6\n第二步：x=3");
+  });
+
+  it("LaTeX 命令不被误还原", () => {
+    const parsed = PaperGenerationOutputSchema.parse({
+      title: "卷",
+      items: [{ ...base, stemMd: "若 $a\\neq b$，求值", options: undefined, solutionMd: "因为 $a\\neq b$。" }],
+    });
+    expect(parsed.items[0]!.stemMd).toContain("\\neq");
+    expect(parsed.items[0]!.solutionMd).toContain("\\neq");
+  });
+});
+
 describe("PaperGenerationInputSchema", () => {
   it("PaperGenerationInputSchema 接受 sections，拒绝空 sections", () => {
     expect(() =>

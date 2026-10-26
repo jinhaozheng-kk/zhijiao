@@ -13,6 +13,6 @@ export function buildAdapter(): ModelAdapter {
   return new DashScopeAdapter();
 }
 
-export function getAiRouter(userId: string, opts?: { promptVersion?: "v1" | "v2" }) {
+export function getAiRouter(userId: string, opts?: { promptVersion?: string }) {
   return new AiRouter({ prisma, adapter: buildAdapter(), userId, promptVersion: opts?.promptVersion });
 }

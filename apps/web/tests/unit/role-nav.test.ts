@@ -9,6 +9,7 @@ describe("role navigation", () => {
       "训练",
       "作业",
       "学情",
+      "账号",
     ]);
   });
 
@@ -19,6 +20,7 @@ describe("role navigation", () => {
       "学生",
       "AI 出卷",
       "AI 课件",
+      "账号",
     ]);
     expect(navForRole("TEACHER").find((i) => i.label === "AI 出卷")).toEqual({
       label: "AI 出卷",
@@ -34,6 +36,7 @@ describe("role navigation", () => {
     expect(navForRole("PARENT").map((item) => item.label)).toEqual([
       "孩子",
       "学情",
+      "账号",
       "隐私",
     ]);
   });
@@ -52,9 +55,12 @@ describe("role navigation", () => {
   });
 
   it("teacher nav falls back to /teacher with no classroom", () => {
-    expect(navForRole("TEACHER").every((i) => i.href.startsWith("/teacher"))).toBe(
-      true,
-    );
+    // 教师导航里的「账号」是指向 /account/security 的全局入口，其余均为教师域链接。
+    expect(
+      navForRole("TEACHER").every(
+        (i) => i.href.startsWith("/teacher") || i.href.startsWith("/account"),
+      ),
+    ).toBe(true);
     expect(navForRole("TEACHER").find((i) => i.label === "作业")?.href).toBe(
       "/teacher",
     );

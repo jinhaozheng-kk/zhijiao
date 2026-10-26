@@ -20,10 +20,26 @@ import type { Ctx } from "./context.js";
 const t = initTRPC.context<Ctx>().create({
   transformer: superjson,
   errorFormatter({ shape, error }) {
-    const cause = error.cause as { reason?: string } | undefined;
+    // 只透出白名单里的 cause 字段，避免把内部对象整体泄漏给客户端。
+    const cause = error.cause as
+      | {
+          reason?: string;
+          blockers?: string[];
+          shortfallByType?: Record<string, number>;
+        }
+      | undefined;
     return {
       ...shape,
-      data: { ...shape.data, reason: cause?.reason ?? null },
+      data: {
+        ...shape.data,
+        reason: cause?.reason ?? null,
+        ...(Array.isArray(cause?.blockers)
+          ? { blockers: cause.blockers.filter((code): code is string => typeof code === "string") }
+          : {}),
+        ...(cause?.shortfallByType && typeof cause.shortfallByType === "object"
+          ? { shortfallByType: cause.shortfallByType }
+          : {}),
+      },
     };
   },
 });

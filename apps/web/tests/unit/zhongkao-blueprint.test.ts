@@ -9,12 +9,14 @@ describe("ZHONGKAO_GENERIC_TEMPLATE 常量", () => {
     expect(ZHONGKAO_TEMPLATE_ID).toBe("JUNIOR_MATH_ZHONGKAO_GENERIC_V1");
   });
 
-  it("默认满分 120 分：选择 10×3 + 填空 6×3 + 解答(6+6+8+8+10+10+12+12)", () => {
+  it("按浙江省 2025 统考口径：选择 10×3 + 填空 6×3 + 解答(8+8+8+8+8+10+10+12) = 120 分", () => {
     let total = 0;
     for (const sec of ZHONGKAO_GENERIC_TEMPLATE) {
       total += sec.pointsLadder.reduce((a, b) => a + b, 0);
     }
     expect(total).toBe(120);
+    const essay = ZHONGKAO_GENERIC_TEMPLATE.find((s) => s.questionType === "ESSAY")!;
+    expect(essay.pointsLadder).toEqual([8, 8, 8, 8, 8, 10, 10, 12]);
   });
 
   it("三大题顺序：选择题→填空题→解答题，题型映射到既有 QuestionType", () => {
@@ -45,13 +47,13 @@ describe("buildZhongkaoMathBlueprint", () => {
     );
   });
 
-  it("末尾 2 道解答题标 isCapstone，作答区 extraLarge", () => {
+  it("按浙江卷口径：仅最后 1 道解答题（第 24 题）标 isCapstone，作答区 extraLarge", () => {
     const bp = buildZhongkaoMathBlueprint({
       gradeLevel: "G9", durationMinutes: 120, textbookVersion: "GENERIC", kps: KPS,
     });
     const capstones = bp.slots.filter((s) => s.isCapstone);
-    expect(capstones).toHaveLength(2);
-    expect(capstones.map((s) => s.questionNo)).toEqual([23, 24]);
+    expect(capstones).toHaveLength(1);
+    expect(capstones.map((s) => s.questionNo)).toEqual([24]);
     expect(capstones.every((s) => s.answerAreaHint === "extraLarge")).toBe(true);
   });
 

@@ -3,7 +3,7 @@ export { PromptVersionConflictError } from "./registry.js";
 export { DashScopeAdapter } from "./adapters/dashscope.js";
 export { MockAdapter } from "./adapters/mock.js";
 export type { ModelAdapter, AdapterRequest, AdapterResponse } from "./adapters/types.js";
-export { TASK_MODEL_MAP, type TaskKind } from "./tasks.js";
+export { TASK_MODEL_MAP, TASK_CONFIG, resolveTaskConfig, type TaskKind, type TaskConfig } from "./tasks.js";
 export {
   TutoringInputSchema,
   TutoringOutputSchema,
@@ -49,6 +49,25 @@ export {
   PaperGenerationOutputSchema,
   type PaperGenerationInput,
   type PaperGenerationOutput,
+  // 浙江卷配图 DSL
+  FigurePointSchema,
+  FigureSegmentSchema,
+  FigureCircleSchema,
+  FigureLabelSchema,
+  FigureCurveSchema,
+  FigureSpecSchema,
+  GeometryFigureSchema,
+  CoordinateFigureSchema,
+  FigureGenerationInputSchema,
+  FigureGenerationOutputSchema,
+  type FigureSpec,
+  type FigurePoint,
+  type FigureSegment,
+  type FigureCircle,
+  type FigureLabel,
+  type FigureCurve,
+  type FigureGenerationInput,
+  type FigureGenerationOutput,
   // Plan 18:
   CoursewareSectionTypeEnum,
   LESSON_SECTION_ORDER,

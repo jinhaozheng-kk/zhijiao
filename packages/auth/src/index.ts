@@ -6,6 +6,7 @@ export * from "./ratelimit/in-memory-store.js";
 export * from "./ratelimit/redis-store.js";
 export * from "./ratelimit/rules.js";
 export * from "./otp.js";
+export * from "./password.js";
 export * from "./session.js";
 export * from "./register-payload.js";
 export * from "./wechat-state.js";

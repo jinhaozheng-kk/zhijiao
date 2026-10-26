@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { trpc } from "@/lib/trpc-client";
+import { plainPreview } from "@/lib/math-segments";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 function truncate(s: string, n: number) {
-  return s.length > n ? s.slice(0, n) + "…" : s;
+  return plainPreview(s, n);
 }
 
 export function ReviewView() {

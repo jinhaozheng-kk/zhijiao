@@ -11,6 +11,7 @@ export function navForRole(role: Persona, classroomId?: string): NavItem[] {
       { label: "训练", href: "/training" },
       { label: "作业", href: "/assignments" },
       { label: "学情", href: "/portrait" },
+      { label: "账号", href: "/account/security" },
     ];
   }
 
@@ -25,12 +26,14 @@ export function navForRole(role: Persona, classroomId?: string): NavItem[] {
       { label: "学生", href: anchor("students") },
       { label: "AI 出卷", href: "/teacher/papers" },
       { label: "AI 课件", href: "/teacher/coursewares" },
+      { label: "账号", href: "/account/security" },
     ];
   }
 
   return [
     { label: "孩子", href: "/parent" },
     { label: "学情", href: "/parent" },
+    { label: "账号", href: "/account/security" },
     { label: "隐私", href: "/account/privacy" },
   ];
 }

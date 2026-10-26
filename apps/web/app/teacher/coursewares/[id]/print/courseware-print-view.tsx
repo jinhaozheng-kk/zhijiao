@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { trpc } from "@/lib/trpc-client";
 import { SkeletonList } from "@/components/ui/skeleton";
+import { MathText } from "@/components/math-text";
 import { StatePanel } from "@/components/ui/state-panel";
 import {
   coursewareSectionTypeLabel,
@@ -70,7 +71,7 @@ export function CoursewarePrintView({ coursewareId }: { coursewareId: string }) 
                 <h2 className="text-lg font-semibold tracking-tight">{section.title}</h2>
               </div>
               <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-900">
-                {section.contentMd}
+                <MathText text={section.contentMd} />
               </p>
             </article>
           ))}

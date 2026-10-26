@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { gradeStatusLabel, studentAssignmentStatusLabel } from "@/lib/assignment-copy";
 import { trpc } from "@/lib/trpc-client";
+import { MathText } from "@/components/math-text";
 
 export default function AssignmentResultPage({
   params,
@@ -66,12 +67,14 @@ export default function AssignmentResultPage({
                 第 {index + 1} 题 ·{" "}
                 {gradeStatusLabel(answer?.gradeStatus ?? "UNGRADED")}
               </div>
-              <h2 className="mt-1 font-medium">{item.stemMd}</h2>
+              <h2 className="mt-1 font-medium">
+                <MathText text={item.stemMd} />
+              </h2>
               <p className="mt-3 text-sm text-slate-700">
                 作答：{answer ? JSON.stringify(answer.answerJson) : "未作答"}
               </p>
               <p className="mt-1 text-sm text-slate-700">
-                参考：{item.answerMd}
+                参考：<MathText text={item.answerMd} />
               </p>
               {answer?.teacherFeedbackMd && (
                 <p className="mt-1 text-sm text-slate-600">

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { copyForReason } from "@/lib/error-copy";
 import { trpc } from "@/lib/trpc-client";
+import { MathText } from "@/components/math-text";
 
 export function AdviceCard({ window }: { window: "D30" | "D90" | "ALL" }) {
   const [pendingReqId, setPendingReqId] = useState<string | null>(null);
@@ -53,12 +54,14 @@ export function AdviceCard({ window }: { window: "D30" | "D90" | "ALL" }) {
       )}
       {advise.data && (
         <div className="mt-3 space-y-2 text-sm" data-testid="advice-result">
-          <p className="whitespace-pre-wrap">{advise.data.summaryMd}</p>
+          <p className="whitespace-pre-wrap">
+            <MathText text={advise.data.summaryMd} />
+          </p>
           <ul className="list-disc pl-5">
             {advise.data.suggestions.map((s, i) => (
               <li key={i}>
                 <span className="font-medium">{s.focusKp}：</span>
-                {s.methodMd}
+                <MathText text={s.methodMd} />
               </li>
             ))}
           </ul>

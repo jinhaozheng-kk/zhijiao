@@ -10,6 +10,15 @@ export interface AdapterRequest {
   temperature?: number;
   // multimodal (qwen-vl): data URLs appended to the last user message.
   imageDataUrls?: string[];
+  /**
+   * 思考型模型开关（qwen3.x / deepseek-v4 等）：
+   * - `false`：关闭 reasoning，延迟/成本显著下降，且实测正文更完整；
+   * - `true` ：显式开启；
+   * - `undefined`：不传该参数（兼容非思考模型与第三方 provider）。
+   */
+  enableThinking?: boolean;
+  /** 单次请求超时（毫秒），由 task 配置给出；缺省用适配器默认值。 */
+  timeoutMs?: number;
 }
 
 export interface AdapterResponse {

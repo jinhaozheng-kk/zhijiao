@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { copyForReason } from "@/lib/error-copy";
 import { trpc } from "@/lib/trpc-client";
+import { MathText } from "@/components/math-text";
 
 const ROOT_CAUSE_LABEL: Record<string, string> = {
   CONCEPT_CONFUSION: "概念混淆",
@@ -169,7 +170,7 @@ export function ErrorAnalysisCard({
         className="mt-2 whitespace-pre-wrap text-sm"
         data-testid="error-analysis-reasoning"
       >
-        {analysis.rootCauseReasoning}
+        <MathText text={analysis.rootCauseReasoning} />
       </div>
       {analysis.suggestedKnowledgePoints.length > 0 && (
         <div className="mt-2 text-xs text-slate-600">

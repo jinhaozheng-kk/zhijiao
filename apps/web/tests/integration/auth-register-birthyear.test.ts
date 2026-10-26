@@ -53,6 +53,18 @@ describe("auth.register birthYear + guardianConsentStatus (Plan 14a)", () => {
     expect(user.birthYear).toBe(2009);
   });
 
+  it("注册时设置密码 → 可用手机号 + 密码登录", async () => {
+    const phone = "13800008004";
+    const nonce = await startRegisterFlow(phone);
+    await createCaller(makeCtx({ "__Host-zj_register_token": nonce }))
+      .auth.register({ persona: "STUDENT", gradeLevel: "G9", birthYear: 2009, password: "Student123!" });
+
+    const loginCtx = makeCtx();
+    const r = await createCaller(loginCtx).auth.passwordLogin({ phone, password: "Student123!" });
+    expect(r.status).toBe("logged_in");
+    expect(loginCtx.resHeaders.getSetCookie().some((c) => c.startsWith("__Host-zj_at="))).toBe(true);
+  });
+
   it("STUDENT 缺 birthYear → BAD_REQUEST/REGISTER_BIRTHYEAR_REQUIRED，不清 cookie", async () => {
     const nonce = await startRegisterFlow("13800008003");
     const ctxBad = makeCtx({ "__Host-zj_register_token": nonce });
