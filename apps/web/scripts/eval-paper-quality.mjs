@@ -24,6 +24,8 @@ mkdirSync(OUT_DIR, { recursive: true });
 const BASE = "http://localhost:3000";
 const limitArg = process.argv.find((a) => a.startsWith("--limit="));
 const LIMIT = limitArg ? Number(limitArg.split("=")[1]) : 12;
+const onlyArg = process.argv.find((a) => a.startsWith("--only="));
+const ONLY = onlyArg ? onlyArg.split("=")[1].split(",").map((s) => s.trim()).filter(Boolean) : [];
 
 const envText = readFileSync(join(here, "..", ".env.local"), "utf8");
 for (const line of envText.split(/\r?\n/)) {
@@ -116,9 +118,11 @@ await withTimeout(prisma.$connect(), 15000, "prisma.connect").catch(() => {});
 progress("login ok");
 
 const results = [];
-for (const [index, scenario] of SCENARIOS.slice(0, LIMIT).entries()) {
+// --only=勾股定理,三角形 可只跑指定场景（按名称包含匹配），用于针对性验证，不必等全量 12 场景。
+const SELECTED = (ONLY.length ? SCENARIOS.filter((s) => ONLY.some((k) => s.name.includes(k))) : SCENARIOS).slice(0, LIMIT);
+for (const [index, scenario] of SELECTED.entries()) {
   const started = Date.now();
-  progress(`scenario ${index + 1}/${LIMIT} ${scenario.name} start`);
+  progress(`scenario ${index + 1}/${SELECTED.length} ${scenario.name} start`);
   await page.goto(BASE + "/teacher/papers/new", { waitUntil: "domcontentloaded", timeout: 180000 });
   // 知识点 chips 是异步加载的（按钮出现 ≠ 知识点列表加载完）：等 chip 真正出现再点，
   // 否则会静默点空、所有场景退化成默认知识点（本轮评测踩过这个坑）。

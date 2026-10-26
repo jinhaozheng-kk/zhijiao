@@ -100,3 +100,81 @@ export function deriveFunctionFigure(stemMd: string): FigureSpec | null {
     curves: [{ expression }],
   } as FigureSpec;
 }
+
+// ── 几何示意图兜底 ─────────────────────────────────────────────────────
+//
+// 实测配图模型经常只给 1 个点或空图（v3 强制配图后更明显），失败重试反而拖慢出卷。
+// 这里做确定性兜底：几何类题干能从文字里认出顶点（ABC/△ABC/四边形ABCD/点A、B、C），
+// 就按点名顺序自动画一个闭合多边形示意图（不是严格比例，仅示意）。
+// 认不出顶点就不兜底，交给 AI 配图。
+const GEOMETRY_STEM_RE =
+  /三角形|△|四边形|矩形|正方形|平行四边形|菱形|梯形|圆|相似|全等|勾股|折叠|旋转|轴对称|中心对称|坐标系/;
+
+/** 从题干里抽顶点字母序列（如「△ABC」「四边形ABCD」「点A、B、C」）。 */
+export function extractVertexNames(stemMd: string): string[] {
+  if (typeof stemMd !== "string") return [];
+  const patterns = [
+    /[△](\s*[A-Z]){2,4}/g,
+    /三角形\s*([A-Z]{2,4})/g,
+    /四边形\s*([A-Z]{2,4})/g,
+    /(?:矩形|正方形|平行四边形|菱形|梯形)\s*([A-Z]{2,4})/g,
+  ];
+  for (const pattern of patterns) {
+    pattern.lastIndex = 0;
+    const match = pattern.exec(stemMd);
+    if (match) {
+      // 用整段匹配提取字母：/△(\s*[A-Z]){2,4}/ 的捕获组只保留最后一个字母，不能用 match[1]。
+      const letters = match[0].replace(/[^A-Z]/g, "").split("");
+      if (letters.length >= 3) return Array.from(new Set(letters)).slice(0, 6);
+    }
+  }
+  // 「点A、B、C」「A，B，C 三点」这类列举
+  const listed = stemMd.match(/(?:点|顶点)\s*[A-Z](?:\s*[、，,和及]\s*[A-Z]){1,5}/);
+  if (listed) {
+    const letters = listed[0].replace(/[^A-Z]/g, "").split("");
+    if (letters.length >= 3) return Array.from(new Set(letters)).slice(0, 6);
+  }
+  return [];
+}
+
+function autoLayoutPolygon(ids: string[]) {
+  const n = ids.length;
+  if (n === 3) {
+    return [
+      { id: ids[0]!, x: 20, y: 78 },
+      { id: ids[1]!, x: 80, y: 78 },
+      { id: ids[2]!, x: 50, y: 18 },
+    ];
+  }
+  if (n === 4) {
+    return [
+      { id: ids[0]!, x: 20, y: 22 },
+      { id: ids[1]!, x: 80, y: 22 },
+      { id: ids[2]!, x: 80, y: 78 },
+      { id: ids[3]!, x: 20, y: 78 },
+    ];
+  }
+  return ids.map((id, index) => {
+    const angle = -Math.PI / 2 + (index * 2 * Math.PI) / n;
+    return { id, x: 50 + 36 * Math.cos(angle), y: 50 + 36 * Math.sin(angle) };
+  });
+}
+
+/** 几何题干 → 闭合多边形示意图；认不出顶点或不是几何题返回 null。 */
+export function deriveGeometryFigure(stemMd: string): FigureSpec | null {
+  if (!GEOMETRY_STEM_RE.test(stemMd)) return null;
+  const ids = extractVertexNames(stemMd);
+  if (ids.length < 3) return null;
+  const points = autoLayoutPolygon(ids);
+  const segments = points.map((point, index) => ({
+    from: point.id,
+    to: points[(index + 1) % points.length]!.id,
+  }));
+  return {
+    kind: "GEOMETRY",
+    points,
+    segments,
+    circles: [],
+    labels: [],
+  } as FigureSpec;
+}

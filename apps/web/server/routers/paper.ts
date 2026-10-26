@@ -13,7 +13,7 @@ import { getAiRouter } from "@/lib/ai-client";
 import { ComplianceRejectedError, type FigureSpec, type PaperGenerationOutput } from "@zhijiao/ai";
 import { createPaperStemDeduper, selectBankQuestions, persistGeneratedPaper, uniquePaperItems } from "../lib/paper-generation.js";
 import { buildSpecTable } from "../lib/paper-spec-table.js";
-import { deriveFunctionFigure } from "@/lib/paper-figure-derive";
+import { deriveFunctionFigure, deriveGeometryFigure } from "@/lib/paper-figure-derive";
 import type { Prisma, PrismaClient, QuestionType } from "@prisma/client";
 import { logger } from "../logger.js";
 import {
@@ -103,7 +103,7 @@ export function repairInstructionsFor(blockers: PaperReviewIssue[]): string[] {
 const FIGURE_STRONG_RE =
   /如图|见图|图中|抛物[线物]|双曲线|坐标系|坐标轴|图[像象]|交点|折线|扇形统计|条形统计/;
 const FIGURE_MEDIUM_RE =
-  /一次函数|二次函数|反比例函数|函数|三角形|四边形|矩形|正方形|平行四边形|菱形|梯形|圆|折叠|旋转|轴对称|中心对称|相似|全等|勾股|角平分线|垂直平分线|切线|弦|弧|扇形|平均数|中位数|众数|概率|统计/;
+  /△|Rt△|一次函数|二次函数|反比例函数|函数|三角形|四边形|矩形|正方形|平行四边形|菱形|梯形|圆|折叠|旋转|轴对称|中心对称|相似|全等|勾股|角平分线|垂直平分线|切线|弦|弧|扇形|平均数|中位数|众数|概率|统计/;
 const FIGURE_GENERATION_LIMIT = 8;
 const FIGURE_GENERATION_CONCURRENCY = 3;
 
@@ -139,9 +139,10 @@ export async function generatePaperFigures(args: {
   const ai = getAiRouter(args.userId);
   const figures: Record<string, FigureSpec> = {};
 
-  // 第一优先级：题干有显式解析式时，本地确定性推导函数图象（不花 AI 调用、图像更准）。
+  // 第一优先级：本地确定性推导（不花 AI 调用、图像更准）——
+  // 先试函数图象（题干有显式解析式），再试几何示意图（能从文字认出顶点）。
   const aiTargets = targets.filter((item) => {
-    const derived = deriveFunctionFigure(item.stemMd);
+    const derived = deriveFunctionFigure(item.stemMd) ?? deriveGeometryFigure(item.stemMd);
     if (derived) {
       figures[String(item.position)] = derived;
       return false;
@@ -219,7 +220,7 @@ export const paperRouter = router({
       let effDifficulty: [number, number];
       let styleRules: string[] | undefined;
       let slotHints: Array<{ type: QuestionType; intent: string; constraints: string[] }> | undefined;
-      let promptVersion: "v1" | "v2" | "v4" = "v1";
+      let promptVersion: "v1" | "v2" | "v4" | "v5" = "v1";
 
       if (input.styleTemplate === ZHONGKAO_TEMPLATE_ID) {
         blueprint = buildZhongkaoMathBlueprint({
@@ -238,7 +239,9 @@ export const paperRouter = router({
         // 题干不依赖插图、公式用简单 KaTeX。格式段保持 v2 原样——历史教训：
         // 在 prompt 里给 options JSON 数组示例会把 qwen-max 逼出非法 JSON（PARSE_FAILED 500），
         // 格式问题继续由 coerceOptionArray 多格式归一化兜底。
-        promptVersion = "v4";
+        // v5 = v4 内容（commit 后 CRLF 转换导致 v4 指纹冲突，按规范升版；并已加
+        // .gitattributes 固定 prompt 文件 LF，避免再次发生）。
+        promptVersion = "v5";
       } else {
         if (!input.sections || !input.difficultyRange) {
           throw new TRPCError({ code: "BAD_REQUEST", message: "缺少出卷参数", cause: { reason: "PAPER_PARAMS_MISSING" } });

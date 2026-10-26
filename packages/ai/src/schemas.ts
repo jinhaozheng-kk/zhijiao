@@ -761,10 +761,14 @@ export function normalizeFigureSpec(raw: unknown): unknown {
   const curves = normalizeCurves(obj.curves, obj.functions, obj.labels);
   const kind =
     obj.kind === "COORDINATE" || axes || curves.length > 0 ? "COORDINATE" : "GEOMETRY";
+  // 点数不足（<2）且没有圆 = 画不出任何有意义的几何图。返回 null 让配图任务记为
+  // 「本题不需要图」，而不是 schema 校验失败重试 3 次（v3 prompt 强制几何题配图后，
+  // 模型偶尔只给 1 个点，会白白重试并拖慢出卷）。
+  const tooFewForGeometry = points.length < 2 && circles.length === 0;
   if (kind === "COORDINATE") {
     // 坐标系图必须有点的真实数据坐标；若模型只给了点名（简写），降级成平面示意图更安全。
     if (!hasRealCoords) {
-      return { kind: "GEOMETRY", points, segments, circles, labels };
+      return tooFewForGeometry ? null : { kind: "GEOMETRY", points, segments, circles, labels };
     }
     return {
       kind: "COORDINATE",
@@ -776,6 +780,7 @@ export function normalizeFigureSpec(raw: unknown): unknown {
       curves,
     };
   }
+  if (tooFewForGeometry) return null;
   return { kind: "GEOMETRY", points, segments, circles, labels };
 }
 
