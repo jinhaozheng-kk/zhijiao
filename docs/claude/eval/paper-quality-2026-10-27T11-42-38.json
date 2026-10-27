@@ -1,0 +1,115 @@
+{
+  "generatedAt": "2026-10-27T11:42:38.288Z",
+  "promptVersion": "v4",
+  "total": 3,
+  "ok": 3,
+  "successRate": 100,
+  "avgSeconds": 90.7,
+  "avgEssaySolutionMedian": 159,
+  "choice4OptionsRate": 100,
+  "results": [
+    {
+      "scenario": "代数与方程综合",
+      "requestedKps": [
+        "一次方程求解",
+        "一元二次方程",
+        "二次根式",
+        "实数",
+        "一次方程应用题"
+      ],
+      "selectedKps": [
+        "一次方程求解",
+        "一元二次方程",
+        "二次根式",
+        "实数",
+        "一次方程应用题"
+      ],
+      "ok": true,
+      "seconds": 82.8,
+      "items": 24,
+      "totalPoints": 120,
+      "choiceCount": 10,
+      "choiceWith4Options": 10,
+      "essayCount": 8,
+      "essaySolutionMedian": 158,
+      "essaySolutionMin": 133,
+      "essayWithRubric": 8,
+      "blockers": 0,
+      "warnings": 7,
+      "warningCodes": [
+        "STEM_TOO_SHORT",
+        "SHORT_SOLUTION_WARN"
+      ],
+      "figures": 0,
+      "paperId": "cmvqm4yn1006czwvny6k8nidm"
+    },
+    {
+      "scenario": "一次函数综合",
+      "requestedKps": [
+        "一次函数",
+        "一次方程应用题",
+        "实数",
+        "二次根式"
+      ],
+      "selectedKps": [
+        "一次函数",
+        "一次方程应用题",
+        "实数",
+        "二次根式"
+      ],
+      "ok": true,
+      "seconds": 125.9,
+      "items": 24,
+      "totalPoints": 120,
+      "choiceCount": 10,
+      "choiceWith4Options": 10,
+      "essayCount": 8,
+      "essaySolutionMedian": 94,
+      "essaySolutionMin": 46,
+      "essayWithRubric": 8,
+      "blockers": 0,
+      "warnings": 9,
+      "warningCodes": [
+        "STEM_TOO_SHORT",
+        "SHORT_SOLUTION_WARN",
+        "SHORT_SOLUTION_DOWNGRADED"
+      ],
+      "figures": 4,
+      "paperId": "cmvqm7oss00bvzwvnjkfkedyn"
+    },
+    {
+      "scenario": "二次函数综合",
+      "requestedKps": [
+        "二次函数",
+        "二次函数的图象与性质",
+        "一元二次方程",
+        "实数"
+      ],
+      "selectedKps": [
+        "二次函数",
+        "二次函数的图象与性质",
+        "一元二次方程",
+        "实数"
+      ],
+      "ok": true,
+      "seconds": 63.5,
+      "items": 24,
+      "totalPoints": 120,
+      "choiceCount": 10,
+      "choiceWith4Options": 10,
+      "essayCount": 8,
+      "essaySolutionMedian": 225,
+      "essaySolutionMin": 125,
+      "essayWithRubric": 8,
+      "blockers": 0,
+      "warnings": 6,
+      "warningCodes": [
+        "STEM_TOO_SHORT",
+        "CHOICE_ALL_OF_ABOVE",
+        "SHORT_SOLUTION_WARN"
+      ],
+      "figures": 7,
+      "paperId": "cmvqm8z4s00h3zwvnsaq68hr5"
+    }
+  ]
+}

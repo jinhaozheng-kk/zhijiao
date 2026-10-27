@@ -1,16 +1,39 @@
 {
-  "checkedAt": "2026-10-27T11:34:46.238Z",
-  "papers": 1,
-  "okPapers": 1,
-  "totalItems": 24,
-  "wrong": 0,
+  "checkedAt": "2026-10-27T11:48:50.432Z",
+  "papers": 3,
+  "okPapers": 3,
+  "totalItems": 72,
+  "wrong": 1,
   "uncertain": 0,
-  "wrongRate": 0,
+  "wrongRate": 1.4,
   "uncertainRate": 0,
   "rows": [
     {
-      "paperId": "cmvqlv0sc000hzwvn5r0un0jz",
-      "createdAt": "2026-10-27T11:31:42.397Z",
+      "paperId": "cmvqm8z4s00h3zwvnsaq68hr5",
+      "createdAt": "2026-10-27T11:42:33.436Z",
+      "items": 24,
+      "total": 24,
+      "wrong": 0,
+      "uncertain": 0,
+      "wrongSamples": []
+    },
+    {
+      "paperId": "cmvqm7oss00bvzwvnjkfkedyn",
+      "createdAt": "2026-10-27T11:41:33.388Z",
+      "items": 24,
+      "total": 24,
+      "wrong": 1,
+      "uncertain": 0,
+      "wrongSamples": [
+        {
+          "questionNo": 17,
+          "reason": "10+2.5(x-3)=27.5解得2.5(x-3)=17.5,x-3=7,x=10，非12。"
+        }
+      ]
+    },
+    {
+      "paperId": "cmvqm4yn1006czwvny6k8nidm",
+      "createdAt": "2026-10-27T11:39:26.174Z",
       "items": 24,
       "total": 24,
       "wrong": 0,
