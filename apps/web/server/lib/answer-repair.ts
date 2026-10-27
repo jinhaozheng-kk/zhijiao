@@ -38,6 +38,47 @@ export interface AnswerRepairResult {
   rounds: number;
 }
 
+export type AnswerCheckStatus = "PENDING" | "DONE" | "FAILED";
+
+/**
+ * 把答案抽检状态/结果合并进 `paramsJson`（纯函数，便于单测）。
+ * 合并规则：
+ * - 保留其它 params 字段（figures/blueprint/reviewWarnings 等）；
+ * - `reviewWarnings` 里的旧 `ANSWER_MISMATCH` 会被替换（避免重复追加）；
+ * - PENDING / FAILED 时不写入 answerCheck（保留上一次结果，若有）。
+ */
+export function mergeAnswerCheckIntoParams(
+  params: Record<string, unknown>,
+  patch: {
+    status: AnswerCheckStatus;
+    error?: string;
+    check?: { checkedAt: string; total: number; wrong: number; uncertain: number; results: AnswerVerdictItem[] };
+    repair?: { beforeWrong: number; afterWrong: number; fixedCount: number; rounds: number };
+  },
+): Record<string, unknown> {
+  const existingWarnings = Array.isArray(params.reviewWarnings)
+    ? (params.reviewWarnings as Array<Record<string, unknown>>)
+    : [];
+  const keptWarnings = existingWarnings.filter((warning) => warning.code !== "ANSWER_MISMATCH");
+  const mismatchWarnings = (patch.check?.results ?? [])
+    .filter((item) => item.verdict === "WRONG")
+    .map((item) => ({
+      slotQuestionNo: item.questionNo,
+      severity: "WARNING",
+      code: "ANSWER_MISMATCH",
+      message: `答案抽检存疑：${item.reason || "答案与解析可能不一致，建议核对"}`,
+    }));
+
+  return {
+    ...params,
+    answerCheckStatus: patch.status,
+    ...(patch.error ? { answerCheckError: patch.error } : {}),
+    ...(patch.check ? { answerCheck: patch.check } : {}),
+    ...(patch.repair ? { answerRepair: patch.repair } : {}),
+    reviewWarnings: [...keptWarnings, ...mismatchWarnings],
+  };
+}
+
 export async function runAnswerRepairLoop(args: {
   items: AnswerRepairItem[];
   verify: (items: AnswerRepairItem[]) => Promise<AnswerVerdictItem[]>;

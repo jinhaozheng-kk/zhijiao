@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { trpc } from "@/lib/trpc-client";
 import { StatePanel } from "@/components/ui/state-panel";
 import { SkeletonList } from "@/components/ui/skeleton";
@@ -64,8 +64,17 @@ type ZhongkaoPreviewParams = {
   }>;
   /** 浙江卷配图：按题号（1-based position）存 FigureSpec。 */
   figures?: Record<string, FigureSpec>;
-  /** AI 答案抽检结果（paper.checkAnswers 落库）。 */
+  /** AI 答案抽检结果（paper.checkAnswers / 生成后自愈回填）。 */
   answerCheck?: AnswerCheckSummary | null;
+  /** 生成后答案自愈状态：PENDING 时预览页轮询刷新。 */
+  answerCheckStatus?: "PENDING" | "DONE" | "FAILED";
+  answerCheckError?: string;
+  answerRepair?: {
+    beforeWrong: number;
+    afterWrong: number;
+    fixedCount: number;
+    rounds: number;
+  };
 };
 
 function PaperItemCard({
@@ -171,13 +180,23 @@ function PaperItemCard({
 
 export function PaperPreviewView({ paperId }: { paperId: string }) {
   const utils = trpc.useUtils();
-  const query = trpc.paper.get.useQuery({ paperId }, { retry: false });
+  // 生成后的答案自愈是后台任务：PENDING 时每 5s 轮询，DONE/FAILED 自动停。
+  const [pollAnswerCheck, setPollAnswerCheck] = useState(false);
+  const query = trpc.paper.get.useQuery(
+    { paperId },
+    { retry: false, refetchInterval: pollAnswerCheck ? 5000 : false },
+  );
   const markReady = trpc.paper.markReady.useMutation({
     onSuccess: () => utils.paper.get.invalidate({ paperId }),
   });
   const checkAnswers = trpc.paper.checkAnswers.useMutation({
     onSuccess: () => utils.paper.get.invalidate({ paperId }),
   });
+
+  useEffect(() => {
+    const status = (query.data?.paper.paramsJson as ZhongkaoPreviewParams | undefined)?.answerCheckStatus;
+    setPollAnswerCheck(status === "PENDING");
+  }, [query.data]);
 
   if (query.isLoading) return <SkeletonList rows={5} />;
   if (query.isError) {
@@ -267,6 +286,22 @@ export function PaperPreviewView({ paperId }: { paperId: string }) {
         </div>
       )}
 
+      {params.answerCheckStatus === "PENDING" && (
+        <div
+          className="rounded-lg bg-blue-50 px-5 py-3 text-sm text-blue-800"
+          data-testid="answer-check-pending"
+        >
+          AI 正在后台抽检并自动修复答案（约 1–2 分钟），完成后本页会自动刷新；期间可先核对版式。
+        </div>
+      )}
+      {params.answerCheckStatus === "FAILED" && (
+        <div
+          className="rounded-lg bg-amber-50 px-5 py-3 text-sm text-amber-800"
+          data-testid="answer-check-failed"
+        >
+          答案自动抽检失败（{params.answerCheckError ?? "未知原因"}），可点「AI 答案抽检」手动重试。
+        </div>
+      )}
       <AnswerCheckPanel check={answerCheck} />
 
       <section className="rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-200">

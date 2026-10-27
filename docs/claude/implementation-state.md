@@ -390,3 +390,9 @@
 - 代价：单卷生成从 ~70s 增至 ~180s（抽检 40s + 修复 60s + 复检 40s）；评测脚本硬超时从 8 分钟上调到 12 分钟。
 - 测试：`answer-repair.test.ts` 4 例、`answer-verify.test.ts` 4 例（含 fix 调用）；typecheck 8/8。
 - 残留：修复不到的少数题会以 ANSWER_MISMATCH warning 暴露；环境（Docker/WSL）在本轮多次不稳定，多卷复检未跑完。
+**答案抽检后台化（2026-10-27 18:10）**：
+- 出卷流程改为**立即返回**：落库+配图后写入 `answerCheckStatus=PENDING`，`runPaperAnswerSelfHeal` 以 `void` 后台执行（抽检→修复→复检），完成回填 `answerCheck`/`answerRepair`/`DONE`，失败置 `FAILED`。
+- 预览页支持轮询：`answerCheckStatus==="PENDING"` 时每 5s 自动刷新，显示「后台抽检中」提示；FAILED 显示失败原因并可手动重试；新增 `mergeAnswerCheckIntoParams` 纯函数（合并状态/结果/warning，替换旧 ANSWER_MISMATCH）。
+- 预期收益：生成耗时从 ~180s 降回 ~90s，答案质量仍由后台自愈保证；`ANSWER_REPAIR=off` 可关闭。
+- 测试：`answer-repair.test.ts` 增至 7 例（含合并函数 3 例）；typecheck 8/8。
+- **真实端到端本轮未完成**：dev 运行环境反复卡住（生成请求长时间无响应/Chrome 挂起），异步链路未取得实测数字；同步版本此前已实测 26.4%→4.2%。环境恢复后验证方法：生成一份卷 → 预览页应出现「后台抽检中」并自动刷新为结果面板；或 `node scripts/verify-answer-accuracy.mjs 1`。
