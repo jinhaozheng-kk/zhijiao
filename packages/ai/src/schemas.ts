@@ -843,6 +843,36 @@ export const AnswerVerifyOutputSchema = z.object({
 });
 export type AnswerVerifyOutput = z.infer<typeof AnswerVerifyOutputSchema>;
 
+// 答案修复：对判为 WRONG 的题重写答案+解析（题干不变）。
+export const AnswerFixInputSchema = z.object({
+  items: z
+    .array(
+      z.object({
+        questionNo: z.number().int().min(1),
+        stemMd: z.string().min(1).max(4000),
+        answerMd: z.string().min(1).max(2000),
+        solutionMd: z.string().max(6000).default(""),
+        issue: z.string().max(300).default(""),
+      }),
+    )
+    .min(1)
+    .max(24),
+});
+export type AnswerFixInput = z.infer<typeof AnswerFixInputSchema>;
+
+export const AnswerFixItemSchema = z.object({
+  questionNo: z.number().int().min(1).max(60),
+  answerMd: z.string().min(1).max(2000),
+  solutionMd: z.string().min(1).max(6000),
+  note: z.string().max(300).default(""),
+});
+export type AnswerFixItem = z.infer<typeof AnswerFixItemSchema>;
+
+export const AnswerFixOutputSchema = z.object({
+  fixes: z.array(AnswerFixItemSchema).min(1).max(24),
+});
+export type AnswerFixOutput = z.infer<typeof AnswerFixOutputSchema>;
+
 // === LessonPlanGeneration / Courseware (Plan 18) ===
 export const CoursewareSectionTypeEnum = z.enum([
   "INTRO",

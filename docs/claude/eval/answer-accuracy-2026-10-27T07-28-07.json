@@ -1,0 +1,122 @@
+{
+  "checkedAt": "2026-10-27T07:28:07.907Z",
+  "papers": 5,
+  "okPapers": 5,
+  "totalItems": 121,
+  "wrong": 32,
+  "uncertain": 0,
+  "wrongRate": 26.4,
+  "uncertainRate": 0,
+  "rows": [
+    {
+      "paperId": "cmvqca9jy02ez95viguqlhhw5",
+      "createdAt": "2026-10-27T07:03:37.438Z",
+      "items": 24,
+      "total": 24,
+      "wrong": 7,
+      "uncertain": 0,
+      "wrongSamples": [
+        {
+          "questionNo": 14,
+          "reason": "弦长8≠直径10，弦不过圆心，解析前提自相矛盾且错误。"
+        },
+        {
+          "questionNo": 16,
+          "reason": "方程化简为(x-1)²=0仅有重根x=1，答案多出一个交点，解析自相矛盾。"
+        },
+        {
+          "questionNo": 18,
+          "reason": "代入后应为5x²=5，解得x=±1，解析中方程和答案均错。"
+        }
+      ]
+    },
+    {
+      "paperId": "cmvqc8ufh02a495vieplugjqc",
+      "createdAt": "2026-10-27T07:02:31.181Z",
+      "items": 24,
+      "total": 24,
+      "wrong": 8,
+      "uncertain": 0,
+      "wrongSamples": [
+        {
+          "questionNo": 7,
+          "reason": "联立y=x+1与y=x²得x²-x-1=0，交点非(1,2)和(-1,0)，解析算错。"
+        },
+        {
+          "questionNo": 9,
+          "reason": "△AED以AD=4为底、高=4（正方形边长），面积应为8，非6。"
+        },
+        {
+          "questionNo": 13,
+          "reason": "矩形对角线相等，AE=BE应成立，题设AE=5,BE=12矛盾，题目无解。"
+        }
+      ]
+    },
+    {
+      "paperId": "cmvqc6gnv024g95vi06txydcr",
+      "createdAt": "2026-10-27T07:00:40.027Z",
+      "items": 24,
+      "total": 24,
+      "wrong": 4,
+      "uncertain": 0,
+      "wrongSamples": [
+        {
+          "questionNo": 12,
+          "reason": "标准答案为4，但解析算出m+n=7，答案与解析矛盾。"
+        },
+        {
+          "questionNo": 17,
+          "reason": "解析算出c=5√2，却强行改为10，存在明确数学错误。"
+        },
+        {
+          "questionNo": 19,
+          "reason": "OA²+OB²=87≠AB²=25，不满足勾股定理，该三角形不是直角三角形。"
+        }
+      ]
+    },
+    {
+      "paperId": "cmvqc515z01z395vitpdb9z6e",
+      "createdAt": "2026-10-27T06:59:33.287Z",
+      "items": 24,
+      "total": 25,
+      "wrong": 8,
+      "uncertain": 0,
+      "wrongSamples": [
+        {
+          "questionNo": 4,
+          "reason": "各段人数之和为80，无需列方程；且3000/x=70解得约42.86不等于80，解析自相矛盾。"
+        },
+        {
+          "questionNo": 7,
+          "reason": "联立解得x=2/3，y=13/3，而非(1,5)，解析计算错误。"
+        },
+        {
+          "questionNo": 15,
+          "reason": "2a+3=-a+5应解得3a=2即a=2/3，但解析写3a=2后得出a=2/3虽对，然而代入验证：y=2(2/3)+3=13/3，而y=-(2/3)+5=13/3，交点横坐标确实是2/3。等等重新算：2a+3=-a+5→3a=2→a=2/3，答案与解析一致，正确。抱歉，我重新核实：3a=2确实得a=2/3，答案正确。"
+        }
+      ]
+    },
+    {
+      "paperId": "cmvqc3euj01tu95viqlryivx1",
+      "createdAt": "2026-10-27T06:58:17.707Z",
+      "items": 24,
+      "total": 24,
+      "wrong": 5,
+      "uncertain": 0,
+      "wrongSamples": [
+        {
+          "questionNo": 3,
+          "reason": "联立方程解得x=1.5而非1，交点应为(1.5,2.5)，解析计算错误。"
+        },
+        {
+          "questionNo": 16,
+          "reason": "面积差恒为4不可能等于8，方程x²-(x²-4)=8无解，答案与解析矛盾。"
+        },
+        {
+          "questionNo": 18,
+          "reason": "平移后应为y=(x-3)²，展开验证知标准答案y=(x-3)²+1错误。"
+        }
+      ]
+    }
+  ]
+}

@@ -75,6 +75,11 @@ export {
   type AnswerVerifyResult,
   type AnswerVerifyInput,
   type AnswerVerifyOutput,
+  AnswerFixInputSchema,
+  AnswerFixOutputSchema,
+  type AnswerFixInput,
+  type AnswerFixItem,
+  type AnswerFixOutput,
   // Plan 18:
   CoursewareSectionTypeEnum,
   LESSON_SECTION_ORDER,

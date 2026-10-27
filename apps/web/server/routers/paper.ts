@@ -13,6 +13,7 @@ import { getAiRouter } from "@/lib/ai-client";
 import { ComplianceRejectedError, type FigureSpec, type PaperGenerationOutput } from "@zhijiao/ai";
 import { createPaperStemDeduper, selectBankQuestions, persistGeneratedPaper, uniquePaperItems } from "../lib/paper-generation.js";
 import { buildSpecTable } from "../lib/paper-spec-table.js";
+import { runAnswerRepairLoop, type AnswerVerdictItem } from "../lib/answer-repair.js";
 import { deriveFunctionFigure, deriveGeometryFigure } from "@/lib/paper-figure-derive";
 import type { Prisma, PrismaClient, QuestionType } from "@prisma/client";
 import { logger } from "../logger.js";
@@ -685,13 +686,108 @@ export const paperRouter = router({
           return {} as Record<string, FigureSpec>;
         }
       })();
-      if (Object.keys(figures).length > 0) {
+      // 答案自愈闭环：抽检 → 只对判为 WRONG 的题重写答案+解析 → 复检。
+      // best-effort：失败不影响出卷（结果只影响提示）；ANSWER_REPAIR=off 可关闭。
+      let answerRepair: {
+        before: AnswerVerdictItem[];
+        after: AnswerVerdictItem[];
+        beforeWrong: number;
+        afterWrong: number;
+        fixedCount: number;
+        rounds: number;
+      } | null = null;
+      if (process.env.ANSWER_REPAIR !== "off") {
+        try {
+          const items = await ctx.db.paperItem.findMany({
+            where: { paperId: paper.id },
+            select: { id: true, position: true, stemMd: true, answerMd: true, solutionMd: true },
+            orderBy: { position: "asc" },
+          });
+          const ai = getAiRouter(ctx.auth.userId);
+          answerRepair = await runAnswerRepairLoop({
+            items: items.map((item) => ({
+              questionNo: item.position,
+              stemMd: item.stemMd,
+              answerMd: item.answerMd,
+              solutionMd: item.solutionMd,
+            })),
+            verify: async (checkItems) => {
+              const out = await ai.verifyPaperAnswers({ items: checkItems });
+              return out.results;
+            },
+            fix: async (fixItems) => {
+              const out = await ai.fixPaperAnswers({
+                items: fixItems.map((item) => ({
+                  questionNo: item.questionNo,
+                  stemMd: item.stemMd,
+                  answerMd: item.answerMd,
+                  solutionMd: item.solutionMd,
+                  issue: item.reason,
+                })),
+              });
+              return out.fixes;
+            },
+            applyFixes: async (fixes) => {
+              for (const fix of fixes) {
+                const target = items.find((item) => item.position === fix.questionNo);
+                if (!target) continue;
+                await ctx.db.paperItem.update({
+                  where: { id: target.id },
+                  data: { answerMd: fix.answerMd, solutionMd: fix.solutionMd },
+                });
+              }
+            },
+          });
+          logger.info({
+            event: "paper_answer_repair",
+            paperId: paper.id,
+            beforeWrong: answerRepair.beforeWrong,
+            afterWrong: answerRepair.afterWrong,
+            fixedCount: answerRepair.fixedCount,
+            rounds: answerRepair.rounds,
+          });
+        } catch (error) {
+          logger.warn({
+            event: "paper_answer_repair_skipped",
+            paperId: paper.id,
+            error: String(error).slice(0, 300),
+          });
+        }
+      }
+
+      const figureWarnings = reviewIssues
+        .filter((issue) => issue.severity === "WARNING")
+        .filter((issue) => !(issue.code === "FIGURE_DEPENDENT" && figures[String(issue.slotQuestionNo)]));
+      const mismatchWarnings = (answerRepair?.after ?? [])
+        .filter((item) => item.verdict === "WRONG")
+        .map((item) => ({
+          slotQuestionNo: item.questionNo,
+          severity: "WARNING" as const,
+          code: "ANSWER_MISMATCH",
+          message: `答案抽检存疑：${item.reason || "答案与解析可能不一致，建议核对"}`,
+        }));
+      if (Object.keys(figures).length > 0 || answerRepair) {
         const merged: Record<string, unknown> = {
           ...(paramsJson as unknown as Record<string, unknown>),
           figures,
-          reviewWarnings: reviewIssues
-            .filter((issue) => issue.severity === "WARNING")
-            .filter((issue) => !(issue.code === "FIGURE_DEPENDENT" && figures[String(issue.slotQuestionNo)])),
+          ...(answerRepair
+            ? {
+                answerCheck: {
+                  checkedAt: new Date().toISOString(),
+                  total: answerRepair.after.length,
+                  wrong: answerRepair.afterWrong,
+                  uncertain: answerRepair.after.filter((item) => item.verdict === "UNCERTAIN").length,
+                  results: answerRepair.after,
+                },
+                answerRepair: {
+                  beforeWrong: answerRepair.beforeWrong,
+                  afterWrong: answerRepair.afterWrong,
+                  fixedCount: answerRepair.fixedCount,
+                  rounds: answerRepair.rounds,
+                },
+              }
+            : {}),
+          reviewWarnings: [...figureWarnings, ...mismatchWarnings],
         };
         await ctx.db.paper.update({
           where: { id: paper.id },

@@ -358,6 +358,18 @@ function pickDefault(req: AdapterRequest): unknown {
       })),
     };
   }
+  if (sys.includes("修正试卷中判错的题")) {
+    const user = req.messages.find((m) => m.role === "user")?.content ?? "";
+    const nos = [...user.matchAll(/【第(\d+)题】/g)].map((m) => Number(m[1]));
+    return {
+      fixes: (nos.length ? nos : [1]).map((questionNo) => ({
+        questionNo,
+        answerMd: "mock-fixed-answer",
+        solutionMd: "设未知数并逐步求解，得到正确结果（mock 修复解析）。",
+        note: "mock：已重写",
+      })),
+    };
+  }
   if (sys.includes("练习卷命题助手")) return buildMockPaper(req);
   if (sys.includes("课件生成助手")) return DEFAULT_LESSON_PLAN;
   return DEFAULT_TUTORING;

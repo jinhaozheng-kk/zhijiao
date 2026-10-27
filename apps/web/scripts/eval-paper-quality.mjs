@@ -158,7 +158,8 @@ for (const [index, scenario] of SELECTED.entries()) {
   if (missing.length > 0) progress(`  missing KPs: ${missing.join(",")}`);
 
   // 直接走 tRPC：body 与前端「一键生成中考风格卷」一致，避免 UI 交互不稳定。
-  const HARD_TIMEOUT_MS = 8 * 60 * 1000;
+  // 12 分钟上限：出卷(60-150s) + 审题修复轮(最多 2 轮) + 答案自愈闭环(抽检→修复→复检, ~2min)
+  const HARD_TIMEOUT_MS = 12 * 60 * 1000;
   const generateViaApi = async () => {
     const resp = await page.evaluate(
       async ({ subjectId, kpIds }) => {

@@ -76,4 +76,53 @@ function defineSuite() {
       expect(out.results[1]?.reason).toContain("解析与答案矛盾");
     });
   });
+
+  describe("AiRouter.fixPaperAnswers", () => {
+    it("用 qwen3.8-max 修复判错题，返回 answerMd/solutionMd 且不改题干", async () => {
+      const seen: Array<{ model: string; content: string }> = [];
+      const router = new AiRouter({
+        prisma: fakePrisma(),
+        adapter: {
+          name: "fix-spy",
+          async call(req) {
+            seen.push({
+              model: req.model,
+              content: req.messages.find((m) => m.role === "user")?.content ?? "",
+            });
+            return {
+              content: JSON.stringify({
+                fixes: [
+                  {
+                    questionNo: 2,
+                    answerMd: "6",
+                    solutionMd: "2×3=6，所以答案是 6。（分步：先算乘法，再得结论。）",
+                    note: "原答案 5 系算错",
+                  },
+                ],
+              }),
+              model: req.model,
+            };
+          },
+        },
+      });
+
+      const out = await router.fixPaperAnswers({
+        items: [
+          {
+            questionNo: 2,
+            stemMd: "求 2×3",
+            answerMd: "5",
+            solutionMd: "2×3=6，所以答案是 6",
+            issue: "答案与解析矛盾",
+          },
+        ],
+      });
+
+      expect(seen[0]?.model).toBe("qwen3.8-max");
+      expect(seen[0]?.content).toContain("【第2题】");
+      expect(seen[0]?.content).toContain("答案与解析矛盾");
+      expect(out.fixes[0]).toMatchObject({ questionNo: 2, answerMd: "6" });
+      expect(out.fixes[0]?.solutionMd.length).toBeGreaterThan(10);
+    });
+  });
 }

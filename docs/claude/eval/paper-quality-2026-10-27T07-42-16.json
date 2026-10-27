@@ -1,0 +1,32 @@
+{
+  "generatedAt": "2026-10-27T07:42:16.808Z",
+  "promptVersion": "v4",
+  "total": 1,
+  "ok": 0,
+  "successRate": 0,
+  "avgSeconds": 235.3,
+  "avgEssaySolutionMedian": 0,
+  "choice4OptionsRate": 0,
+  "results": [
+    {
+      "scenario": "综合模拟",
+      "requestedKps": [
+        "一次函数",
+        "二次函数",
+        "三角形",
+        "圆",
+        "概率"
+      ],
+      "selectedKps": [
+        "一次函数",
+        "二次函数",
+        "三角形",
+        "圆",
+        "概率"
+      ],
+      "ok": false,
+      "seconds": 235.3,
+      "error": "Can't reach database server at `localhost:5432`\n\nPlease make sure your database server is running at `localhost:5432`."
+    }
+  ]
+}

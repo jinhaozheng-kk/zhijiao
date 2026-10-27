@@ -31,6 +31,9 @@ import {
   AnswerVerifyInputSchema,
   AnswerVerifyOutputSchema,
   type AnswerVerifyOutput,
+  AnswerFixInputSchema,
+  AnswerFixOutputSchema,
+  type AnswerFixOutput,
   LessonPlanGenerationInputSchema,
   LessonPlanGenerationOutputSchema,
   type LessonPlanGenerationOutput,
@@ -129,6 +132,10 @@ function scanFigureGenerationForForbidden(out: FigureGenerationOutput): string[]
 
 function scanAnswerVerifyForForbidden(out: AnswerVerifyOutput): string[] {
   return findForbidden(out.results.map((result) => result.reason).join("\n"));
+}
+
+function scanAnswerFixForForbidden(out: AnswerFixOutput): string[] {
+  return findForbidden(out.fixes.map((fix) => `${fix.answerMd}\n${fix.solutionMd}\n${fix.note}`).join("\n"));
 }
 
 function scanLessonPlanGenerationForForbidden(
@@ -889,6 +896,53 @@ export class AiRouter {
         "上次输出不是合法 JSON。请只输出 {\"results\":[{\"questionNo\":1,\"verdict\":\"CORRECT|WRONG|UNCERTAIN\",\"reason\":\"...\"}]}，必须覆盖每一道题，字符串内禁止未转义换行/引号。",
     });
     return { results: out.results, modelCallId: out.modelCallId };
+  }
+
+  // 答案修复：对抽检判为 WRONG 的题重写答案与解析（题干不动），用于生成后的自愈闭环。
+  async fixPaperAnswers(
+    input: unknown,
+  ): Promise<AnswerFixOutput & { modelCallId: string }> {
+    const parsed = AnswerFixInputSchema.parse(input);
+    const taskKind: TaskKind = "PAPER_ANSWER_FIX";
+    const prompt = await loadPrompt(
+      "paper-answer-fix",
+      this.opts.promptVersion ?? "v1",
+    );
+    const promptTemplateId = await ensurePromptInDb(this.opts.prisma, prompt);
+    const itemsRendered = parsed.items
+      .map(
+        (item) =>
+          `【第${item.questionNo}题】\n题干：${item.stemMd}\n原答案：${item.answerMd}\n${
+            item.solutionMd ? `原解析：${item.solutionMd}\n` : "（无原解析）\n"
+          }判错理由：${item.issue || "（未提供）"}`,
+      )
+      .join("\n");
+    const userContent = prompt.interpolate({ items: itemsRendered });
+
+    const base = this.taskBase(taskKind);
+    const request = {
+      ...base,
+      messages: [
+        {
+          role: "system" as const,
+          content: "你是严谨的 K12 数学老师，负责修正试卷中判错的题，只输出 JSON。",
+        },
+        { role: "user" as const, content: userContent },
+      ],
+      responseFormat: "json_object" as const,
+      temperature: 0.1,
+    };
+
+    const out = await this.runJsonTaskWithAudit({
+      taskKind,
+      promptTemplateId,
+      request,
+      schema: AnswerFixOutputSchema,
+      scanForbidden: scanAnswerFixForForbidden,
+      retryMessage:
+        "上次输出不是合法 JSON。请只输出 {\"fixes\":[{\"questionNo\":1,\"answerMd\":\"...\",\"solutionMd\":\"...\"}]}，覆盖每道待修复题，字符串内禁止未转义换行/引号。",
+    });
+    return { fixes: out.fixes, modelCallId: out.modelCallId };
   }
 
   // Plan 18: 教师 AI 课件生成。返回校验过的五段课件 + 审计 ModelCall.id。

@@ -7,6 +7,7 @@ export type TaskKind =
   | "PAPER_GEN"
   | "PAPER_FIGURE_GEN"          // 浙江卷配图：题干 → 受约束的几何/坐标系图形 DSL
   | "PAPER_ANSWER_VERIFY"       // 答案正确性抽检：第二个模型独立判卷（不改卷）
+  | "PAPER_ANSWER_FIX"          // 答案修复：对判为 WRONG 的题重写答案与解析（不改题干）
   | "FORECAST_PAPER_GEN"
   | "LESSON_PLAN_GEN"           // Plan 18: 教师 AI 课件生成（五段结构化）
   | "EMBEDDING"
@@ -53,6 +54,8 @@ export const TASK_CONFIG: Record<TaskKind, TaskConfig> = {
   PAPER_FIGURE_GEN:    { model: "qwen-max", fallbackModel: "qwen3.8-max", enableThinking: false, timeoutMs: 120_000 },
   // 答案抽检用**另一个模型**（与出卷的 qwen-max 异构），降低同源错误漏检概率。
   PAPER_ANSWER_VERIFY: { model: "qwen3.8-max", fallbackModel: "qwen-max", enableThinking: false, timeoutMs: 240_000 },
+  // 答案修复：只是重写少数题的答案+解析，输出短；用 3.8 提升数学正确率。
+  PAPER_ANSWER_FIX:    { model: "qwen3.8-max", fallbackModel: "qwen-max", enableThinking: false, timeoutMs: 180_000 },
   FORECAST_PAPER_GEN:  { model: "qwen-max", enableThinking: false, timeoutMs: 600_000 },
   LESSON_PLAN_GEN:     { model: "qwen-max", enableThinking: false, timeoutMs: 600_000 },
   // 兼容模式不支持 embeddings（会 404），需原生端点；当前无调用方。

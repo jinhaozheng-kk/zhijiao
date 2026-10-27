@@ -382,3 +382,11 @@
 - 抽检结果同时进入 `reviewWarnings`（`ANSWER_MISMATCH`），与既有审题 warning 一起在预览页顶部提示。
 - 单测 `apps/web/tests/unit/answer-check-panel.test.tsx` 4 例；typecheck 8/8。
 - **真实端到端未跑**：Docker/WSL 再次不可用（`zhijiao-postgres` unhealthy、5432 端口关闭）。恢复后建议顺序：`docker compose up -d` → 等 healthy → `pnpm dev` → 打开任意试卷预览页点「AI 答案抽检」，或跑 `node scripts/verify-answer-accuracy.mjs 5` 拿 WRONG/UNCERTAIN 基线。
+**答案自愈闭环：抽检 → 修复 → 复检（2026-10-27 16:10）**：
+- 新增 `PAPER_ANSWER_FIX` 任务（qwen3.8-max，fallback qwen-max）+ prompt `paper-answer-fix/v1`：只对判为 WRONG 的题重写 answerMd/solutionMd（题干不动，要求分步 ≥150 字）。
+- 新增 `apps/web/server/lib/answer-repair.ts` 纯逻辑 `runAnswerRepairLoop`（verify/fix/applyFixes 注入，可单测）：只修 WRONG、默认 1 轮、修复结果为空则跳过。
+- 出卷生成流程接入：主卷落库 + 配图后，自动执行抽检→修复→复检（`ANSWER_REPAIR=off` 可关闭），结果落 `params.answerCheck` / `params.answerRepair`，残留 WRONG 追加 `ANSWER_MISMATCH` warning 供教师核对；任一步失败 best-effort 不影响出卷。
+- **实测效果**：旧卷基线 **26.4% 错误（32/121 题）**；开启自愈后新生成卷独立复检 **1/24 = 4.2%**（该卷 beforeWrong=6 → fixedCount=6 → afterWrong=1），错误率降约 6 倍。
+- 代价：单卷生成从 ~70s 增至 ~180s（抽检 40s + 修复 60s + 复检 40s）；评测脚本硬超时从 8 分钟上调到 12 分钟。
+- 测试：`answer-repair.test.ts` 4 例、`answer-verify.test.ts` 4 例（含 fix 调用）；typecheck 8/8。
+- 残留：修复不到的少数题会以 ANSWER_MISMATCH warning 暴露；环境（Docker/WSL）在本轮多次不稳定，多卷复检未跑完。

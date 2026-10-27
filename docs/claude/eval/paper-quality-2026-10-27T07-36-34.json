@@ -1,0 +1,32 @@
+{
+  "generatedAt": "2026-10-27T07:36:34.189Z",
+  "promptVersion": "v4",
+  "total": 1,
+  "ok": 0,
+  "successRate": 0,
+  "avgSeconds": 480,
+  "avgEssaySolutionMedian": 0,
+  "choice4OptionsRate": 0,
+  "results": [
+    {
+      "scenario": "综合模拟",
+      "requestedKps": [
+        "一次函数",
+        "二次函数",
+        "三角形",
+        "圆",
+        "概率"
+      ],
+      "selectedKps": [
+        "一次函数",
+        "二次函数",
+        "三角形",
+        "圆",
+        "概率"
+      ],
+      "ok": false,
+      "seconds": 480,
+      "error": "Error: scenario timeout 480000ms"
+    }
+  ]
+}
