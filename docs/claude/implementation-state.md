@@ -396,3 +396,7 @@
 - 预期收益：生成耗时从 ~180s 降回 ~90s，答案质量仍由后台自愈保证；`ANSWER_REPAIR=off` 可关闭。
 - 测试：`answer-repair.test.ts` 增至 7 例（含合并函数 3 例）；typecheck 8/8。
 - **真实端到端本轮未完成**：dev 运行环境反复卡住（生成请求长时间无响应/Chrome 挂起），异步链路未取得实测数字；同步版本此前已实测 26.4%→4.2%。环境恢复后验证方法：生成一份卷 → 预览页应出现「后台抽检中」并自动刷新为结果面板；或 `node scripts/verify-answer-accuracy.mjs 1`。
+**答案修复第二轮兜底（2026-10-27 18:55）**：
+- `runPaperAnswerSelfHeal` 的修复轮次从 1 轮提高到 **2 轮**：第一轮修掉大多数错误，第二轮只处理「修复后又被判错」的残留题；因为已后台化，多一轮只延后抽检完成时间，不影响出卷返回。
+- 单测新增 `maxRounds=2` 用例（第一轮后仍错 → 第二轮修复 → afterWrong=0，rounds=2）；`answer-repair.test.ts` 共 8 例全绿，typecheck 8/8。
+- 本轮真实端到端未完成：上游 DashScope 网络异常，生成请求卡到 600s 超时（dev 日志 `POST paper.generate 200 in 601396ms`），无法产出新卷验证；环境恢复后按既有命令复验即可。

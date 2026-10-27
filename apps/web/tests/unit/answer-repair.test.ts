@@ -69,6 +69,28 @@ describe("runAnswerRepairLoop（抽检 → 修复 → 复检）", () => {
     expect(result.afterWrong).toBe(1);
   });
 
+  it("maxRounds=2：第一轮修复后仍判错，会自动进行第二轮", async () => {
+    let verifyRound = 0;
+    const fixedNos: number[] = [];
+    const result = await runAnswerRepairLoop({
+      items,
+      verify: async () => {
+        verifyRound += 1;
+        // 初始 → 第一轮修复后仍错 → 第二轮修复后全对
+        return verifyRound <= 2 ? verdicts([2]) : verdicts([]);
+      },
+      fix: async () => [{ questionNo: 2, answerMd: `6-r${verifyRound}`, solutionMd: "2×3=6，所以答案是 6。" }],
+      applyFixes: async (fixes) => {
+        fixedNos.push(...fixes.map((fix) => fix.questionNo));
+      },
+      maxRounds: 2,
+    });
+    expect(result.rounds).toBe(2);
+    expect(result.fixedCount).toBe(2);
+    expect(result.afterWrong).toBe(0);
+    expect(fixedNos).toEqual([2, 2]);
+  });
+
   it("maxRounds=0 时只抽检不修复", async () => {
     const result = await runAnswerRepairLoop({
       items,

@@ -232,7 +232,10 @@ async function runPaperAnswerSelfHeal(args: {
       orderBy: { position: "asc" },
     });
     const ai = getAiRouter(userId);
+    // 最多 2 轮修复：第一轮修掉大多数错误，第二轮兜住「修复后又判错」的残留题；
+    // 后台执行，多一轮的耗时只影响抽检完成时间，不影响出卷返回。
     const result = await runAnswerRepairLoop({
+      maxRounds: 2,
       items: items.map((item) => ({
         questionNo: item.position,
         stemMd: item.stemMd,
