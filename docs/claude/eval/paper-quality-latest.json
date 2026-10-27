@@ -1,0 +1,363 @@
+{
+  "generatedAt": "2026-10-27T05:28:04.123Z",
+  "promptVersion": "v4",
+  "total": 12,
+  "ok": 11,
+  "successRate": 91.7,
+  "avgSeconds": 128.4,
+  "avgEssaySolutionMedian": 216,
+  "choice4OptionsRate": 100,
+  "results": [
+    {
+      "scenario": "代数运算与方程",
+      "requestedKps": [
+        "一次方程求解",
+        "一元二次方程",
+        "二次根式"
+      ],
+      "selectedKps": [
+        "一次方程求解",
+        "一元二次方程",
+        "二次根式"
+      ],
+      "ok": true,
+      "seconds": 92.6,
+      "items": 24,
+      "totalPoints": 120,
+      "choiceCount": 10,
+      "choiceWith4Options": 10,
+      "essayCount": 8,
+      "essaySolutionMedian": 223,
+      "essaySolutionMin": 163,
+      "essayWithRubric": 8,
+      "blockers": 0,
+      "warnings": 3,
+      "warningCodes": [
+        "SHORT_SOLUTION_WARN"
+      ],
+      "figures": 0,
+      "paperId": "cmvq80bn901mkxudxgxtf0s78"
+    },
+    {
+      "scenario": "一次函数与应用",
+      "requestedKps": [
+        "一次函数",
+        "一次方程应用题",
+        "实数"
+      ],
+      "selectedKps": [
+        "一次函数",
+        "一次方程应用题",
+        "实数"
+      ],
+      "ok": true,
+      "seconds": 93.4,
+      "items": 24,
+      "totalPoints": 120,
+      "choiceCount": 10,
+      "choiceWith4Options": 10,
+      "essayCount": 8,
+      "essaySolutionMedian": 192,
+      "essaySolutionMin": 136,
+      "essayWithRubric": 8,
+      "blockers": 0,
+      "warnings": 4,
+      "warningCodes": [
+        "SHORT_SOLUTION_WARN"
+      ],
+      "figures": 5,
+      "paperId": "cmvq829z401rvxudxvl3oodnt"
+    },
+    {
+      "scenario": "二次函数综合",
+      "requestedKps": [
+        "二次函数",
+        "二次函数的图象与性质",
+        "一元二次方程"
+      ],
+      "selectedKps": [
+        "二次函数",
+        "二次函数的图象与性质",
+        "一元二次方程"
+      ],
+      "ok": true,
+      "seconds": 74,
+      "items": 24,
+      "totalPoints": 120,
+      "choiceCount": 10,
+      "choiceWith4Options": 10,
+      "essayCount": 8,
+      "essaySolutionMedian": 161,
+      "essaySolutionMin": 131,
+      "essayWithRubric": 8,
+      "blockers": 0,
+      "warnings": 5,
+      "warningCodes": [
+        "SHORT_SOLUTION_WARN"
+      ],
+      "figures": 3,
+      "paperId": "cmvq83ssh01x8xudxdnv81vpb"
+    },
+    {
+      "scenario": "三角形与勾股",
+      "requestedKps": [
+        "三角形",
+        "勾股定理",
+        "全等三角形"
+      ],
+      "selectedKps": [
+        "三角形",
+        "勾股定理",
+        "全等三角形"
+      ],
+      "ok": true,
+      "seconds": 106.2,
+      "items": 24,
+      "totalPoints": 120,
+      "choiceCount": 10,
+      "choiceWith4Options": 10,
+      "essayCount": 8,
+      "essaySolutionMedian": 182,
+      "essaySolutionMin": 127,
+      "essayWithRubric": 8,
+      "blockers": 0,
+      "warnings": 7,
+      "warningCodes": [
+        "CHOICE_ALL_OF_ABOVE",
+        "SHORT_SOLUTION_WARN"
+      ],
+      "figures": 6,
+      "paperId": "cmvq85u5c023sxudxm6f8dns5"
+    },
+    {
+      "scenario": "四边形综合",
+      "requestedKps": [
+        "四边形",
+        "三角形",
+        "相似三角形的判定与性质"
+      ],
+      "selectedKps": [
+        "四边形",
+        "三角形",
+        "相似三角形的判定与性质"
+      ],
+      "ok": true,
+      "seconds": 134.9,
+      "items": 24,
+      "totalPoints": 120,
+      "choiceCount": 10,
+      "choiceWith4Options": 10,
+      "essayCount": 8,
+      "essaySolutionMedian": 204,
+      "essaySolutionMin": 123,
+      "essayWithRubric": 8,
+      "blockers": 0,
+      "warnings": 4,
+      "warningCodes": [
+        "CHOICE_ALL_OF_ABOVE",
+        "SHORT_SOLUTION_WARN"
+      ],
+      "figures": 7,
+      "paperId": "cmvq8935t028zxudxlq71s13i"
+    },
+    {
+      "scenario": "圆与相似",
+      "requestedKps": [
+        "圆",
+        "相似三角形的判定与性质",
+        "解直角三角形"
+      ],
+      "selectedKps": [
+        "圆",
+        "相似三角形的判定与性质",
+        "解直角三角形"
+      ],
+      "ok": false,
+      "seconds": 269.1,
+      "error": "PAPER_GEN failed after 3 attempts: [\n  {\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"type\": \"string\",\n    \"inclusive\": true,\n    \"exact\": false,\n    \"message\": \"String must contain at least 1 character(s)\",\n    \"path\": [\n      \"items\",\n      10,\n      \"answerMd\"\n    ]\n  },\n  {\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"type\": \"string\",\n    \"inclusive\": true,\n    \"exact\": false,\n    \"message\": \"String must contain at least 1 character(s)\",\n    \"path\": [\n      \"items\",\n      11,\n      \"answerMd\"\n    ]\n  }\n]"
+    },
+    {
+      "scenario": "解直角三角形",
+      "requestedKps": [
+        "解直角三角形",
+        "勾股定理",
+        "三角形"
+      ],
+      "selectedKps": [
+        "解直角三角形",
+        "勾股定理",
+        "三角形"
+      ],
+      "ok": true,
+      "seconds": 102.4,
+      "items": 24,
+      "totalPoints": 120,
+      "choiceCount": 10,
+      "choiceWith4Options": 10,
+      "essayCount": 8,
+      "essaySolutionMedian": 252,
+      "essaySolutionMin": 142,
+      "essayWithRubric": 8,
+      "blockers": 0,
+      "warnings": 3,
+      "warningCodes": [
+        "SHORT_SOLUTION_WARN"
+      ],
+      "figures": 1,
+      "paperId": "cmvq8gwyr02e7xudx1qrfnwrm"
+    },
+    {
+      "scenario": "函数与方程",
+      "requestedKps": [
+        "一次函数",
+        "二次函数",
+        "一元二次方程"
+      ],
+      "selectedKps": [
+        "一次函数",
+        "二次函数",
+        "一元二次方程"
+      ],
+      "ok": true,
+      "seconds": 106.4,
+      "items": 24,
+      "totalPoints": 120,
+      "choiceCount": 10,
+      "choiceWith4Options": 10,
+      "essayCount": 8,
+      "essaySolutionMedian": 230,
+      "essaySolutionMin": 178,
+      "essayWithRubric": 8,
+      "blockers": 0,
+      "warnings": 1,
+      "warningCodes": [
+        "SHORT_SOLUTION_WARN"
+      ],
+      "figures": 8,
+      "paperId": "cmvq8jcep02kkxudxnir5ifg6"
+    },
+    {
+      "scenario": "概率统计",
+      "requestedKps": [
+        "概率",
+        "统计",
+        "实数"
+      ],
+      "selectedKps": [
+        "概率",
+        "统计",
+        "实数"
+      ],
+      "ok": true,
+      "seconds": 101.5,
+      "items": 24,
+      "totalPoints": 120,
+      "choiceCount": 10,
+      "choiceWith4Options": 10,
+      "essayCount": 8,
+      "essaySolutionMedian": 196,
+      "essaySolutionMin": 120,
+      "essayWithRubric": 8,
+      "blockers": 0,
+      "warnings": 2,
+      "warningCodes": [
+        "SHORT_SOLUTION_WARN"
+      ],
+      "figures": 1,
+      "paperId": "cmvq8lghs02ptxudx3z8bfath"
+    },
+    {
+      "scenario": "代数+几何混合",
+      "requestedKps": [
+        "一次函数",
+        "三角形",
+        "勾股定理"
+      ],
+      "selectedKps": [
+        "一次函数",
+        "三角形",
+        "勾股定理"
+      ],
+      "ok": true,
+      "seconds": 74.5,
+      "items": 24,
+      "totalPoints": 120,
+      "choiceCount": 10,
+      "choiceWith4Options": 10,
+      "essayCount": 8,
+      "essaySolutionMedian": 255,
+      "essaySolutionMin": 132,
+      "essayWithRubric": 8,
+      "blockers": 0,
+      "warnings": 2,
+      "warningCodes": [
+        "SHORT_SOLUTION_WARN"
+      ],
+      "figures": 6,
+      "paperId": "cmvq8n2ic02v4xudx5kdd9lm7"
+    },
+    {
+      "scenario": "二次函数+几何",
+      "requestedKps": [
+        "二次函数",
+        "四边形",
+        "相似三角形的判定与性质"
+      ],
+      "selectedKps": [
+        "二次函数",
+        "四边形",
+        "相似三角形的判定与性质"
+      ],
+      "ok": true,
+      "seconds": 62.5,
+      "items": 24,
+      "totalPoints": 120,
+      "choiceCount": 10,
+      "choiceWith4Options": 10,
+      "essayCount": 8,
+      "essaySolutionMedian": 248,
+      "essaySolutionMin": 131,
+      "essayWithRubric": 8,
+      "blockers": 0,
+      "warnings": 3,
+      "warningCodes": [
+        "CHOICE_ALL_OF_ABOVE",
+        "SHORT_SOLUTION_WARN"
+      ],
+      "figures": 6,
+      "paperId": "cmvq8oeph030ixudxx264zour"
+    },
+    {
+      "scenario": "综合模拟",
+      "requestedKps": [
+        "一次函数",
+        "二次函数",
+        "三角形",
+        "圆",
+        "概率"
+      ],
+      "selectedKps": [
+        "一次函数",
+        "二次函数",
+        "三角形",
+        "圆",
+        "概率"
+      ],
+      "ok": true,
+      "seconds": 322.7,
+      "items": 24,
+      "totalPoints": 120,
+      "choiceCount": 10,
+      "choiceWith4Options": 10,
+      "essayCount": 8,
+      "essaySolutionMedian": 231,
+      "essaySolutionMin": 185,
+      "essayWithRubric": 8,
+      "blockers": 0,
+      "warnings": 0,
+      "warningCodes": [],
+      "figures": 5,
+      "paperId": "cmvq8rbb0035lxudx9m6fe1sx"
+    }
+  ]
+}

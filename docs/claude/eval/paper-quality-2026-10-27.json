@@ -1,0 +1,310 @@
+{
+  "generatedAt": "2026-10-27T04:59:27.714Z",
+  "promptVersion": "v4",
+  "total": 12,
+  "ok": 7,
+  "successRate": 58.3,
+  "avgSeconds": 91.6,
+  "avgEssaySolutionMedian": 206,
+  "choice4OptionsRate": 100,
+  "results": [
+    {
+      "scenario": "代数运算与方程",
+      "requestedKps": [
+        "一次方程求解",
+        "一元二次方程",
+        "二次根式"
+      ],
+      "selectedKps": [
+        "一次方程求解",
+        "一元二次方程",
+        "二次根式"
+      ],
+      "ok": false,
+      "seconds": 68.5,
+      "error": "出卷失败，请稍后再试。"
+    },
+    {
+      "scenario": "一次函数与应用",
+      "requestedKps": [
+        "一次函数",
+        "一次方程应用题",
+        "实数"
+      ],
+      "selectedKps": [
+        "一次函数",
+        "一次方程应用题",
+        "实数"
+      ],
+      "ok": true,
+      "seconds": 73.4,
+      "items": 24,
+      "totalPoints": 120,
+      "choiceCount": 10,
+      "choiceWith4Options": 10,
+      "essayCount": 8,
+      "essaySolutionMedian": 175,
+      "essaySolutionMin": 143,
+      "essayWithRubric": 8,
+      "blockers": 0,
+      "warnings": 7,
+      "warningCodes": [
+        "STEM_TOO_SHORT",
+        "CHOICE_ALL_OF_ABOVE",
+        "SHORT_SOLUTION_WARN"
+      ],
+      "figures": 5,
+      "paperId": "cmvq79xt400d3xudxjlhvbiok"
+    },
+    {
+      "scenario": "二次函数综合",
+      "requestedKps": [
+        "二次函数",
+        "二次函数的图象与性质",
+        "一元二次方程"
+      ],
+      "selectedKps": [
+        "二次函数",
+        "二次函数的图象与性质",
+        "一元二次方程"
+      ],
+      "ok": true,
+      "seconds": 61.4,
+      "items": 24,
+      "totalPoints": 120,
+      "choiceCount": 10,
+      "choiceWith4Options": 10,
+      "essayCount": 8,
+      "essaySolutionMedian": 203,
+      "essaySolutionMin": 150,
+      "essayWithRubric": 8,
+      "blockers": 0,
+      "warnings": 4,
+      "warningCodes": [
+        "CHOICE_ALL_OF_ABOVE",
+        "SHORT_SOLUTION_WARN"
+      ],
+      "figures": 5,
+      "paperId": "cmvq7bbrq00idxudxpjdllgrl"
+    },
+    {
+      "scenario": "三角形与勾股",
+      "requestedKps": [
+        "三角形",
+        "勾股定理",
+        "全等三角形"
+      ],
+      "selectedKps": [
+        "三角形",
+        "勾股定理",
+        "全等三角形"
+      ],
+      "ok": false,
+      "seconds": 118,
+      "error": "自动审题未通过，未生成可用试卷。请调整知识点或稍后重试。"
+    },
+    {
+      "scenario": "四边形综合",
+      "requestedKps": [
+        "四边形",
+        "三角形",
+        "相似三角形的判定与性质"
+      ],
+      "selectedKps": [
+        "四边形",
+        "三角形",
+        "相似三角形的判定与性质"
+      ],
+      "ok": true,
+      "seconds": 107.4,
+      "items": 24,
+      "totalPoints": 120,
+      "choiceCount": 10,
+      "choiceWith4Options": 10,
+      "essayCount": 8,
+      "essaySolutionMedian": 257,
+      "essaySolutionMin": 149,
+      "essayWithRubric": 8,
+      "blockers": 0,
+      "warnings": 2,
+      "warningCodes": [
+        "SHORT_SOLUTION_WARN"
+      ],
+      "figures": 5,
+      "paperId": "cmvq7g4we00pixudxksj53pls"
+    },
+    {
+      "scenario": "圆与相似",
+      "requestedKps": [
+        "圆",
+        "相似三角形的判定与性质",
+        "解直角三角形"
+      ],
+      "selectedKps": [
+        "圆",
+        "相似三角形的判定与性质",
+        "解直角三角形"
+      ],
+      "ok": false,
+      "seconds": 194.9,
+      "error": "自动审题未通过，未生成可用试卷。请调整知识点或稍后重试。"
+    },
+    {
+      "scenario": "解直角三角形",
+      "requestedKps": [
+        "解直角三角形",
+        "勾股定理",
+        "三角形"
+      ],
+      "selectedKps": [
+        "解直角三角形",
+        "勾股定理",
+        "三角形"
+      ],
+      "ok": true,
+      "seconds": 86.4,
+      "items": 24,
+      "totalPoints": 120,
+      "choiceCount": 10,
+      "choiceWith4Options": 10,
+      "essayCount": 8,
+      "essaySolutionMedian": 236,
+      "essaySolutionMin": 121,
+      "essayWithRubric": 8,
+      "blockers": 0,
+      "warnings": 3,
+      "warningCodes": [
+        "SHORT_SOLUTION_WARN"
+      ],
+      "figures": 2,
+      "paperId": "cmvq7m4ny00v1xudxxx0vufac"
+    },
+    {
+      "scenario": "函数与方程",
+      "requestedKps": [
+        "一次函数",
+        "二次函数",
+        "一元二次方程"
+      ],
+      "selectedKps": [
+        "一次函数",
+        "二次函数",
+        "一元二次方程"
+      ],
+      "ok": true,
+      "seconds": 63.1,
+      "items": 24,
+      "totalPoints": 120,
+      "choiceCount": 10,
+      "choiceWith4Options": 10,
+      "essayCount": 8,
+      "essaySolutionMedian": 189,
+      "essaySolutionMin": 131,
+      "essayWithRubric": 8,
+      "blockers": 0,
+      "warnings": 4,
+      "warningCodes": [
+        "CHOICE_ALL_OF_ABOVE",
+        "SHORT_SOLUTION_WARN"
+      ],
+      "figures": 5,
+      "paperId": "cmvq7njwv010yxudxqbxxrc0t"
+    },
+    {
+      "scenario": "概率统计",
+      "requestedKps": [
+        "概率",
+        "统计",
+        "实数"
+      ],
+      "selectedKps": [
+        "概率",
+        "统计",
+        "实数"
+      ],
+      "ok": true,
+      "seconds": 82,
+      "items": 24,
+      "totalPoints": 120,
+      "choiceCount": 10,
+      "choiceWith4Options": 10,
+      "essayCount": 8,
+      "essaySolutionMedian": 164,
+      "essaySolutionMin": 123,
+      "essayWithRubric": 8,
+      "blockers": 0,
+      "warnings": 6,
+      "warningCodes": [
+        "SHORT_SOLUTION_WARN"
+      ],
+      "figures": 0,
+      "paperId": "cmvq7paqz0168xudxnixml9vq"
+    },
+    {
+      "scenario": "代数+几何混合",
+      "requestedKps": [
+        "一次函数",
+        "三角形",
+        "勾股定理"
+      ],
+      "selectedKps": [
+        "一次函数",
+        "三角形",
+        "勾股定理"
+      ],
+      "ok": true,
+      "seconds": 243.7,
+      "items": 24,
+      "totalPoints": 120,
+      "choiceCount": 10,
+      "choiceWith4Options": 10,
+      "essayCount": 8,
+      "essaySolutionMedian": 218,
+      "essaySolutionMin": 164,
+      "essayWithRubric": 8,
+      "blockers": 0,
+      "warnings": 3,
+      "warningCodes": [
+        "SHORT_SOLUTION_WARN"
+      ],
+      "figures": 5,
+      "paperId": "cmvq7qm9i01blxudx7f4b2iva"
+    },
+    {
+      "scenario": "二次函数+几何",
+      "requestedKps": [
+        "二次函数",
+        "四边形",
+        "相似三角形的判定与性质"
+      ],
+      "selectedKps": [
+        "二次函数",
+        "四边形",
+        "相似三角形的判定与性质"
+      ],
+      "ok": false,
+      "seconds": 0.1,
+      "error": "请先登录"
+    },
+    {
+      "scenario": "综合模拟",
+      "requestedKps": [
+        "一次函数",
+        "二次函数",
+        "三角形",
+        "圆",
+        "概率"
+      ],
+      "selectedKps": [
+        "一次函数",
+        "二次函数",
+        "三角形",
+        "圆",
+        "概率"
+      ],
+      "ok": false,
+      "seconds": 0,
+      "error": "请先登录"
+    }
+  ]
+}

@@ -356,3 +356,8 @@
   - **本轮 figures=0**：v4 prompt 要求「题干不依赖插图、用文字写全条件」，配图模型对这类自足题干多返回 `figure:null`（figure 调用 35 次 SUCCESS 但多数主动放弃）；属于策略副作用，下一轮需调整配图 prompt/候选策略（例如几何题即使不写「如图」也要求配示意图），并补一条「几何题干 → 优先配图」的规则。
   - 结果文件：`docs/claude/eval/paper-quality-2026-10-26.json`；运行日志 `docs/claude/eval/eval-progress.log`。
 - 测试：`paper-review.test.ts`（20 例，含新增 7 个质量门用例）、`paper-repair-instructions.test.ts`（5 例，含 SHORT_SOLUTION 指令）全绿；`packages/ai` 17 文件 117 例全绿；`apps/web` 全量 **32 文件 195 例**全绿，typecheck 8/8。
+
+**评测脚本 API 化 + 12 场景基线（2026-10-27 13:28）**：
+- pps/web/scripts/eval-paper-quality.mjs 改为**直接调 tRPC**（从 DB 取学科/知识点 id，POST /api/trpc/paper.generate），不再点 UI chips（历史问题：chips 选中态依赖默认选中集，单 KP 场景会被静默退化；长跑还会 session 过期连环失败）；每场景失败若是未登录会自动重新登录重试；结果文件名带时间戳 + paper-quality-latest.json。
+- 场景改为每个 3–5 个 KP（24 题一张卷，单 KP 会被重复率门 400 拦下）：代数/一次函数/二次函数/三角形勾股/四边形/圆相似/解直角三角形/函数方程/概率统计/代数几何/二次函数几何/综合模拟。
+- 全量基线：**11/12 成功（91.7%）**，平均 128.4s；每卷 24 题/120 分；选择题 4 选项 **100%**；解答题解析中位数均值 **216 字**；评分标准覆盖 100%；**配图合计 48 张**（几何场景 1–8 张/卷）。唯一失败：圆与相似（PAPER_GEN 解析失败 3 次，属模型 JSON 抖动，非脚本问题）。

@@ -33,20 +33,24 @@ for (const line of envText.split(/\r?\n/)) {
   if (m && !process.env[m[1]]) process.env[m[1]] = m[2].replace(/^"|"$/g, "");
 }
 
-/** 12 个场景：覆盖代数/几何/函数/统计概率、单 KP / 多 KP、不同难度倾向。 */
+/**
+ * 12 个场景：覆盖代数/几何/函数/统计概率。
+ * 注意：中考蓝图是 24 题一张卷，**单 KP 撑不满 24 题**（会被重复率门 400 拦下），
+ * 所以每个场景给 3–5 个 KP；这是评测可用的最小粒度。
+ */
 const SCENARIOS = [
-  { name: "一次函数-单点", kps: ["一次函数"] },
-  { name: "二次函数-单点", kps: ["二次函数"] },
-  { name: "二次函数图象-单点", kps: ["二次函数的图象与性质"] },
-  { name: "勾股定理-单点", kps: ["勾股定理"] },
-  { name: "三角形-单点", kps: ["三角形"] },
-  { name: "圆-单点", kps: ["圆"] },
-  { name: "四边形-单点", kps: ["四边形"] },
-  { name: "全等三角形-单点", kps: ["全等三角形"] },
-  { name: "相似三角形-单点", kps: ["相似三角形的判定与性质"] },
-  { name: "解直角三角形-单点", kps: ["解直角三角形"] },
-  { name: "代数+几何混合", kps: ["一次函数", "三角形"] },
-  { name: "函数+统计混合", kps: ["二次函数", "概率"] },
+  { name: "代数运算与方程", kps: ["一次方程求解", "一元二次方程", "二次根式"] },
+  { name: "一次函数与应用", kps: ["一次函数", "一次方程应用题", "实数"] },
+  { name: "二次函数综合", kps: ["二次函数", "二次函数的图象与性质", "一元二次方程"] },
+  { name: "三角形与勾股", kps: ["三角形", "勾股定理", "全等三角形"] },
+  { name: "四边形综合", kps: ["四边形", "三角形", "相似三角形的判定与性质"] },
+  { name: "圆与相似", kps: ["圆", "相似三角形的判定与性质", "解直角三角形"] },
+  { name: "解直角三角形", kps: ["解直角三角形", "勾股定理", "三角形"] },
+  { name: "函数与方程", kps: ["一次函数", "二次函数", "一元二次方程"] },
+  { name: "概率统计", kps: ["概率", "统计", "实数"] },
+  { name: "代数+几何混合", kps: ["一次函数", "三角形", "勾股定理"] },
+  { name: "二次函数+几何", kps: ["二次函数", "四边形", "相似三角形的判定与性质"] },
+  { name: "综合模拟", kps: ["一次函数", "二次函数", "三角形", "圆", "概率"] },
 ];
 
 const prisma = new PrismaClient();
@@ -107,15 +111,36 @@ const ctx = await browser.newContext({ viewport: { width: 1440, height: 1000 } }
 const page = await ctx.newPage();
 page.on("pageerror", () => {});
 
-await page.goto(BASE + "/login", { waitUntil: "networkidle", timeout: 180000 });
-await page.waitForTimeout(800);
-await page.getByRole("button", { name: "密码登录" }).click();
-await page.getByTestId("login-phone").fill("13800000002");
-await page.getByTestId("login-password").fill("Teacher123!");
-await page.getByTestId("login-password-submit").click();
-await page.waitForURL((u) => u.pathname.startsWith("/teacher"), { timeout: 120000 });
+/** 登录（可重复调用）：长跑评测里 session 会过期，每个场景前/遇 401 时重新登录。 */
+async function ensureLogin() {
+  await page.goto(BASE + "/login", { waitUntil: "domcontentloaded", timeout: 180000 });
+  await page.waitForTimeout(500);
+  const pwdButton = page.getByRole("button", { name: "密码登录" });
+  // 已登录时 /login 可能直接重定向，没有登录表单
+  if ((await pwdButton.count()) === 0) return;
+  await pwdButton.click();
+  await page.getByTestId("login-phone").fill("13800000002");
+  await page.getByTestId("login-password").fill("Teacher123!");
+  await page.getByTestId("login-password-submit").click();
+  await page.waitForURL((u) => u.pathname.startsWith("/teacher"), { timeout: 120000 });
+}
+
+await ensureLogin();
 await withTimeout(prisma.$connect(), 15000, "prisma.connect").catch(() => {});
 progress("login ok");
+
+// 直接从 DB 取学科与知识点 id，再用 tRPC 出卷。
+// 不再点 UI chips：chips 选中态依赖默认选中集，单 KP 场景会被静默退化（历史评测踩过）。
+const subject = await prisma.subject.findFirst({ where: { code: "math" }, select: { id: true } });
+if (!subject) {
+  console.error("找不到数学学科（subject.code=math）");
+  process.exit(1);
+}
+const allKps = await prisma.knowledgePoint.findMany({
+  where: { subjectId: subject.id },
+  select: { id: true, name: true },
+});
+progress(`loaded subject=${subject.id} kps=${allKps.length}`);
 
 const results = [];
 // --only=勾股定理,三角形 可只跑指定场景（按名称包含匹配），用于针对性验证，不必等全量 12 场景。
@@ -123,47 +148,71 @@ const SELECTED = (ONLY.length ? SCENARIOS.filter((s) => ONLY.some((k) => s.name.
 for (const [index, scenario] of SELECTED.entries()) {
   const started = Date.now();
   progress(`scenario ${index + 1}/${SELECTED.length} ${scenario.name} start`);
-  await page.goto(BASE + "/teacher/papers/new", { waitUntil: "domcontentloaded", timeout: 180000 });
-  // 知识点 chips 是异步加载的（按钮出现 ≠ 知识点列表加载完）：等 chip 真正出现再点，
-  // 否则会静默点空、所有场景退化成默认知识点（本轮评测踩过这个坑）。
-  await page.waitForSelector('[data-testid^="kp-"]', { timeout: 60000 }).catch(() => {});
-  await page.waitForTimeout(800);
-  const selected = [];
-  for (const kp of scenario.kps) {
-    // 用 data-testid 前缀 + 文本匹配（getByRole 的 accessible name 在 chips 上不可靠）
-    const chip = page.locator('[data-testid^="kp-"]').filter({ hasText: kp });
-    if ((await chip.count()) > 0) {
-      await chip.first().click({ timeout: 30000 }).catch(() => {});
-      await page.waitForTimeout(200);
-      selected.push(kp);
-    }
-  }
-  const HARD_TIMEOUT_MS = 8 * 60 * 1000;
-  const outcome = await Promise.race([
-    (async () => {
-      await page.getByRole("button", { name: /一键生成中考风格卷/ }).click({ timeout: 30000 });
-      await page.waitForURL(
-        (u) => /^\/teacher\/papers\/[a-z0-9]+$/.test(u.pathname) && u.pathname !== "/teacher/papers/new",
-        { timeout: HARD_TIMEOUT_MS },
-      );
-      return { ok: true, paperId: page.url().split("/").pop() };
-    })(),
-    (async () => {
-      await page.locator('[data-testid="generate-error"]').waitFor({ state: "visible", timeout: HARD_TIMEOUT_MS });
-      return { ok: false, error: (await page.locator('[data-testid="generate-error"]').innerText()).slice(0, 120) };
-    })(),
-    new Promise((resolve) => setTimeout(() => resolve({ ok: false, error: "scenario timeout (8min)" }), HARD_TIMEOUT_MS)),
-  ]).catch((error) => ({ ok: false, error: String(error).slice(0, 120) }));
-  const seconds = Math.round((Date.now() - started) / 100);
-  await page.waitForTimeout(800);
-  progress(`scenario ${index + 1} outcome ${outcome.ok ? "OK " + outcome.paperId : "FAIL " + outcome.error} (${seconds / 10}s)`);
+  // 场景 KP 名 → DB id（找不到的跳过并记录）
+  const resolved = scenario.kps
+    .map((name) => ({ name, id: allKps.find((k) => k.name === name)?.id }))
+    .filter((entry) => Boolean(entry.id));
+  const kpIds = resolved.map((entry) => entry.id);
+  const selected = resolved.map((entry) => entry.name);
+  const missing = scenario.kps.filter((name) => !selected.includes(name));
+  if (missing.length > 0) progress(`  missing KPs: ${missing.join(",")}`);
 
-  // 失败/超时后页面可能仍停留在「生成中」状态，先硬跳回出卷页再进入下一场景，
-  // 避免下一个场景因为按钮不在可点击状态而连环 FAIL（本轮评测里场景 12 就是这样挂的）。
-  if (!outcome.ok) {
-    await page.goto(BASE + "/teacher/papers", { waitUntil: "domcontentloaded", timeout: 120000 }).catch(() => {});
-    await page.waitForTimeout(1500);
+  // 直接走 tRPC：body 与前端「一键生成中考风格卷」一致，避免 UI 交互不稳定。
+  const HARD_TIMEOUT_MS = 8 * 60 * 1000;
+  const generateViaApi = async () => {
+    const resp = await page.evaluate(
+      async ({ subjectId, kpIds }) => {
+        const r = await fetch("/api/trpc/paper.generate?batch=1", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            0: {
+              json: {
+                subjectId,
+                kpIds,
+                gradeLevel: "G9",
+                textbookVersion: "GENERIC",
+                durationMinutes: 120,
+                styleTemplate: "JUNIOR_MATH_ZHONGKAO_GENERIC_V1",
+                clientRequestId: crypto.randomUUID(),
+              },
+            },
+          }),
+        });
+        return { status: r.status, body: await r.text() };
+      },
+      { subjectId: subject.id, kpIds },
+    );
+    let parsed;
+    try {
+      parsed = JSON.parse(resp.body);
+    } catch {
+      return { ok: false, error: `HTTP ${resp.status} 非 JSON 响应` };
+    }
+    const apiError = parsed?.[0]?.error?.json;
+    if (resp.status !== 200) {
+      const reason = apiError?.data?.cause?.reason ?? "";
+      return { ok: false, error: `${apiError?.message ?? `HTTP ${resp.status}`}${reason ? ` [${reason}]` : ""}` };
+    }
+    const paperId = parsed?.[0]?.result?.data?.json?.paperId ?? parsed?.[0]?.result?.data?.paperId;
+    return paperId ? { ok: true, paperId } : { ok: false, error: "响应中没有 paperId" };
+  };
+  const runOnce = () =>
+    withTimeout(generateViaApi(), HARD_TIMEOUT_MS, "scenario").catch((error) => ({
+      ok: false,
+      error: String(error).slice(0, 140),
+    }));
+
+  let outcome = await runOnce();
+  // 长跑评测里 JWT/session 会过期 → 重新登录后重试一次（否则后面场景会连环「请先登录」）。
+  if (!outcome.ok && /请先登录|未登录|UNAUTHORIZED|401/.test(outcome.error)) {
+    progress("  session expired → re-login & retry");
+    await ensureLogin().catch(() => {});
+    outcome = await runOnce();
   }
+
+  const seconds = Math.round((Date.now() - started) / 100);
+  progress(`scenario ${index + 1} outcome ${outcome.ok ? "OK " + outcome.paperId : "FAIL " + outcome.error} (${seconds / 10}s)`);
 
   const row = {
     scenario: scenario.name,
@@ -206,8 +255,12 @@ const summary = {
   })(),
   results,
 };
-const stamp = new Date().toISOString().slice(0, 10);
-writeFileSync(join(OUT_DIR, `paper-quality-${stamp}.json`), JSON.stringify(summary, null, 2), "utf8");
+// 文件名带时间戳，避免不同批次互相覆盖；同时更新 latest 便于README/文档引用。
+const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+const outPath = join(OUT_DIR, `paper-quality-${stamp}.json`);
+writeFileSync(outPath, JSON.stringify(summary, null, 2), "utf8");
+writeFileSync(join(OUT_DIR, "paper-quality-latest.json"), JSON.stringify(summary, null, 2), "utf8");
+progress(`results written: ${outPath}`);
 console.log(
   `\nSUMMARY ${summary.ok}/${summary.total} (${summary.successRate}%) avg=${summary.avgSeconds}s ` +
     `choice4Options=${summary.choice4OptionsRate}% essaySolutionMedianAvg=${summary.avgEssaySolutionMedian}`,
