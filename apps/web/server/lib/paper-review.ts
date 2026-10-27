@@ -94,6 +94,10 @@ export function reviewPaperSlot(slot: BlueprintSlot, item: ReviewableItem): Pape
     if (item.options.some((opt) => /以上都|都不对|无法确定/.test(opt))) {
       push("WARNING", "CHOICE_ALL_OF_ABOVE", "选择题出现「以上都对/都不对」类凑数选项，建议换成有区分度的选项");
     }
+    // 选项里残留 HTML 实体/分隔符（如 `1 &emsp`、行尾孤立 `&`）会直接暴露给学生。
+    if (item.options.some((opt) => /&(?:[a-z]+|#\d+);?|\s&\s*$|\s{2,}/i.test(opt))) {
+      push("WARNING", "CHOICE_OPTION_ARTIFACT", "选项含 HTML 实体/多余分隔符残留，建议清洗或重新设计选项");
+    }
     const lead = item.answerMd.trim().match(/^[（(]?\s*([A-Za-z]+)/)?.[1] ?? "";
     if (!lead || !/^[A-D]$/i.test(lead)) {
       push("WARNING", "CHOICE_ANSWER_NOT_LETTER", "选择题答案建议只写选项字母（A/B/C/D）");

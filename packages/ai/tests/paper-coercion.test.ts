@@ -131,3 +131,27 @@ describe("coerceStringArray", () => {
     expect(coerceStringArray("一次函数, 几何图形")).toEqual(["一次函数", "几何图形"]);
   });
 });
+
+describe("HTML entity residue cleanup (options)", () => {
+  it("strips &emsp;/&nbsp;/&ensp; and trailing lone & from options", () => {
+    expect(coerceOptionArray(["20plain &emsp", "30plain &nbsp;", "40plain&", "50 plain"])).toEqual([
+      "20plain",
+      "30plain",
+      "40plain",
+      "50 plain",
+    ]);
+  });
+
+  it("strips space entities from a single option string before splitting", () => {
+    const s = "A. alpha &emsp;\nB. beta &nbsp;\nC. gamma\nD. delta";
+    expect(coerceOptionArray(s)).toEqual(["alpha", "beta", "gamma", "delta"]);
+  });
+
+  it("decodes basic entities (&amp; / &lt; / &gt;)", () => {
+    expect(coerceOptionArray(["a &amp; b", "c &lt; d", "e &gt; f"])).toEqual([
+      "a & b",
+      "c < d",
+      "e > f",
+    ]);
+  });
+});

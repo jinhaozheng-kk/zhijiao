@@ -429,3 +429,10 @@
 - 顺带：预览页「删题」加二次确认；`kp-picker` 对缺失 code 做防御（避免旧缓存数据崩页）。
 - 测试：paper-ui / answer-check-panel / kp-picker 更新；apps/web 全量 238/245 通过（7 个 DB fixture 用例因测试库不可用，属既有环境问题）；typecheck 8/8。
 - 待办（P1）：生成慢（当前实测 60-300s，AI 上游波动）、等待面板无进度/取消、试卷列表无搜索分页、手动出卷修复轮过长。
+**UX 审计闭环 + 选项残留清理（2026-10-27 23:20）**：
+- UX 审计：`docs/ux/ux-review-2026-10-27.md`（3×P0/10×P1/7×P2，36 张截图）；复验：`docs/ux/ux-verify-2026-10-27.md` → **3×P0 + P1-02 全部 ✅ 已修，无新 P0**。
+- 已修：手动出卷 500（paper-gen v1→v6）、一键中考卷落 DRAFT 需教师确认、READY 卷保留只读审题提示、抽检存疑锚点跳题、打印前抽检二次确认、打印媒体隐藏 App 头部/演示横幅、参考答案标题、删题二次确认、kp-picker 缺 code 防御。
+- 新增 P1（UX 复验发现）：长生成任务扣费/状态/退款不一致（5 笔 PAPER_GEN 扣费但 0 卷 0 退款 0 审计）→ **本轮未修**，需 generation_jobs + 列表「生成中」+ 超时退款兜底。
+- 选项实体残留（复验 backlog 第 1）：`paper-coercion` 层新增 `stripHtmlEntities`（&emsp;/&nbsp;/ensp/thinsp/数字实体 → 空格，&amp;/&lt;/&gt;/&quot;/&#39; 解码），`normalizeAiText` 同步清洗；`paper-review` 新增 `CHOICE_OPTION_ARTIFACT` WARNING。
+- 存量数据：单条 SQL 清理 **491 个 paper_items / 126 份卷**（`&emsp` 等空白实体），清理后 DB 残留 0；打印页实测选项为「A. 20本 / B. 30本 …」，无实体残留。维护脚本：`apps/web/scripts/backfill-option-artifacts.mjs`。
+- 测试：paper-coercion 24 例（+3 实体用例）、paper-review 23 例（+3 门禁用例）；typecheck 8/8。

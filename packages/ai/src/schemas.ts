@@ -323,13 +323,34 @@ function tryParseJsonArrayString(raw: string): string[] | null {
   return null;
 }
 
+// 模型偶尔把 HTML 实体当分隔符写进选项（`A. 1 &emsp; B. 2`），切分后残留在选项尾部，
+// 预览/打印会直接暴露 `A. 1 &emsp`。统一把常见空白实体还原成空格，其余实体解码。
+const HTML_ENTITY_SPACE = /&(?:emsp|ensp|nbsp|thinsp|#160|#8195|#8201);?/gi;
+const HTML_ENTITY_BASIC = /&(amp|lt|gt|quot|#39);/gi;
+const HTML_ENTITY_BASIC_MAP: Record<string, string> = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  "#39": "'",
+};
+
+export function stripHtmlEntities(text: string): string {
+  return text
+    .replace(HTML_ENTITY_SPACE, " ")
+    .replace(HTML_ENTITY_BASIC, (_, name: string) => HTML_ENTITY_BASIC_MAP[name.toLowerCase()] ?? "");
+}
+
 function stripOptionPrefix(option: unknown): string {
-  return String(option)
+  return stripHtmlEntities(String(option))
     .trim()
     // 剥掉「A. / (A) / A、」式选项前缀（避免 UI 再加字母时重复）。
     .replace(/^[（(]?\s*[A-Da-d]\s*[)）.、．:：]\s*/, "")
     // 清掉残留的 LaTeX 行间距（分隔符被切走后可能粘在选项尾部）。
     .replace(LATEX_SPACING, "")
+    // 兜底：去掉行尾孤立的 `&`（实体被切成半截时）。
+    .replace(/\s*&\s*$/, "")
+    .replace(/\s+/g, " ")
     .trim();
 }
 
@@ -342,7 +363,7 @@ function stripOptionPrefix(option: unknown): string {
 //     （`\neq` / `\nabla` / `\not` 等）。
 // `\\{1,2}` 同时覆盖单/双反斜杠两种写法。
 export function normalizeAiText(text: string): string {
-  return text
+  return stripHtmlEntities(text)
     .replace(/\\{1,2}(?:r\\{1,2})?n(?=\s*[（(]?\s*[A-D]\s*[.、．)）])/g, "\n")
     .replace(/\\{1,2}(?:r\\{1,2})?n(?![a-zA-Z])/g, "\n")
     .replace(HTML_BREAK_RE, "\n");

@@ -145,3 +145,28 @@ describe("reviewAssembledPaper 聚合", () => {
     expect(issues.every((i) => i.slotQuestionNo === 7)).toBe(true);
   });
 });
+
+describe("CHOICE_OPTION_ARTIFACT gate (HTML entity residue)", () => {
+  it("flags options with &emsp;/&nbsp; residue", () => {
+    const issues = reviewPaperSlot(choiceSlot, {
+      ...okChoice,
+      options: ["1 &emsp", "2 &nbsp;", "3", "4"],
+    });
+    expect(issues).toContainEqual(
+      expect.objectContaining({ severity: "WARNING", code: "CHOICE_OPTION_ARTIFACT" }),
+    );
+  });
+
+  it("flags options with a trailing lone &", () => {
+    const issues = reviewPaperSlot(choiceSlot, {
+      ...okChoice,
+      options: ["(0,0)", "(1,1)", "(1,3)", "(2,1) &"],
+    });
+    expect(issues.some((i) => i.code === "CHOICE_OPTION_ARTIFACT")).toBe(true);
+  });
+
+  it("clean options do not trigger the artifact gate", () => {
+    const issues = reviewPaperSlot(choiceSlot, okChoice);
+    expect(issues.some((i) => i.code === "CHOICE_OPTION_ARTIFACT")).toBe(false);
+  });
+});
