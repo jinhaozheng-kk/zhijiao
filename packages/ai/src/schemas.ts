@@ -801,6 +801,48 @@ export const FigureGenerationOutputSchema = z.object({
 });
 export type FigureGenerationOutput = z.infer<typeof FigureGenerationOutputSchema>;
 
+// === 试卷答案正确性抽检（PAPER_ANSWER_VERIFY）===
+//
+// 用「第二个模型」独立判卷：只判断答案/解析在数学上是否正确，不改卷。
+// 模型常把 verdict 写成中文或大小写混用（正确/错误/不确定、correct、Wrong），
+// 这里统一归一化，避免因为枚举大小写导致整批判定失败。
+export const AnswerVerifyVerdictSchema = z.preprocess(
+  (value) => {
+    const text = String(value ?? "").trim().toUpperCase();
+    if (["CORRECT", "RIGHT", "TRUE", "OK", "正确", "对", "无误"].includes(text)) return "CORRECT";
+    if (["WRONG", "INCORRECT", "FALSE", "ERROR", "错误", "错", "有误"].includes(text)) return "WRONG";
+    return "UNCERTAIN";
+  },
+  z.enum(["CORRECT", "WRONG", "UNCERTAIN"]),
+);
+
+export const AnswerVerifyResultSchema = z.object({
+  questionNo: z.number().int().min(1).max(60),
+  verdict: AnswerVerifyVerdictSchema,
+  reason: z.string().max(300).default(""),
+});
+export type AnswerVerifyResult = z.infer<typeof AnswerVerifyResultSchema>;
+
+export const AnswerVerifyInputSchema = z.object({
+  items: z
+    .array(
+      z.object({
+        questionNo: z.number().int().min(1),
+        stemMd: z.string().min(1).max(4000),
+        answerMd: z.string().min(1).max(2000),
+        solutionMd: z.string().max(6000).default(""),
+      }),
+    )
+    .min(1)
+    .max(24),
+});
+export type AnswerVerifyInput = z.infer<typeof AnswerVerifyInputSchema>;
+
+export const AnswerVerifyOutputSchema = z.object({
+  results: z.array(AnswerVerifyResultSchema).min(1).max(30),
+});
+export type AnswerVerifyOutput = z.infer<typeof AnswerVerifyOutputSchema>;
+
 // === LessonPlanGeneration / Courseware (Plan 18) ===
 export const CoursewareSectionTypeEnum = z.enum([
   "INTRO",

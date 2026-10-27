@@ -347,6 +347,17 @@ function pickDefault(req: AdapterRequest): unknown {
   if (sys.includes("学习顾问")) return DEFAULT_LEARNING_ADVICE;
   if (sys.includes("拍照辅导助手")) return DEFAULT_TUTORING_IMAGE;
   if (sys.includes("几何配图助手")) return DEFAULT_PAPER_FIGURE;
+  if (sys.includes("答案正确性判定")) {
+    const user = req.messages.find((m) => m.role === "user")?.content ?? "";
+    const nos = [...user.matchAll(/【第(\d+)题】/g)].map((m) => Number(m[1]));
+    return {
+      results: (nos.length ? nos : [1]).map((questionNo) => ({
+        questionNo,
+        verdict: "CORRECT",
+        reason: "mock：答案与解析一致",
+      })),
+    };
+  }
   if (sys.includes("练习卷命题助手")) return buildMockPaper(req);
   if (sys.includes("课件生成助手")) return DEFAULT_LESSON_PLAN;
   return DEFAULT_TUTORING;

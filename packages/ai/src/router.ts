@@ -28,6 +28,9 @@ import {
   FigureGenerationOutputSchema,
   type FigureGenerationOutput,
   type FigureSpec,
+  AnswerVerifyInputSchema,
+  AnswerVerifyOutputSchema,
+  type AnswerVerifyOutput,
   LessonPlanGenerationInputSchema,
   LessonPlanGenerationOutputSchema,
   type LessonPlanGenerationOutput,
@@ -122,6 +125,10 @@ function scanFigureGenerationForForbidden(out: FigureGenerationOutput): string[]
     ...out.figure.labels.map((label) => label.text),
   ].join("\n");
   return findForbidden(corpus);
+}
+
+function scanAnswerVerifyForForbidden(out: AnswerVerifyOutput): string[] {
+  return findForbidden(out.results.map((result) => result.reason).join("\n"));
 }
 
 function scanLessonPlanGenerationForForbidden(
@@ -834,6 +841,54 @@ export class AiRouter {
         "上次输出不是合法 JSON。请只输出严格合法的 JSON 对象：{\"figure\": null} 或 {\"figure\": {\"kind\": \"GEOMETRY\"|\"COORDINATE\", ...}}；字符串内禁止未转义换行或双引号，禁止注释与多余文本。",
     });
     return { figure: out.figure, modelCallId: out.modelCallId };
+  }
+
+  // 答案正确性抽检：用第二个模型（默认 qwen3.8-max，与出卷模型异构）独立判卷。
+  // 只标注 verdict（CORRECT/WRONG/UNCERTAIN），不改写题目；调用方决定如何落库/提示。
+  async verifyPaperAnswers(
+    input: unknown,
+  ): Promise<AnswerVerifyOutput & { modelCallId: string }> {
+    const parsed = AnswerVerifyInputSchema.parse(input);
+    const taskKind: TaskKind = "PAPER_ANSWER_VERIFY";
+    const prompt = await loadPrompt(
+      "paper-answer-verify",
+      this.opts.promptVersion ?? "v1",
+    );
+    const promptTemplateId = await ensurePromptInDb(this.opts.prisma, prompt);
+    const itemsRendered = parsed.items
+      .map(
+        (item) =>
+          `【第${item.questionNo}题】\n题干：${item.stemMd}\n标准答案：${item.answerMd}\n${
+            item.solutionMd ? `解析：${item.solutionMd}\n` : "（无解析）\n"
+          }`,
+      )
+      .join("\n");
+    const userContent = prompt.interpolate({ items: itemsRendered });
+
+    const base = this.taskBase(taskKind);
+    const request = {
+      ...base,
+      messages: [
+        {
+          role: "system" as const,
+          content: "你是严谨的 K12 数学阅卷老师，只做答案正确性判定，只输出 JSON。",
+        },
+        { role: "user" as const, content: userContent },
+      ],
+      responseFormat: "json_object" as const,
+      temperature: 0.1,
+    };
+
+    const out = await this.runJsonTaskWithAudit({
+      taskKind,
+      promptTemplateId,
+      request,
+      schema: AnswerVerifyOutputSchema,
+      scanForbidden: scanAnswerVerifyForForbidden,
+      retryMessage:
+        "上次输出不是合法 JSON。请只输出 {\"results\":[{\"questionNo\":1,\"verdict\":\"CORRECT|WRONG|UNCERTAIN\",\"reason\":\"...\"}]}，必须覆盖每一道题，字符串内禁止未转义换行/引号。",
+    });
+    return { results: out.results, modelCallId: out.modelCallId };
   }
 
   // Plan 18: 教师 AI 课件生成。返回校验过的五段课件 + 审计 ModelCall.id。

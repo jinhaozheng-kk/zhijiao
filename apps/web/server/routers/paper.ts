@@ -761,6 +761,76 @@ export const paperRouter = router({
       return { ok: true };
     }),
 
+  // 答案正确性抽检：第二个模型独立判卷（只标注，不改卷），结果落 paramsJson.answerCheck，
+  // 判定为 WRONG 的题追加 ANSWER_MISMATCH WARNING（不阻断打印，供教师核对）。
+  checkAnswers: authedProcedure
+    .use(requireTeacherPersona)
+    .use(validatePaperOwnership)
+    .input(z.object({ paperId: z.string().cuid() }))
+    .mutation(async ({ ctx }) => {
+      if (ctx.paper.items.length === 0) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "空试卷无法抽检答案。",
+          cause: { reason: "PAPER_EMPTY" },
+        });
+      }
+      const ai = getAiRouter(ctx.auth.userId);
+      const out = await ai.verifyPaperAnswers({
+        items: ctx.paper.items.slice(0, 24).map((item) => ({
+          questionNo: item.position,
+          stemMd: item.stemMd,
+          answerMd: item.answerMd,
+          solutionMd: item.solutionMd,
+        })),
+      });
+      const wrong = out.results.filter((result) => result.verdict === "WRONG");
+      const uncertain = out.results.filter((result) => result.verdict === "UNCERTAIN");
+
+      const params = (ctx.paper.paramsJson ?? {}) as Record<string, unknown>;
+      const existingWarnings = Array.isArray(params.reviewWarnings)
+        ? (params.reviewWarnings as Array<Record<string, unknown>>).filter(
+            (warning) => warning.code !== "ANSWER_MISMATCH",
+          )
+        : [];
+      const mismatchWarnings = wrong.map((result) => ({
+        slotQuestionNo: result.questionNo,
+        severity: "WARNING",
+        code: "ANSWER_MISMATCH",
+        message: `答案抽检存疑：${result.reason || "答案与解析可能不一致，建议核对"}`,
+      }));
+      const merged = {
+        ...params,
+        answerCheck: {
+          checkedAt: new Date().toISOString(),
+          modelCallId: out.modelCallId,
+          total: out.results.length,
+          wrong: wrong.length,
+          uncertain: uncertain.length,
+          results: out.results,
+        },
+        reviewWarnings: [...existingWarnings, ...mismatchWarnings],
+      };
+      await ctx.db.paper.update({
+        where: { id: ctx.paper.id },
+        data: { paramsJson: merged as unknown as Prisma.InputJsonValue },
+      });
+      logger.info({
+        event: "paper_answer_check",
+        paperId: ctx.paper.id,
+        total: out.results.length,
+        wrong: wrong.length,
+        uncertain: uncertain.length,
+      });
+      return {
+        total: out.results.length,
+        correct: out.results.length - wrong.length - uncertain.length,
+        wrong: wrong.length,
+        uncertain: uncertain.length,
+        results: out.results,
+      };
+    }),
+
   removeItem: authedProcedure
     .use(requireTeacherPersona)
     .use(validatePaperOwnership)

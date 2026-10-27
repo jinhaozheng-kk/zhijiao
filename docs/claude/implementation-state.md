@@ -367,3 +367,12 @@
 - **软质量门降级放行**：`downgradeSoftBlockers` —— 修复轮后若只剩 `SHORT_SOLUTION` 这类软问题，不再整卷失败（避免扣费+补偿体验），降级为 `SHORT_SOLUTION_DOWNGRADED` WARNING 放行；空答案/题型错/禁用措辞等硬缺陷仍整卷失败。
 - **评测场景扩宽**：每场景 4–5 个 KP（单 KP/窄 KP 24 题会被「重复率过高」门 400 拦下），更贴近真实中考卷知识点覆盖度。
 - **终验：12/12 成功（100%）**，平均 95.5s；选择题 4 选项 100%；解答题解析中位数均值 190 字；评分标准 100%；配图合计 46 张（几何场景 2–7 张/卷）。
+**答案正确性抽检（PAPER_ANSWER_VERIFY）**（2026-10-27 15:25）：
+- 新增 AI 任务 `PAPER_ANSWER_VERIFY`（默认 **qwen3.8-max**，与出卷 qwen-max 异构；fallback qwen-max，thinking off，240s），prompt `paper-answer-verify/v1.md`：第二模型只判答案/解析数学正确性，输出 `CORRECT/WRONG/UNCERTAIN + reason`。
+- verdict 归一化：兼容英文大小写与中文（正确/错误/不确定），无法识别归为 UNCERTAIN；必须覆盖输入每道题。
+- tRPC `paper.checkAnswers({paperId})`（teacher + ownership）：一次抽检最多 24 题，结果落 `paramsJson.answerCheck`，`WRONG` 追加 `ANSWER_MISMATCH` WARNING（不阻断打印，供教师核对）。
+- 基线脚本 `apps/web/scripts/verify-answer-accuracy.mjs [N=5]`：对最近 N 份试卷调用抽检，输出 wrong/uncertain 比例与样例，写 `docs/claude/eval/answer-accuracy-latest.json`。
+- 单测：`packages/ai/tests/answer-verify.test.ts` 3 例（verdict 归一化/字段校验/第二模型调用与题目转写）；与既有 44 例 ai 单测全绿，typecheck 8/8。
+- **真实基线未跑**：本机 Docker/WSL 引擎在本轮反复卡死（`wsl --update` 一度修好，随后再次不健康），DB 不可达；环境恢复后执行：
+  `cd apps/web && node scripts/verify-answer-accuracy.mjs 5`
+  即可得到 WRONG/UNCERTAIN 比例（只读抽检，不重新出卷，成本远低于出卷）。

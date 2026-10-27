@@ -68,6 +68,13 @@ export {
   type FigureCurve,
   type FigureGenerationInput,
   type FigureGenerationOutput,
+  // 答案正确性抽检
+  AnswerVerifyResultSchema,
+  AnswerVerifyInputSchema,
+  AnswerVerifyOutputSchema,
+  type AnswerVerifyResult,
+  type AnswerVerifyInput,
+  type AnswerVerifyOutput,
   // Plan 18:
   CoursewareSectionTypeEnum,
   LESSON_SECTION_ORDER,
