@@ -1,0 +1,224 @@
+{
+  "generatedAt": "2026-10-27T05:48:35.797Z",
+  "tag": "before-v1",
+  "total": 2,
+  "ok": 2,
+  "successRate": 100,
+  "avgSeconds": 20.7,
+  "avgTotalChars": 734.5,
+  "avgMedianSectionLen": 135.5,
+  "avgMinSectionLen": 104,
+  "scenarioSectionMinTotal": {
+    "INTRO": 87,
+    "EXPLANATION": 189,
+    "EXAMPLE": 133,
+    "PITFALL": 134,
+    "EXERCISE": 121
+  },
+  "literalBackslashNTotal": 4,
+  "exampleStepsRate": 0,
+  "exerciseAnswerRate": 0,
+  "forbiddenHitScenarios": [],
+  "results": [
+    {
+      "scenario": "一次函数-单KP",
+      "gradeLevel": "G8",
+      "requestedKps": [
+        "一次函数"
+      ],
+      "selectedKps": [
+        "一次函数"
+      ],
+      "teachingGoal": "理解 y=kx+b 中 k、b 的几何意义，能根据图象判断增减性",
+      "ok": true,
+      "seconds": 20.9,
+      "title": "一次函数的理解与应用",
+      "status": "DRAFT",
+      "sectionLens": {
+        "INTRO": 154,
+        "EXPLANATION": 189,
+        "EXAMPLE": 133,
+        "PITFALL": 134,
+        "EXERCISE": 121
+      },
+      "totalChars": 731,
+      "medianSectionLen": 134,
+      "minSectionLen": 121,
+      "literalBackslashN": 3,
+      "headings": 0,
+      "listItems": 1,
+      "bold": 4,
+      "latex": 28,
+      "exampleHasSteps": false,
+      "exerciseHasAnswer": false,
+      "forbiddenHits": [],
+      "sections": [
+        {
+          "type": "INTRO",
+          "title": "课堂导入：探索线性关系",
+          "len": 154,
+          "literalBackslashN": 0,
+          "headings": 0,
+          "listItems": 0,
+          "bold": 0,
+          "latex": 0,
+          "hasAnswer": false,
+          "hasSteps": false
+        },
+        {
+          "type": "EXPLANATION",
+          "title": "讲解结构：一次函数的几何意义",
+          "len": 189,
+          "literalBackslashN": 2,
+          "headings": 0,
+          "listItems": 0,
+          "bold": 4,
+          "latex": 14,
+          "hasAnswer": false,
+          "hasSteps": false
+        },
+        {
+          "type": "EXAMPLE",
+          "title": "例题解析：识别并绘制一次函数图象",
+          "len": 133,
+          "literalBackslashN": 0,
+          "headings": 0,
+          "listItems": 0,
+          "bold": 0,
+          "latex": 7,
+          "hasAnswer": false,
+          "hasSteps": false
+        },
+        {
+          "type": "PITFALL",
+          "title": "易错点提示：正确理解斜率与截距的作用",
+          "len": 134,
+          "literalBackslashN": 0,
+          "headings": 0,
+          "listItems": 0,
+          "bold": 0,
+          "latex": 5,
+          "hasAnswer": false,
+          "hasSteps": false
+        },
+        {
+          "type": "EXERCISE",
+          "title": "课堂练习：加深理解",
+          "len": 121,
+          "literalBackslashN": 1,
+          "headings": 0,
+          "listItems": 1,
+          "bold": 0,
+          "latex": 2,
+          "hasAnswer": false,
+          "hasSteps": false
+        }
+      ],
+      "coursewareId": "cmvq9l3os03aixudxzsclwvrt",
+      "previewShot": "courseware-shots\\before-v1-01-一次函数-单KP-preview.png",
+      "printShot": "courseware-shots\\before-v1-01-一次函数-单KP-print.png",
+      "printPdfPages": 1
+    },
+    {
+      "scenario": "二次函数图象-多KP",
+      "gradeLevel": "G9",
+      "requestedKps": [
+        "二次函数",
+        "二次函数的图象与性质"
+      ],
+      "selectedKps": [
+        "二次函数",
+        "二次函数的图象与性质"
+      ],
+      "teachingGoal": "能画出抛物线草图并说明开口方向、对称轴与顶点",
+      "ok": true,
+      "seconds": 20.4,
+      "title": "G9 二次函数的图象与性质",
+      "status": "DRAFT",
+      "sectionLens": {
+        "INTRO": 87,
+        "EXPLANATION": 231,
+        "EXAMPLE": 154,
+        "PITFALL": 137,
+        "EXERCISE": 129
+      },
+      "totalChars": 738,
+      "medianSectionLen": 137,
+      "minSectionLen": 87,
+      "literalBackslashN": 1,
+      "headings": 0,
+      "listItems": 0,
+      "bold": 6,
+      "latex": 18,
+      "exampleHasSteps": false,
+      "exerciseHasAnswer": false,
+      "forbiddenHits": [],
+      "sections": [
+        {
+          "type": "INTRO",
+          "title": "课堂导入：探索抛物线的世界",
+          "len": 87,
+          "literalBackslashN": 0,
+          "headings": 0,
+          "listItems": 0,
+          "bold": 0,
+          "latex": 0,
+          "hasAnswer": false,
+          "hasSteps": false
+        },
+        {
+          "type": "EXPLANATION",
+          "title": "讲解结构：理解二次函数的基本特征",
+          "len": 231,
+          "literalBackslashN": 1,
+          "headings": 0,
+          "listItems": 0,
+          "bold": 6,
+          "latex": 6,
+          "hasAnswer": false,
+          "hasSteps": false
+        },
+        {
+          "type": "EXAMPLE",
+          "title": "例题演示：绘制抛物线草图",
+          "len": 154,
+          "literalBackslashN": 0,
+          "headings": 0,
+          "listItems": 0,
+          "bold": 0,
+          "latex": 6,
+          "hasAnswer": false,
+          "hasSteps": false
+        },
+        {
+          "type": "PITFALL",
+          "title": "易错点分析：避免混淆概念",
+          "len": 137,
+          "literalBackslashN": 0,
+          "headings": 0,
+          "listItems": 0,
+          "bold": 0,
+          "latex": 4,
+          "hasAnswer": false,
+          "hasSteps": false
+        },
+        {
+          "type": "EXERCISE",
+          "title": "课堂练习：实践是检验真理的标准",
+          "len": 129,
+          "literalBackslashN": 0,
+          "headings": 0,
+          "listItems": 0,
+          "bold": 0,
+          "latex": 2,
+          "hasAnswer": false,
+          "hasSteps": false
+        }
+      ],
+      "coursewareId": "cmvq9lozn03awxudx61t8zc6m",
+      "previewShot": "courseware-shots\\before-v1-02-二次函数图象-多KP-preview.png",
+      "printShot": "courseware-shots\\before-v1-02-二次函数图象-多KP-print.png",
+      "printPdfPages": 1
+    }
+  ]
+}

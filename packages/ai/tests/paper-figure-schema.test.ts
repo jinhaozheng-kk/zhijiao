@@ -135,8 +135,13 @@ describe("图形简写容错归一化（真实 qwen-max 输出）", () => {
     }
   });
 
-  it("完全无法识别（无点）时仍然报错，不静默吞掉", () => {
-    expect(() => FigureGenerationOutputSchema.parse({ figure: { kind: "GEOMETRY", points: [] } })).toThrow();
+  it("点数不足的无效图形归一化为 null（不抛错，避免无效重试拖慢出卷）", () => {
+    const out = FigureGenerationOutputSchema.parse({ figure: { kind: "GEOMETRY", points: [] } });
+    expect(out.figure).toBeNull();
+    const single = FigureGenerationOutputSchema.parse({
+      figure: { kind: "GEOMETRY", points: [{ id: "A", x: 10, y: 10 }] },
+    });
+    expect(single.figure).toBeNull();
   });
 
   it("函数图象简写：curves:['y=x^2-2x+3'] → 结构化 curves", () => {

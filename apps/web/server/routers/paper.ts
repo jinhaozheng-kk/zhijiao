@@ -62,6 +62,33 @@ const GenInput = z
 const MAX_PAPER_AI_ATTEMPTS = 3;
 const REFILL_OVERGEN_FACTOR = 2;
 const MAX_PAPER_REVIEW_REPAIR_ATTEMPTS = 2;
+// 「软质量」BLOCKER：修复轮后仍不达标时，不再让整卷失败（扣费+补偿体验差），
+// 而是降级为 WARNING 放行，由教师预览时核对/编辑。硬缺陷（空答案、题型错、
+// 禁用措辞等）仍然整卷失败，避免产出不可用试卷。
+const SOFT_REVIEW_BLOCKER_CODES = new Set(["SHORT_SOLUTION"]);
+
+/** 把审题结果拆成「必须整卷失败」与「可降级放行」两类。 */
+export function downgradeSoftBlockers(issues: PaperReviewIssue[]): {
+  hard: PaperReviewIssue[];
+  downgraded: PaperReviewIssue[];
+} {
+  const hard: PaperReviewIssue[] = [];
+  const downgraded: PaperReviewIssue[] = [];
+  for (const issue of issues) {
+    if (issue.severity !== "BLOCKER") continue;
+    if (SOFT_REVIEW_BLOCKER_CODES.has(issue.code)) {
+      downgraded.push({
+        ...issue,
+        severity: "WARNING",
+        code: `${issue.code}_DOWNGRADED`,
+        message: `${issue.message}（已自动降级放行，建议教师核对）`,
+      });
+    } else {
+      hard.push(issue);
+    }
+  }
+  return { hard, downgraded };
+}
 const BANK_CANDIDATE_OVERFETCH_FACTOR = 2;
 
 // 修复轮把「上一轮为什么被 blocker 拦下」翻译成模型能执行的指令。
@@ -515,11 +542,24 @@ export const paperRouter = router({
         }
 
         if (blockers.length > 0) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "自动审题未通过，未生成可用试卷。请调整知识点或稍后重试。",
-            cause: { reason: "PAPER_REVIEW_BLOCKED", blockers: blockers.map((b) => b.code) },
+          const { hard, downgraded } = downgradeSoftBlockers(blockers);
+          if (hard.length > 0) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: "自动审题未通过，未生成可用试卷。请调整知识点或稍后重试。",
+              cause: { reason: "PAPER_REVIEW_BLOCKED", blockers: hard.map((b) => b.code) },
+            });
+          }
+          // 只剩软质量问题：降级为 WARNING 继续出卷（教师可在预览页核对/编辑）。
+          logger.warn({
+            event: "paper_review_soft_blockers_downgraded",
+            codes: downgraded.map((issue) => issue.code),
           });
+          reviewIssues = [
+            ...reviewIssues.filter((issue) => issue.severity === "WARNING"),
+            ...downgraded,
+          ];
+          blockers = [];
         }
       }
 

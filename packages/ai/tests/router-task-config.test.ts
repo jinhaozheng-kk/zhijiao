@@ -38,9 +38,91 @@ function paperInput() {
   };
 }
 
-const ENV_KEYS = ["AI_MODEL_PAPER_GEN", "AI_THINKING_PAPER_GEN", "AI_TIMEOUT_MS_PAPER_GEN"] as const;
+const ENV_KEYS = [
+  "AI_MODEL_PAPER_GEN",
+  "AI_THINKING_PAPER_GEN",
+  "AI_TIMEOUT_MS_PAPER_GEN",
+  "AI_FALLBACK_MODEL_PAPER_GEN",
+] as const;
 afterEach(() => {
   for (const k of ENV_KEYS) delete process.env[k];
+});
+
+describe("JSON 解析失败 → 备用模型兜底", () => {
+  it("qwen-max 返回坏 JSON 时，第二次重试自动切到 fallbackModel（qwen3.8-max）", async () => {
+    const seen: string[] = [];
+    const router = new AiRouter({
+      prisma: fakePrisma(),
+      adapter: {
+        name: "fallback-spy",
+        async call(req) {
+          seen.push(req.model);
+          if (req.model === "qwen-max") {
+            return { content: '{"title": "卷", "items": [', model: req.model }; // 截断的坏 JSON
+          }
+          return {
+            content: JSON.stringify({ title: "卷", items: [VALID_PAPER_ITEM] }),
+            model: req.model,
+          };
+        },
+      },
+    });
+
+    const out = await router.generatePaper(paperInput());
+    expect(out.items).toHaveLength(1);
+    expect(seen).toEqual(["qwen-max", "qwen3.8-max"]);
+  });
+
+  it("AI_FALLBACK_MODEL_<KIND> 可覆盖备用模型", async () => {
+    process.env.AI_FALLBACK_MODEL_PAPER_GEN = "qwen3.7-max";
+    const seen: string[] = [];
+    const router = new AiRouter({
+      prisma: fakePrisma(),
+      adapter: {
+        name: "fallback-env-spy",
+        async call(req) {
+          seen.push(req.model);
+          if (req.model === "qwen-max") {
+            return { content: "not json at all", model: req.model };
+          }
+          return {
+            content: JSON.stringify({ title: "卷", items: [VALID_PAPER_ITEM] }),
+            model: req.model,
+          };
+        },
+      },
+    });
+
+    await router.generatePaper(paperInput());
+    expect(seen).toEqual(["qwen-max", "qwen3.7-max"]);
+  });
+
+  it("无 fallback 配置的任务（tutor）重试仍用同一个模型", async () => {
+    const seen: string[] = [];
+    const router = new AiRouter({
+      prisma: fakePrisma(),
+      adapter: {
+        name: "no-fallback-spy",
+        async call(req) {
+          seen.push(req.model);
+          if (seen.length === 1) return { content: "bad json", model: req.model };
+          return {
+            content: JSON.stringify({
+              restatement: "题意",
+              knowledgePoints: ["一次函数"],
+              steps: ["步骤"],
+              pitfalls: [],
+              finalAnswer: "x=1",
+            }),
+            model: req.model,
+          };
+        },
+      },
+    });
+
+    await router.tutor({ questionStem: "解方程 x+1=2", studentGrade: "G8" });
+    expect(seen).toEqual(["qwen-plus", "qwen-plus"]);
+  });
 });
 
 describe("AiRouter → adapter 请求参数", () => {

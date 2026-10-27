@@ -23,6 +23,12 @@ export interface TaskConfig {
   enableThinking?: boolean;
   /** 单次调用超时（毫秒）。长结构化生成（整卷/整份课件）需要放宽。 */
   timeoutMs?: number;
+  /**
+   * 备用模型：JSON 解析/结构校验失败时，重试轮自动切到该模型（仍走同一 prompt）。
+   * 目的：qwen-max 偶发 JSON 抖动（缺字段/截断）时，用不同模型兜底，降低整卷失败率。
+   * 可被环境变量 `AI_FALLBACK_MODEL_<TASK_KIND>` 覆盖；留空表示不切换模型。
+   */
+  fallbackModel?: string;
 }
 
 /**
@@ -41,9 +47,9 @@ export const TASK_CONFIG: Record<TaskKind, TaskConfig> = {
   ERROR_ANALYSIS:      { model: "qwen-plus" },
   VARIANT_GROUP_GEN:   { model: "qwen-plus" },        // 一次出 3 道 L1/L2/L3，需要 plus 级
   ASSIGNMENT_QUESTION_GEN: { model: "qwen-plus" },
-  PAPER_GEN:           { model: "qwen-max", enableThinking: false, timeoutMs: 600_000 },
+  PAPER_GEN:           { model: "qwen-max", fallbackModel: "qwen3.8-max", enableThinking: false, timeoutMs: 600_000 },
   // 配图是短输出（<1k tokens）的小任务：超时收紧，避免拖慢整卷生成。
-  PAPER_FIGURE_GEN:    { model: "qwen-max", enableThinking: false, timeoutMs: 120_000 },
+  PAPER_FIGURE_GEN:    { model: "qwen-max", fallbackModel: "qwen3.8-max", enableThinking: false, timeoutMs: 120_000 },
   FORECAST_PAPER_GEN:  { model: "qwen-max", enableThinking: false, timeoutMs: 600_000 },
   LESSON_PLAN_GEN:     { model: "qwen-max", enableThinking: false, timeoutMs: 600_000 },
   // 兼容模式不支持 embeddings（会 404），需原生端点；当前无调用方。
@@ -84,9 +90,11 @@ export function resolveTaskConfig(taskKind: TaskKind): TaskConfig {
   const envModel = process.env[`AI_MODEL_${taskKind}`]?.trim();
   const envThinking = parseThinkingEnv(process.env[`AI_THINKING_${taskKind}`]);
   const envTimeout = parsePositiveIntEnv(process.env[`AI_TIMEOUT_MS_${taskKind}`]);
+  const envFallback = process.env[`AI_FALLBACK_MODEL_${taskKind}`]?.trim();
   return {
     model: envModel && envModel.length > 0 ? envModel : base.model,
     enableThinking: envThinking ?? base.enableThinking,
     timeoutMs: envTimeout ?? base.timeoutMs,
+    fallbackModel: envFallback && envFallback.length > 0 ? envFallback : base.fallbackModel,
   };
 }

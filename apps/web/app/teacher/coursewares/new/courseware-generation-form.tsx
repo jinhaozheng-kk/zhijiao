@@ -12,6 +12,21 @@ import {
 
 type KpOption = { id: string; name: string };
 
+// 自动质检 blocker code → 教师能看懂的一句话（服务端 errorFormatter 透出 cause.blockers）。
+const BLOCKER_HINTS: Record<string, string> = {
+  SHORT_SECTION: "部分段落内容过短，没达到课堂可用的完整度",
+  SHORT_COURSEWARE: "整份课件内容过短，不足以支撑一节课",
+  EXAMPLE_MISSING_SOLUTION: "例题缺少解答过程",
+  EXERCISE_MISSING_ANSWER: "课堂练习缺少参考答案",
+  FORBIDDEN_PHRASE: "内容命中合规禁用措辞",
+};
+
+function blockerHint(codes: unknown): string {
+  if (!Array.isArray(codes)) return "";
+  const hints = [...new Set(codes.map((code) => BLOCKER_HINTS[String(code)]).filter(Boolean))];
+  return hints.length > 0 ? `问题：${hints.join("；")}。` : "";
+}
+
 export function CoursewareGenerationForm({
   subjectId,
   kps,
@@ -32,15 +47,21 @@ export function CoursewareGenerationForm({
       router.push(`/teacher/coursewares/${result.coursewareId}`);
     },
     onError: (e) => {
-      const reason = (e.data as { reason?: string } | undefined)?.reason;
+      const data = e.data as { reason?: string; blockers?: unknown } | undefined;
+      const reason = data?.reason;
       if (reason === "INSUFFICIENT_BALANCE") {
         setError("Credits 余额不足，请先充值后再生成课件。");
       } else if (reason === "COMPLIANCE_REJECTED") {
-        setError("生成内容未通过合规检查，请调整参数重试。");
+        setError("生成内容未通过合规检查（已退还 credits），请调整参数后重试。");
       } else if (reason === "KP_SUBJECT_MISMATCH") {
         setError("选择的知识点与学科不匹配，请刷新后重试。");
+      } else if (reason === "COURSEWARE_REVIEW_BLOCKED") {
+        const detail = blockerHint(data?.blockers);
+        setError(
+          `自动质检未通过，课件未生成（已退还 credits）。${detail}建议更换知识点或补充教学目标后重试。`,
+        );
       } else {
-        setError("课件生成失败，请稍后再试。");
+        setError("课件生成失败（若已扣除将自动退还 credits），请稍后再试。");
       }
     },
   });

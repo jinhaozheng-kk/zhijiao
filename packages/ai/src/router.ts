@@ -237,6 +237,12 @@ export class AiRouter {
         lastError = e;
         parseAttempts++;
         if (e instanceof z.ZodError || e instanceof SyntaxError) {
+          // 第一次解析失败后切到备用模型：qwen-max 偶发 JSON 抖动（缺字段/截断），
+          // 换一个模型重试的成功率明显高于同模型反复重试（见 2026-10-27 12 场景基线）。
+          const fallback = resolveTaskConfig(args.taskKind).fallbackModel;
+          if (parseAttempts === 1 && fallback && fallback !== args.request.model) {
+            args.request.model = fallback;
+          }
           args.request.messages.push({
             role: "user",
             content:
@@ -844,13 +850,25 @@ export class AiRouter {
       kpNames: parsed.kpNames.join(", "),
       teachingGoal: parsed.teachingGoal ?? "(未提供)",
     });
+    // 修复轮：把上一轮被质量门拦下的原因翻译成可执行指令（与出卷同款策略）。
+    // 只重跑同样 prompt 往往会复现同一缺陷，必须显式告诉模型该怎么改。
+    const qualityInstructions = (parsed.qualityInstructions ?? []).filter((s) => s.trim());
+    const finalContent =
+      qualityInstructions.length > 0
+        ? [
+            userContent,
+            "\n\n【本轮必须额外满足的修订要求】",
+            ...qualityInstructions.map((instruction) => `- ${instruction}`),
+            "只输出修订后的完整五段 JSON，不要解释修改过程。",
+          ].join("\n")
+        : userContent;
 
     const base = this.taskBase(taskKind);
     const request = {
       ...base,
       messages: [
         { role: "system" as const, content: "你是严谨的 K12 数学课件生成助手。" },
-        { role: "user" as const, content: userContent },
+        { role: "user" as const, content: finalContent },
       ],
       responseFormat: "json_object" as const,
       temperature: 0.4,
@@ -862,6 +880,8 @@ export class AiRouter {
       request,
       schema: LessonPlanGenerationOutputSchema,
       scanForbidden: scanLessonPlanGenerationForForbidden,
+      retryMessage:
+        "上次输出不是合法 JSON。请只输出严格合法的 JSON 对象：{\"title\": string, \"sections\": [{\"type\",\"title\",\"contentMd\"}]}；必须恰好五段且 type 为 INTRO/EXPLANATION/EXAMPLE/PITFALL/EXERCISE 各一；字符串内不得出现未转义的换行符，多行内容写成 JSON 转义的 \\n；禁止注释与多余文本。",
     });
   }
 

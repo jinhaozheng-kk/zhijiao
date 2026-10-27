@@ -341,7 +341,7 @@ function stripOptionPrefix(option: unknown): string {
 //  2) 其它位置只有后面不是 ASCII 字母时才还原，保护 LaTeX 命令
 //     （`\neq` / `\nabla` / `\not` 等）。
 // `\\{1,2}` 同时覆盖单/双反斜杠两种写法。
-function normalizeAiText(text: string): string {
+export function normalizeAiText(text: string): string {
   return text
     .replace(/\\{1,2}(?:r\\{1,2})?n(?=\s*[（(]?\s*[A-D]\s*[.、．)）])/g, "\n")
     .replace(/\\{1,2}(?:r\\{1,2})?n(?![a-zA-Z])/g, "\n")
@@ -821,6 +821,11 @@ export const LessonPlanGenerationInputSchema = z.object({
   gradeLevel: z.string(),
   kpNames: z.array(z.string()).min(1),
   teachingGoal: z.string().optional(),
+  /**
+   * 修复轮追加的针对性指令（例如「练习段必须附参考答案」「例题必须写出分步解答」）。
+   * 只在上一轮被质量门拦下时传入，正常首轮生成不传。
+   */
+  qualityInstructions: z.array(z.string()).optional(),
 });
 export type LessonPlanGenerationInput = z.infer<typeof LessonPlanGenerationInputSchema>;
 
@@ -846,7 +851,18 @@ export const LessonPlanGenerationOutputSchema = z
           "sections 必须恰好五段且 INTRO/EXPLANATION/EXAMPLE/PITFALL/EXERCISE 各一",
       });
     }
-  });
+  })
+  // 与试卷同款兜底：真实 qwen-max 会把换行二次转义成字面量 `\n`（反斜杠+n），
+  // 甚至用 `<br>` 拼装正文；课件正文 / 标题统一还原成真换行，否则预览与打印
+  // 会原样显示 `\n`（v1 真实生成实测每份课件 1–4 处）。
+  .transform((v) => ({
+    title: normalizeAiText(v.title).trim(),
+    sections: v.sections.map((s) => ({
+      ...s,
+      title: normalizeAiText(s.title).trim(),
+      contentMd: normalizeAiText(s.contentMd).trim(),
+    })),
+  }));
 export type LessonPlanGenerationOutput = z.infer<typeof LessonPlanGenerationOutputSchema>;
 
 // Plan 11: LEARNING_ADVICE 的输入与输出契约

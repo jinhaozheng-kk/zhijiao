@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { repairInstructionsFor } from "@/server/routers/paper";
+import { repairInstructionsFor, downgradeSoftBlockers } from "@/server/routers/paper";
 import type { PaperReviewIssue } from "@/server/lib/paper-review";
 
 function blocker(code: string): PaperReviewIssue {
@@ -39,5 +39,29 @@ describe("repairInstructionsFor（修复轮指令）", () => {
     const instructions = repairInstructionsFor([blocker("SOMETHING_NEW")]);
     expect(instructions).toHaveLength(1);
     expect(instructions[0]).toContain("严格按 JSON schema");
+  });
+});
+
+describe("downgradeSoftBlockers（软质量门降级放行）", () => {
+  it("SHORT_SOLUTION 降级为 WARNING(_DOWNGRADED)，不阻断出卷", () => {
+    const { hard, downgraded } = downgradeSoftBlockers([blocker("SHORT_SOLUTION")]);
+    expect(hard).toHaveLength(0);
+    expect(downgraded).toHaveLength(1);
+    expect(downgraded[0]).toMatchObject({ severity: "WARNING", code: "SHORT_SOLUTION_DOWNGRADED" });
+    expect(downgraded[0]?.message).toContain("教师核对");
+  });
+
+  it("硬缺陷（空答案 / 题型错 / 禁用措辞）仍然整卷失败", () => {
+    const issues = [blocker("SHORT_SOLUTION"), blocker("EMPTY_ANSWER"), blocker("TYPE_MISMATCH"), blocker("FORBIDDEN_PHRASE")];
+    const { hard, downgraded } = downgradeSoftBlockers(issues);
+    expect(hard.map((i) => i.code)).toEqual(["EMPTY_ANSWER", "TYPE_MISMATCH", "FORBIDDEN_PHRASE"]);
+    expect(downgraded.map((i) => i.code)).toEqual(["SHORT_SOLUTION_DOWNGRADED"]);
+  });
+
+  it("WARNING 原样忽略（不参与降级判断）", () => {
+    const warning: PaperReviewIssue = { slotQuestionNo: 2, severity: "WARNING", code: "STEM_TOO_SHORT", message: "x" };
+    const { hard, downgraded } = downgradeSoftBlockers([warning]);
+    expect(hard).toHaveLength(0);
+    expect(downgraded).toHaveLength(0);
   });
 });

@@ -6,7 +6,12 @@ import { trpc } from "@/lib/trpc-client";
 import { StatePanel } from "@/components/ui/state-panel";
 import { StatusPill } from "@/components/ui/status-pill";
 import { SkeletonList } from "@/components/ui/skeleton";
-import { MathText } from "@/components/math-text";
+import { CoursewareMarkdown } from "@/components/courseware-markdown";
+import {
+  GRADE_LEVELS,
+  gradeLevelLabel,
+  type GradeLevel,
+} from "@/lib/paper-copy";
 import {
   coursewareStatusLabel,
   coursewareSectionTypeLabel,
@@ -20,6 +25,29 @@ type Section = {
   title: string;
   contentMd: string;
 };
+
+type CoursewareParams = {
+  kpNames?: string[];
+  teachingGoal?: string | null;
+  reviewWarnings?: unknown;
+};
+
+type ReviewWarning = {
+  sectionType: string;
+  code: string;
+  message: string;
+};
+
+function sectionLabel(type: string): string {
+  return coursewareSectionTypeLabel(type as CoursewareSectionTypeValue);
+}
+
+function gradeText(gradeLevel: string | null): string | null {
+  if (!gradeLevel) return null;
+  return GRADE_LEVELS.includes(gradeLevel as GradeLevel)
+    ? gradeLevelLabel(gradeLevel as GradeLevel)
+    : gradeLevel;
+}
 
 function SectionCard({
   coursewareId,
@@ -42,13 +70,17 @@ function SectionCard({
 
   return (
     <article
-      className="rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-200"
+      id={`section-${section.type}`}
+      className="scroll-mt-6 rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-200"
       data-testid={`section-${section.type}`}
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-500">
+            {String(section.position).padStart(2, "0")}
+          </span>
           <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
-            {coursewareSectionTypeLabel(section.type as CoursewareSectionTypeValue)}
+            {sectionLabel(section.type)}
           </span>
           <h3 className="font-medium">{section.title}</h3>
         </div>
@@ -71,10 +103,13 @@ function SectionCard({
           <textarea
             value={contentMd}
             onChange={(e) => setContentMd(e.target.value)}
-            rows={8}
-            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm leading-7"
+            rows={14}
+            className="w-full rounded-lg border border-slate-200 px-3 py-2 font-mono text-sm leading-7"
             data-testid={`section-textarea-${section.type}`}
           />
+          <p className="text-xs text-slate-500">
+            支持 Markdown（### 小标题、- 列表、**加粗**）与 $...$ 公式。
+          </p>
           <div className="flex gap-2">
             <button
               type="button"
@@ -96,9 +131,9 @@ function SectionCard({
           </div>
         </div>
       ) : (
-        <p className="mt-4 whitespace-pre-wrap text-sm leading-7 text-slate-900">
-          <MathText text={section.contentMd} />
-        </p>
+        <div className="mt-4">
+          <CoursewareMarkdown text={section.contentMd} />
+        </div>
       )}
     </article>
   );
@@ -124,6 +159,10 @@ export function CoursewarePreviewView({ coursewareId }: { coursewareId: string }
 
   const courseware = query.data.courseware;
   const disabled = courseware.status === "READY";
+  const params = (courseware.paramsJson ?? {}) as CoursewareParams;
+  const grade = gradeText(courseware.gradeLevel);
+  const kpNames = Array.isArray(params.kpNames) ? params.kpNames : [];
+  const warnings = (query.data.reviewWarnings ?? []) as ReviewWarning[];
 
   return (
     <div className="space-y-6">
@@ -152,7 +191,46 @@ export function CoursewarePreviewView({ coursewareId }: { coursewareId: string }
             </button>
           </div>
         </div>
+        <dl className="mt-4 grid gap-x-6 gap-y-2 text-sm text-slate-600 sm:grid-cols-2">
+          {grade && (
+            <div className="flex gap-2">
+              <dt className="text-slate-500">年级</dt>
+              <dd>{grade}</dd>
+            </div>
+          )}
+          {kpNames.length > 0 && (
+            <div className="flex gap-2">
+              <dt className="text-slate-500">知识点</dt>
+              <dd data-testid="courseware-kps">{kpNames.join("、")}</dd>
+            </div>
+          )}
+          {params.teachingGoal && (
+            <div className="flex gap-2 sm:col-span-2">
+              <dt className="shrink-0 text-slate-500">教学目标</dt>
+              <dd data-testid="courseware-goal">{params.teachingGoal}</dd>
+            </div>
+          )}
+        </dl>
       </section>
+
+      {warnings.length > 0 && (
+        <section
+          className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"
+          data-testid="courseware-warnings"
+        >
+          <p className="font-medium">AI 自检提示（{warnings.length} 条，不影响使用，建议核对）</p>
+          <ul className="mt-2 space-y-1">
+            {warnings.map((warning, index) => (
+              <li key={`${warning.code}-${index}`}>
+                <a href={`#section-${warning.sectionType}`} className="underline">
+                  {sectionLabel(warning.sectionType)}
+                </a>
+                ：{warning.message}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <section className="space-y-4">
         {courseware.sections.map((section) => (
