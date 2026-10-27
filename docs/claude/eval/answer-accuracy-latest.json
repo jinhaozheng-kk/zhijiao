@@ -1,26 +1,21 @@
 {
-  "checkedAt": "2026-10-27T07:45:58.231Z",
+  "checkedAt": "2026-10-27T11:34:46.238Z",
   "papers": 1,
   "okPapers": 1,
   "totalItems": 24,
-  "wrong": 1,
+  "wrong": 0,
   "uncertain": 0,
-  "wrongRate": 4.2,
+  "wrongRate": 0,
   "uncertainRate": 0,
   "rows": [
     {
-      "paperId": "cmvqdq34n0062sdtzgsc1ijl3",
-      "createdAt": "2026-10-27T07:43:55.224Z",
+      "paperId": "cmvqlv0sc000hzwvn5r0un0jz",
+      "createdAt": "2026-10-27T11:31:42.397Z",
       "items": 24,
       "total": 24,
-      "wrong": 1,
+      "wrong": 0,
       "uncertain": 0,
-      "wrongSamples": [
-        {
-          "questionNo": 22,
-          "reason": "标准答案a=-4/3,c=16/3错误，解析中正确解为a=5/3,b=-2,c=7/3，答案与解析矛盾。"
-        }
-      ]
+      "wrongSamples": []
     }
   ]
 }

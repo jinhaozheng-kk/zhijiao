@@ -1,0 +1,46 @@
+{
+  "generatedAt": "2026-10-27T11:29:50.377Z",
+  "promptVersion": "v4",
+  "total": 1,
+  "ok": 1,
+  "successRate": 100,
+  "avgSeconds": 0.6,
+  "avgEssaySolutionMedian": 83,
+  "choice4OptionsRate": 100,
+  "results": [
+    {
+      "scenario": "综合模拟",
+      "requestedKps": [
+        "一次函数",
+        "二次函数",
+        "三角形",
+        "圆",
+        "概率"
+      ],
+      "selectedKps": [
+        "一次函数",
+        "二次函数",
+        "三角形",
+        "圆",
+        "概率"
+      ],
+      "ok": true,
+      "seconds": 0.6,
+      "items": 24,
+      "totalPoints": 120,
+      "choiceCount": 10,
+      "choiceWith4Options": 10,
+      "essayCount": 8,
+      "essaySolutionMedian": 83,
+      "essaySolutionMin": 83,
+      "essayWithRubric": 8,
+      "blockers": 0,
+      "warnings": 8,
+      "warningCodes": [
+        "SHORT_SOLUTION_DOWNGRADED"
+      ],
+      "figures": 8,
+      "paperId": "cmvqlsm38000jbnh42yjs8a79"
+    }
+  ]
+}

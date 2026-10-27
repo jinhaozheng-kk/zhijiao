@@ -400,3 +400,9 @@
 - `runPaperAnswerSelfHeal` 的修复轮次从 1 轮提高到 **2 轮**：第一轮修掉大多数错误，第二轮只处理「修复后又被判错」的残留题；因为已后台化，多一轮只延后抽检完成时间，不影响出卷返回。
 - 单测新增 `maxRounds=2` 用例（第一轮后仍错 → 第二轮修复 → afterWrong=0，rounds=2）；`answer-repair.test.ts` 共 8 例全绿，typecheck 8/8。
 - 本轮真实端到端未完成：上游 DashScope 网络异常，生成请求卡到 600s 超时（dev 日志 `POST paper.generate 200 in 601396ms`），无法产出新卷验证；环境恢复后按既有命令复验即可。
+**异步答案自愈真实验证通过（2026-10-27 19:35）**：
+- 根因修复：Postgres 容器内有卡死事务（多条 `INSERT model_calls` 挂起 3+ 小时，LWLock 等待）导致所有 AI 审计写入阻塞 → 表现为「生成请求卡 600s、无 model_calls」。通过 WSL 重启 + Docker 重建容器清锁解决；并确认 `pg_stat_activity` 无残留活动事务。
+- Mock E2E（确定性）：生成 **0.6s** 返回，`answerCheckStatus=PENDING→DONE` 自动回填；同时真实触发软门降级（8 条 `SHORT_SOLUTION_DOWNGRADED`，出卷成功）。
+- 真实 AI E2E：生成 **85.6s** 返回（同步版 ~180s），返回时 `answerCheckStatus=PENDING`；后台自愈 ~2.5 分钟内完成：**beforeWrong=5 → fixedCount=7（2 轮）→ afterWrong=0**，`answerCheck` 落库 24 题 wrong=0。
+- 独立复核（`verify-answer-accuracy.mjs 1`）：**0/24 错误（0%）**。对比旧卷基线 26.4%（32/121），答案正确性缺口已闭合。
+- 结论：出卷「快（~86s）+ 答案正确（0%）+ 版式合规 + 教师可见」链路全部实测通过。

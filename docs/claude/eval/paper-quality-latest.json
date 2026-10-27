@@ -1,11 +1,11 @@
 {
-  "generatedAt": "2026-10-27T07:45:33.860Z",
+  "generatedAt": "2026-10-27T11:31:46.632Z",
   "promptVersion": "v4",
   "total": 1,
   "ok": 1,
   "successRate": 100,
-  "avgSeconds": 180.5,
-  "avgEssaySolutionMedian": 601,
+  "avgSeconds": 85.6,
+  "avgEssaySolutionMedian": 159,
   "choice4OptionsRate": 100,
   "results": [
     {
@@ -25,23 +25,22 @@
         "概率"
       ],
       "ok": true,
-      "seconds": 180.5,
+      "seconds": 85.6,
       "items": 24,
       "totalPoints": 120,
       "choiceCount": 10,
       "choiceWith4Options": 10,
       "essayCount": 8,
-      "essaySolutionMedian": 601,
-      "essaySolutionMin": 130,
+      "essaySolutionMedian": 159,
+      "essaySolutionMin": 120,
       "essayWithRubric": 8,
       "blockers": 0,
-      "warnings": 4,
+      "warnings": 7,
       "warningCodes": [
-        "SHORT_SOLUTION_WARN",
-        "ANSWER_MISMATCH"
+        "SHORT_SOLUTION_WARN"
       ],
-      "figures": 4,
-      "paperId": "cmvqdq34n0062sdtzgsc1ijl3"
+      "figures": 3,
+      "paperId": "cmvqlv0sc000hzwvn5r0un0jz"
     }
   ]
 }
