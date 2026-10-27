@@ -376,3 +376,9 @@
 - **真实基线未跑**：本机 Docker/WSL 引擎在本轮反复卡死（`wsl --update` 一度修好，随后再次不健康），DB 不可达；环境恢复后执行：
   `cd apps/web && node scripts/verify-answer-accuracy.mjs 5`
   即可得到 WRONG/UNCERTAIN 比例（只读抽检，不重新出卷，成本远低于出卷）。
+**答案抽检可用性（教师预览页）**（2026-10-27 15:27）：
+- 预览页新增「AI 答案抽检」按钮（`data-testid=answer-check-button`）：点击调用 `paper.checkAnswers`，结果落库并刷新页面。
+- 新增展示组件 `apps/web/components/answer-check-panel.tsx`：显示抽检总数/正确/存疑/无法判定、存疑题号+理由，红色/绿色状态区分，并明确「AI 只作参考，以教师核对为准」。
+- 抽检结果同时进入 `reviewWarnings`（`ANSWER_MISMATCH`），与既有审题 warning 一起在预览页顶部提示。
+- 单测 `apps/web/tests/unit/answer-check-panel.test.tsx` 4 例；typecheck 8/8。
+- **真实端到端未跑**：Docker/WSL 再次不可用（`zhijiao-postgres` unhealthy、5432 端口关闭）。恢复后建议顺序：`docker compose up -d` → 等 healthy → `pnpm dev` → 打开任意试卷预览页点「AI 答案抽检」，或跑 `node scripts/verify-answer-accuracy.mjs 5` 拿 WRONG/UNCERTAIN 基线。

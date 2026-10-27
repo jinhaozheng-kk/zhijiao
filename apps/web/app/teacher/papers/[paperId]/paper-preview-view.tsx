@@ -18,6 +18,7 @@ import {
 import { PaperItemOptions } from "@/components/paper-item-options";
 import { PaperFigure } from "@/components/paper-figure";
 import { MathText } from "@/components/math-text";
+import { AnswerCheckPanel, type AnswerCheckSummary } from "@/components/answer-check-panel";
 import type { FigureSpec } from "@zhijiao/ai";
 import { ZHONGKAO_TEMPLATE_LABEL } from "@/lib/zhongkao-blueprint";
 
@@ -63,6 +64,8 @@ type ZhongkaoPreviewParams = {
   }>;
   /** 浙江卷配图：按题号（1-based position）存 FigureSpec。 */
   figures?: Record<string, FigureSpec>;
+  /** AI 答案抽检结果（paper.checkAnswers 落库）。 */
+  answerCheck?: AnswerCheckSummary | null;
 };
 
 function PaperItemCard({
@@ -172,6 +175,9 @@ export function PaperPreviewView({ paperId }: { paperId: string }) {
   const markReady = trpc.paper.markReady.useMutation({
     onSuccess: () => utils.paper.get.invalidate({ paperId }),
   });
+  const checkAnswers = trpc.paper.checkAnswers.useMutation({
+    onSuccess: () => utils.paper.get.invalidate({ paperId }),
+  });
 
   if (query.isLoading) return <SkeletonList rows={5} />;
   if (query.isError) {
@@ -192,6 +198,17 @@ export function PaperPreviewView({ paperId }: { paperId: string }) {
   const warnedPositions = new Set(reviewWarnings.map((w) => w.slotQuestionNo));
   const blockedPositions = new Set(reviewBlockers.map((w) => w.slotQuestionNo));
   const markReadyDisabled = disabled || reviewBlockers.length > 0 || markReady.isPending;
+  // 抽检结果优先取落库值；刚点完抽检时先用 mutation 返回（invalidate 后会被落库值覆盖）。
+  const answerCheck: AnswerCheckSummary | null =
+    params.answerCheck ??
+    (checkAnswers.data
+      ? {
+          total: checkAnswers.data.total,
+          wrong: checkAnswers.data.wrong,
+          uncertain: checkAnswers.data.uncertain,
+          results: checkAnswers.data.results,
+        }
+      : null);
 
   return (
     <div className="space-y-6">
@@ -250,6 +267,8 @@ export function PaperPreviewView({ paperId }: { paperId: string }) {
         </div>
       )}
 
+      <AnswerCheckPanel check={answerCheck} />
+
       <section className="rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-200">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -260,6 +279,15 @@ export function PaperPreviewView({ paperId }: { paperId: string }) {
           </div>
           <div className="flex flex-wrap gap-2">
             <PrintLink paperId={paper.id} />
+            <button
+              type="button"
+              disabled={checkAnswers.isPending || paper.items.length === 0}
+              onClick={() => checkAnswers.mutate({ paperId })}
+              className="rounded-full border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              data-testid="answer-check-button"
+            >
+              {checkAnswers.isPending ? "抽检中…" : "AI 答案抽检"}
+            </button>
             <button
               type="button"
               disabled={markReadyDisabled}
