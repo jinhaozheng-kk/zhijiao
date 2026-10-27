@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState, useEffect, useRef } from "react";
 import { trpc } from "@/lib/trpc-client";
 import { AiGeneratingPanel } from "@/components/ui/ai-generating-panel";
+import { KpPicker } from "./kp-picker";
 import {
   QUESTION_TYPES,
   GRADE_LEVELS,
@@ -17,7 +18,7 @@ import {
 } from "@/lib/paper-copy";
 import { ZHONGKAO_TEMPLATE_ID } from "@/lib/zhongkao-blueprint";
 
-type KpOption = { id: string; name: string };
+type KpOption = { id: string; name: string; code: string };
 type SectionConfig = { count: number; pointsPerItem: number };
 
 export function computePaperTotals(
@@ -251,28 +252,13 @@ export function PaperGenerationForm({
       </div>
 
       <div>
-        <p className="text-sm font-medium text-slate-700">知识点（至少选 1 个）</p>
-        <div className="mt-2 flex flex-wrap gap-2" data-testid="kp-picker">
-          {kps.map((kp) => {
-            const selected = selectedKpIds.includes(kp.id);
-            return (
-              <button
-                key={kp.id}
-                type="button"
-                onClick={() => toggleKp(kp.id)}
-                className={`rounded-full border px-3 py-1 text-sm transition ${
-                  selected ? "border-slate-950 bg-slate-950 text-white" : "border-slate-200 text-slate-700 hover:bg-slate-50"
-                }`}
-                data-testid={`kp-${kp.id}`}
-              >
-                {kp.name}
-              </button>
-            );
-          })}
-        </div>
-        {selectedKpIds.length === 0 && (
-          <p className="mt-1 text-xs text-red-600">请至少选一个知识点。</p>
-        )}
+        <KpPicker
+          kps={kps}
+          gradeLevel={gradeLevel}
+          selectedIds={selectedKpIds}
+          onToggle={toggleKp}
+          onClear={() => setSelectedKpIds([])}
+        />
       </div>
 
       <div>

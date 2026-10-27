@@ -56,6 +56,13 @@ vi.mock("@/lib/trpc-client", () => ({
           mutate: vi.fn(),
         }),
       },
+      checkAnswers: {
+        useMutation: () => ({
+          isPending: false,
+          mutate: vi.fn(),
+          data: undefined,
+        }),
+      },
       removeItem: {
         useMutation: () => ({
           isPending: false,
@@ -107,7 +114,7 @@ describe("PaperGenerationForm 默认状态静态渲染", () => {
     const html = renderToStaticMarkup(
       <PaperGenerationForm
         subjectId="s1"
-        kps={[{ id: "k1", name: "一次函数" }]}
+        kps={[{ id: "k1", name: "一次函数", code: "math-jh-alg-linear-fn" }]}
       />,
     );
 
@@ -123,7 +130,7 @@ describe("PaperGenerationForm 默认状态静态渲染", () => {
     const html = renderToStaticMarkup(
       <PaperGenerationForm
         subjectId="s1"
-        kps={[{ id: "k1", name: "kp1" }]}
+        kps={[{ id: "k1", name: "kp1", code: "math-jh-alg-kp1" }]}
       />,
     );
 

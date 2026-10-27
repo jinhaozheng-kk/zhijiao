@@ -66,7 +66,7 @@ export default async function NewPaperPage() {
       </div>
       <PaperGenerationForm
         subjectId={subject.id}
-        kps={kpsForPicker.map((kp) => ({ id: kp.id, name: kp.name }))}
+        kps={kpsForPicker.map((kp) => ({ id: kp.id, name: kp.name, code: kp.code }))}
       />
     </AppShell>
   );
