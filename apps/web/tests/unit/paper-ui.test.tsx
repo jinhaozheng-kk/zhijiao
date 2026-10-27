@@ -139,7 +139,7 @@ describe("PaperGenerationForm 默认状态静态渲染", () => {
 });
 
 describe("PaperPreviewView READY status (no DRAFT banner)", () => {
-  it("does not render DRAFT notice or warnings block when paper is READY", () => {
+  it("READY 卷不显示草稿横幅，但保留只读审题提示（P0-02）", () => {
     mocks.paperGetResult = {
       isLoading: false,
       isError: false,
@@ -162,7 +162,9 @@ describe("PaperPreviewView READY status (no DRAFT banner)", () => {
 
     const html = renderToStaticMarkup(<PaperPreviewView paperId="p2" />);
     expect(html).not.toContain('data-testid="ai-draft-notice"');
-    expect(html).not.toContain('data-testid="review-warnings"');
+    // 审题提示在 READY 后仍保留（只读折叠），避免教师从未看到 AI 提示
+    expect(html).toContain('data-testid="review-warnings"');
+    expect(html).toContain("生成时自动审题提示（只读）");
   });
 });
 

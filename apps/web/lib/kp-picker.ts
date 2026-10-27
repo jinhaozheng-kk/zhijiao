@@ -25,8 +25,9 @@ export function stageLabel(stage: KpStage): string {
   return stage === "pri" ? "小学" : stage === "jh" ? "初中" : stage === "sh" ? "高中" : "其它";
 }
 
-export function stageOfCode(code: string): KpStage {
-  const parts = code.split("-");
+export function stageOfCode(code: string | undefined | null): KpStage {
+  // 防御：旧缓存/RSC 数据里可能缺 code（页面更新过渡期），按初中处理而不是崩页面。
+  const parts = String(code ?? "").split("-");
   if (parts.includes("pri")) return "pri";
   if (parts.includes("jh")) return "jh";
   if (parts.includes("sh")) return "sh";
@@ -47,8 +48,8 @@ const DOMAIN_LABEL: Record<KpDomainKey, string> = {
 };
 const DOMAIN_ORDER: KpDomainKey[] = ["alg", "geo", "stat", "prac", "other"];
 
-export function domainOfCode(code: string): KpDomainKey {
-  const parts = code.split("-");
+export function domainOfCode(code: string | undefined | null): KpDomainKey {
+  const parts = String(code ?? "").split("-");
   const token = parts.find((part) => part === "alg" || part === "geo" || part === "stat" || part === "prac");
   return (token as KpDomainKey | undefined) ?? "other";
 }

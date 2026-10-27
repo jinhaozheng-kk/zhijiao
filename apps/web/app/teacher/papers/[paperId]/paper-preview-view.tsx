@@ -168,7 +168,11 @@ function PaperItemCard({
         <button
           type="button"
           disabled={disabled || removeItem.isPending}
-          onClick={() => removeItem.mutate({ paperId, itemId: item.id })}
+          onClick={() => {
+            if (window.confirm(`确定删除第 ${item.position} 题？删除后无法恢复。`)) {
+              removeItem.mutate({ paperId, itemId: item.id });
+            }
+          }}
           className="rounded-full border border-red-200 px-3 py-1.5 text-sm font-medium text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
         >
           删题
@@ -263,13 +267,16 @@ export function PaperPreviewView({ paperId }: { paperId: string }) {
         </div>
       )}
 
-      {/* B1-UI: review warnings lifted to top (DRAFT state only) */}
-      {paper.status !== "READY" && reviewWarnings.length > 0 && (
-        <div
+      {/* AI 审题提示：DRAFT 状态提示「逐题核对」，READY 后保留只读清单（P0-02） */}
+      {reviewWarnings.length > 0 && (
+        <details
           className="rounded-lg bg-amber-50 p-4 text-sm text-amber-800"
           data-testid="review-warnings"
+          open={paper.status !== "READY"}
         >
-          <p className="font-medium">建议人工核对（{reviewWarnings.length}）</p>
+          <summary className="cursor-pointer font-medium">
+            {paper.status === "READY" ? "生成时自动审题提示（只读）" : "建议人工核对"}（{reviewWarnings.length}）
+          </summary>
           <ul className="mt-2 space-y-1">
             {reviewWarnings.map((warning, index) => (
               <li key={`${warning.slotQuestionNo}-${warning.code}-${index}`}>
@@ -283,7 +290,7 @@ export function PaperPreviewView({ paperId }: { paperId: string }) {
               </li>
             ))}
           </ul>
-        </div>
+        </details>
       )}
 
       {params.answerCheckStatus === "PENDING" && (

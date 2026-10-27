@@ -79,7 +79,9 @@ export function ExamHeader({
   const docTitle =
     variant === "sheet"
       ? `${EXAM_SUBJECT_LABEL}　答　题　纸`
-      : `${EXAM_SUBJECT_LABEL}　试　题　卷`;
+      : variant === "teacher"
+        ? `${EXAM_SUBJECT_LABEL}　参　考　答　案`
+        : `${EXAM_SUBJECT_LABEL}　试　题　卷`;
   return (
     <header className="text-center text-slate-950">
       <p className="text-[11px] tracking-[0.25em] text-slate-600">

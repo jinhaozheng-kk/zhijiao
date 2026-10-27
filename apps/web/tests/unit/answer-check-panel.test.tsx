@@ -20,7 +20,10 @@ describe("AnswerCheckPanel（AI 答案抽检结果面板）", () => {
     expect(html).toContain("发现 1 题存疑");
     expect(html).toContain("共抽检 3 题");
     expect(html).toContain("正确 2 题");
-    expect(html).toContain("第 2 题（存疑）");
+    expect(html).toContain("第 2 题");
+    expect(html).toContain("（存疑）");
+    expect(html).toContain('data-testid="answer-check-link"');
+    expect(html).toContain('href="#paper-item-2"');
     expect(html).toContain("解析与答案矛盾");
     expect(html).toContain('data-testid="answer-check-wrong"');
   });
@@ -46,7 +49,9 @@ describe("AnswerCheckPanel（AI 答案抽检结果面板）", () => {
         ] }}
       />,
     );
-    expect(html).toContain("第 4 题（无法判定）");
+    expect(html).toContain("第 4 题");
+    expect(html).toContain("（无法判定）");
+    expect(html).toContain('href="#paper-item-4"');
     expect(html).toContain("条件不足");
   });
 

@@ -352,7 +352,9 @@ export const paperRouter = router({
       let effDifficulty: [number, number];
       let styleRules: string[] | undefined;
       let slotHints: Array<{ type: QuestionType; intent: string; constraints: string[] }> | undefined;
-      let promptVersion: "v1" | "v2" | "v4" | "v5" | "v6" = "v1";
+      // 手动出卷使用已注册且指纹稳定的 v6；v1 文件在历史上被改过（DB 指纹 6e0e6232 与文件
+      // b70afcb0 不一致），继续用 v1 会触发 PromptVersionConflictError（UI 审计 P0-01）。
+      let promptVersion: "v1" | "v2" | "v4" | "v5" | "v6" = "v6";
 
       if (input.styleTemplate === ZHONGKAO_TEMPLATE_ID) {
         blueprint = buildZhongkaoMathBlueprint({
@@ -762,11 +764,10 @@ export const paperRouter = router({
         bankItems: zhongkaoItems ? [] : bank.map((b) => ({ ...b, points: pointsByType.get(b.type) ?? 5 })),
         aiItems: zhongkaoItems ?? aiItems.map((a) => ({ ...a, points: pointsByType.get(a.type) ?? a.points })),
       });
+      // 一键中考卷也落 DRAFT：AI 审题 warning 必须由教师先看到并「确认完成」
+      // （此前直接置 READY，教师从未见过最多 15 条 warning —— UI 审计 P0-02）。
       if (blueprint) {
-        await ctx.db.paper.update({
-          where: { id: paper.id },
-          data: { status: "READY" },
-        });
+        logger.info({ event: "paper_zhongkao_generated_as_draft", paperId: paper.id });
       }
 
       // 浙江卷配图：主出卷成功后 best-effort 补图（失败不影响出卷，最多拖慢几十秒）。

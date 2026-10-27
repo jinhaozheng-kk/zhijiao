@@ -43,6 +43,9 @@ type PaperParams = {
   }>;
   /** 浙江卷配图：按 item.position（1-based）存 FigureSpec。 */
   figures?: Record<string, FigureSpec>;
+  /** AI 答案抽检结果：有存疑题时打印前二次确认。 */
+  answerCheck?: { total?: number; wrong?: number; uncertain?: number } | null;
+  answerCheckStatus?: "PENDING" | "DONE" | "FAILED";
 };
 
 const VARIANT_LABEL: Record<ExamDocumentVariant, string> = {
@@ -111,7 +114,15 @@ export function PaperPrintView({ paperId }: { paperId: string }) {
         ))}
         <button
           type="button"
-          onClick={() => window.print()}
+          onClick={() => {
+            // P0-03：抽检有存疑题时打印/导出前二次确认，避免带错答案发给学生。
+            const wrongCount = params.answerCheck?.wrong ?? 0;
+            if (wrongCount > 0) {
+              const ok = window.confirm(`AI 答案抽检发现 ${wrongCount} 题存疑，仍要打印/导出吗？建议先返回预览核对。`);
+              if (!ok) return;
+            }
+            window.print();
+          }}
           disabled={hasReviewBlockers}
           title={hasReviewBlockers ? "自动审题存在必须修正的问题，不能打印最终卷" : undefined}
           className="rounded-full bg-slate-950 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"

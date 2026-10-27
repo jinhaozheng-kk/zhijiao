@@ -62,8 +62,11 @@ describe("paper.generate 中考风格模板", () => {
       clientRequestId: crypto.randomUUID(),
     });
     const paper = await prisma.paper.findUniqueOrThrow({ where: { id: paperId }, include: { items: true } });
-    expect(paper.status).toBe("READY");
+    // 一键中考卷生成后为 DRAFT（教师先看审题 warning 再「确认完成」，P0-02）
+    expect(paper.status).toBe("DRAFT");
     expect(paper.items).toHaveLength(24);
+    await caller.paper.markReady({ paperId });
+    expect((await prisma.paper.findUniqueOrThrow({ where: { id: paperId }, select: { status: true } })).status).toBe("READY");
     const params = paper.paramsJson as any;
     expect(params.styleTemplate).toBe("JUNIOR_MATH_ZHONGKAO_GENERIC_V1");
     expect(params.blueprint.slots).toHaveLength(24);
@@ -104,7 +107,7 @@ describe("paper.generate 中考风格模板", () => {
     });
 
     const paper = await prisma.paper.findUniqueOrThrow({ where: { id: paperId }, include: { items: { orderBy: { position: "asc" } } } });
-    expect(paper.status).toBe("READY");
+    expect(paper.status).toBe("DRAFT");
     expect(paper.items).toHaveLength(24);
     expect(paper.items[0]!.stemMd).toContain("repair-");
     expect(paper.items[1]!.stemMd).toContain("bad-");
@@ -178,7 +181,7 @@ describe("paper.generate 中考风格模板", () => {
     });
 
     const paper = await prisma.paper.findUniqueOrThrow({ where: { id: paperId }, include: { items: { orderBy: { position: "asc" } } } });
-    expect(paper.status).toBe("READY");
+    expect(paper.status).toBe("DRAFT");
     expect(paper.paramsJson).toMatchObject({ reviewBlockers: [] });
     expect(paper.items.filter((item) => item.type === "FILL_BLANK").every((item) => item.optionsJson == null)).toBe(true);
     expect(generatePaperMock).toHaveBeenCalledTimes(3);

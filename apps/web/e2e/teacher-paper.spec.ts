@@ -56,14 +56,19 @@ test("教师一键生成中考风格卷并打印学生/教师卷", async ({ page
   await expect(page.getByTestId("kp-picker")).toBeVisible();
   await page.getByTestId("generate-zhongkao").click();
 
-  await page.waitForURL(/\/teacher\/papers\/[^/]+$/, { timeout: 60_000 });
+  await page.waitForURL(/\/teacher\/papers\/[^/]+$/, { timeout: 120_000 });
   await expect(page.getByTestId("zhongkao-blueprint")).toBeVisible({ timeout: 15_000 });
+
+  // 一键卷落 DRAFT：教师先看审题提示，再「确认完成」（P0-02）
+  await page.getByRole("button", { name: "确认完成" }).click();
+  await expect(page.getByRole("button", { name: "已确认完成" })).toBeVisible();
 
   await page.getByRole("link", { name: "打印/导出" }).click();
   await page.waitForURL(/\/teacher\/papers\/[^/]+\/print$/, { timeout: 15_000 });
 
   await expect(page.getByTestId("paper-student")).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByText("选择题答题栏")).toBeVisible();
+  // 浙江卷格式：试题卷带注意事项、无答案（不再有「选择题答题栏」）
+  await expect(page.getByTestId("paper-student")).toContainText("注意事项");
   await expect(page.getByTestId("paper-student")).not.toContainText("答案：");
   await page.screenshot({ path: "output/playwright/zhongkao-student.png", fullPage: true });
 

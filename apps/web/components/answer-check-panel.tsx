@@ -44,12 +44,26 @@ export function AnswerCheckPanel({ check }: { check: AnswerCheckSummary | null |
         <ul className="mt-2 space-y-1 text-sm">
           {wrong.map((item) => (
             <li key={`wrong-${item.questionNo}`} className="text-red-800" data-testid="answer-check-wrong">
-              第 {item.questionNo} 题（存疑）：{item.reason || "答案与解析可能不一致"}
+              <a
+                href={`#paper-item-${item.questionNo}`}
+                className="font-medium underline hover:text-red-900"
+                data-testid="answer-check-link"
+              >
+                第 {item.questionNo} 题
+              </a>
+              （存疑）：{item.reason || "答案与解析可能不一致"}
             </li>
           ))}
           {uncertain.map((item) => (
             <li key={`uncertain-${item.questionNo}`} className="text-amber-800">
-              第 {item.questionNo} 题（无法判定）：{item.reason || "信息不足，建议人工确认"}
+              <a
+                href={`#paper-item-${item.questionNo}`}
+                className="font-medium underline hover:text-amber-900"
+                data-testid="answer-check-link"
+              >
+                第 {item.questionNo} 题
+              </a>
+              （无法判定）：{item.reason || "信息不足，建议人工确认"}
             </li>
           ))}
         </ul>
